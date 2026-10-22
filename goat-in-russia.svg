@@ -73,6 +73,22 @@
       <stop offset=".65" stop-color="#f0e7d4"/>
       <stop offset="1" stop-color="#dccfb7"/>
     </linearGradient>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a4260"/>
+      <stop offset=".6" stop-color="#1c2f49"/>
+      <stop offset="1" stop-color="#132135"/>
+    </linearGradient>
+    <linearGradient id="goldDome" x1="0" y1="0" x2="1" y2=".15">
+      <stop offset="0" stop-color="#7e5026"/>
+      <stop offset=".3" stop-color="#b88134"/>
+      <stop offset=".62" stop-color="#e9bb62"/>
+      <stop offset=".82" stop-color="#ffdf9e"/>
+      <stop offset="1" stop-color="#c28c3e"/>
+    </linearGradient>
+    <radialGradient id="windowGlow">
+      <stop offset="0" stop-color="#ffc06a" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ffc06a" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
   <!-- sky -->
@@ -101,24 +117,123 @@
   <!-- distant hills -->
   <path d="M 0 428 Q 110 392 230 420 T 470 412 T 700 402 T 800 414 L 800 470 L 0 470 Z" fill="#7d90a9" opacity=".55"/>
 
-  <!-- onion domes -->
-  <g fill="#1b2b45" opacity=".92">
-    <!-- small left dome -->
-    <path d="M 8 464 L 8 426 C 8 411 21 408 24 393 C 27 378 31 371 42 356 C 53 371 57 378 60 393 C 63 408 76 411 76 426 L 76 464 Z"/>
-    <path d="M 42 356 L 42 336 M 33 346 L 51 346" stroke="#1b2b45" stroke-width="5" fill="none" stroke-linecap="round"/>
-    <!-- large center dome -->
-    <path d="M 62 464 L 62 412 C 62 390 84 385 88 362 C 92 338 100 330 120 300 C 140 330 148 338 152 362 C 156 385 178 390 178 412 L 178 464 Z"/>
-    <path d="M 120 300 L 120 272 M 109 286 L 131 286" stroke="#1b2b45" stroke-width="6" fill="none" stroke-linecap="round"/>
-    <!-- medium right dome -->
-    <path d="M 218 464 L 218 430 C 218 416 231 413 234 398 C 237 383 241 376 251 364 C 261 376 265 383 268 398 C 271 413 284 416 284 430 L 284 464 Z"/>
-    <path d="M 251 364 L 251 346 M 243 355 L 259 355" stroke="#1b2b45" stroke-width="4.5" fill="none" stroke-linecap="round"/>
-  </g>
-  <!-- warm windows -->
-  <g fill="#ffcf87" opacity=".85">
-    <rect x="94" y="418" width="13" height="20" rx="6"/>
-    <rect x="133" y="418" width="13" height="20" rx="6"/>
-    <rect x="34" y="430" width="9" height="14" rx="4"/>
-    <rect x="243" y="426" width="10" height="15" rx="4"/>
+  <!-- cathedral -->
+  <g>
+    <!-- side wings -->
+    <path d="M 8 464 L 8 434 L 34 421 L 60 434 L 60 464 Z" fill="url(#wall)"/>
+    <path d="M 238 464 L 238 434 L 264 421 L 292 434 L 292 464 Z" fill="url(#wall)"/>
+
+    <!-- side towers -->
+    <path d="M 64 464 L 64 414 Q 64 405 76 401 L 96 388 L 116 401 Q 128 405 128 414 L 128 464 Z" fill="url(#wall)"/>
+    <path d="M 166 464 L 166 414 Q 166 405 178 401 L 198 388 L 218 401 Q 230 405 230 414 L 230 464 Z" fill="url(#wall)"/>
+
+    <!-- central mass -->
+    <path d="M 102 464 L 102 402 Q 102 392 114 386 L 147 368 L 180 386 Q 192 392 192 402 L 192 464 Z" fill="url(#wall)"/>
+
+    <!-- snow on roofs -->
+    <g fill="none" stroke="#dce9f6" stroke-linecap="round" opacity=".5">
+      <path d="M 147 369 L 178 385 M 147 369 L 116 385" stroke-width="2.4"/>
+      <path d="M 96 389 L 115 400 M 96 389 L 77 400" stroke-width="2"/>
+      <path d="M 198 389 L 217 400 M 198 389 L 179 400" stroke-width="2"/>
+      <path d="M 34 422 L 58 433 M 264 422 L 240 433" stroke-width="1.8"/>
+    </g>
+
+    <!-- kokoshnik arches -->
+    <g fill="none" stroke="#3a587e" stroke-width="1.8" opacity=".55">
+      <path d="M 112 416 Q 147 394 182 416"/>
+      <path d="M 116 430 Q 147 410 178 430"/>
+      <path d="M 74 426 Q 96 408 118 426"/>
+      <path d="M 176 426 Q 198 408 220 426"/>
+    </g>
+
+    <!-- drums -->
+    <rect x="124" y="320" width="46" height="52" fill="url(#wall)"/>
+    <rect x="120" y="366" width="54" height="6" rx="1.5" fill="#2d4766"/>
+    <rect x="82" y="354" width="28" height="38" fill="url(#wall)"/>
+    <rect x="78" y="386" width="36" height="6" rx="1.5" fill="#2d4766"/>
+    <rect x="184" y="354" width="28" height="38" fill="url(#wall)"/>
+    <rect x="180" y="386" width="36" height="6" rx="1.5" fill="#2d4766"/>
+    <rect x="42" y="398" width="20" height="22" fill="url(#wall)"/>
+    <rect x="39" y="416" width="26" height="5" rx="1.5" fill="#2d4766"/>
+    <rect x="233" y="398" width="20" height="22" fill="url(#wall)"/>
+    <rect x="230" y="416" width="26" height="5" rx="1.5" fill="#2d4766"/>
+
+    <!-- drum windows -->
+    <g fill="#ffcf87" opacity=".45">
+      <path d="M 129 362 L 129 340 Q 129 334 133 334 Q 137 334 137 340 L 137 362 Z"/>
+      <path d="M 144 360 L 144 338 Q 144 332 148 332 Q 152 332 152 338 L 152 360 Z"/>
+      <path d="M 159 362 L 159 340 Q 159 334 163 334 Q 167 334 167 340 L 167 362 Z"/>
+      <path d="M 94 388 L 94 376 Q 94 371 97 371 Q 100 371 100 376 L 100 388 Z"/>
+      <path d="M 196 388 L 196 376 Q 196 371 199 371 Q 202 371 202 376 L 202 388 Z"/>
+      <path d="M 50 416 L 50 408 Q 50 404 52 404 Q 54 404 54 408 L 54 416 Z"/>
+      <path d="M 241 416 L 241 408 Q 241 404 243 404 Q 245 404 245 408 L 245 416 Z"/>
+    </g>
+
+    <!-- domes -->
+    <path d="M 40 398 C 35 391 37 384 42 378 C 47 372 50 365 52 356 C 54 365 57 372 62 378 C 67 384 69 391 64 398 Z" fill="url(#goldDome)"/>
+    <path d="M 231 398 C 226 391 228 384 233 378 C 238 372 241 365 243 356 C 245 365 248 372 253 378 C 258 384 260 391 255 398 Z" fill="url(#goldDome)"/>
+
+    <path d="M 79 354 C 72 345 74 336 81 328 C 88 320 92 312 96 302 C 100 312 104 320 111 328 C 118 336 120 345 113 354 Z" fill="url(#goldDome)"/>
+    <path d="M 96 304 C 100 314 104 322 110 328 C 117 335 119 345 113 354" fill="none" stroke="#ffe4a6" stroke-width="1.6" opacity=".6"/>
+    <path d="M 181 354 C 174 345 176 336 183 328 C 190 320 194 312 198 302 C 202 312 206 320 213 328 C 220 336 222 345 215 354 Z" fill="url(#goldDome)"/>
+    <path d="M 198 304 C 202 314 206 322 212 328 C 219 335 221 345 215 354" fill="none" stroke="#ffe4a6" stroke-width="1.6" opacity=".6"/>
+
+    <path d="M 118 320 C 108 308 110 292 121 282 C 132 272 139 252 147 228 C 155 252 162 272 173 282 C 184 292 186 308 176 320 Z" fill="url(#goldDome)"/>
+    <g stroke="#9c6b2a" stroke-width="1.2" fill="none" opacity=".35">
+      <path d="M 145 232 C 141 258 136 286 128 304"/>
+      <path d="M 147 230 C 147 262 147 292 147 318"/>
+      <path d="M 149 232 C 153 258 158 286 166 304"/>
+    </g>
+    <path d="M 147 230 C 154 252 159 272 170 282 C 181 292 185 308 176 320" fill="none" stroke="#ffe4a6" stroke-width="2" opacity=".7"/>
+
+    <!-- dome bases -->
+    <g fill="#5f3d17" opacity=".35">
+      <ellipse cx="52" cy="398" rx="13" ry="2.5"/>
+      <ellipse cx="243" cy="398" rx="13" ry="2.5"/>
+      <ellipse cx="96" cy="354" rx="18" ry="3"/>
+      <ellipse cx="198" cy="354" rx="18" ry="3"/>
+      <ellipse cx="147" cy="320" rx="27" ry="4"/>
+    </g>
+
+    <!-- finials and crosses -->
+    <circle cx="52" cy="354" r="2" fill="#f2cf86"/>
+    <circle cx="243" cy="354" r="2" fill="#f2cf86"/>
+    <circle cx="96" cy="300" r="2.6" fill="#f2cf86"/>
+    <circle cx="198" cy="300" r="2.6" fill="#f2cf86"/>
+    <circle cx="147" cy="228" r="3.2" fill="#f2cf86"/>
+    <g stroke="#f7d792" fill="none" stroke-linecap="round">
+      <path d="M 52 352 L 52 334" stroke-width="2.4"/>
+      <path d="M 47 343 L 57 343" stroke-width="2.4"/>
+      <path d="M 49 349 L 55 348" stroke-width="1.8"/>
+      <path d="M 243 352 L 243 334" stroke-width="2.4"/>
+      <path d="M 238 343 L 248 343" stroke-width="2.4"/>
+      <path d="M 240 349 L 246 348" stroke-width="1.8"/>
+      <path d="M 96 298 L 96 274" stroke-width="3"/>
+      <path d="M 89 285 L 103 285" stroke-width="3"/>
+      <path d="M 91 291 L 101 289" stroke-width="2"/>
+      <path d="M 198 298 L 198 274" stroke-width="3"/>
+      <path d="M 191 285 L 205 285" stroke-width="3"/>
+      <path d="M 193 291 L 203 289" stroke-width="2"/>
+      <path d="M 147 226 L 147 192" stroke-width="4"/>
+      <path d="M 138 206 L 156 206" stroke-width="4"/>
+      <path d="M 140 218 L 154 215" stroke-width="2.6"/>
+    </g>
+
+    <!-- lit windows -->
+    <g fill="url(#windowGlow)">
+      <ellipse cx="147" cy="430" rx="56" ry="34"/>
+      <ellipse cx="96" cy="436" rx="28" ry="22"/>
+      <ellipse cx="198" cy="436" rx="28" ry="22"/>
+    </g>
+    <g fill="#ffcf87" opacity=".92">
+      <path d="M 120 448 L 120 426 Q 120 416 126 416 Q 132 416 132 426 L 132 448 Z"/>
+      <path d="M 141 450 L 141 420 Q 141 410 147 410 Q 153 410 153 420 L 153 450 Z"/>
+      <path d="M 162 448 L 162 426 Q 162 416 168 416 Q 174 416 174 426 L 174 448 Z"/>
+      <path d="M 90 450 L 90 430 Q 90 420 96 420 Q 102 420 102 430 L 102 450 Z"/>
+      <path d="M 192 450 L 192 430 Q 192 420 198 420 Q 204 420 204 430 L 204 450 Z"/>
+      <path d="M 30 456 L 30 446 Q 30 440 34 440 Q 38 440 38 446 L 38 456 Z"/>
+      <path d="M 262 456 L 262 446 Q 262 440 266 440 Q 270 440 270 446 L 270 456 Z"/>
+    </g>
   </g>
 
   <!-- birch trees -->

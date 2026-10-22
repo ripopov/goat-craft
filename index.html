@@ -1678,7 +1678,7 @@
       s.manualHold = 3.0;
       s.mode = 'manual';
       s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
-      s.speed = damp(s.speed, 2.4, 5, dt);
+      s.speed = damp(s.speed, 4.8, 5, dt);
 
       const mx = Math.sin(s.yaw) * s.speed * dt;
       const mz = Math.cos(s.yaw) * s.speed * dt;
@@ -1703,7 +1703,7 @@
         s.wait = rand(2.5, 6.0);
       } else {
         s.yaw = turnToward(s.yaw, Math.atan2(dx, dz), dt * 4.5);
-        s.speed = damp(s.speed, clamp(0.8 + dist * 0.65, 0.8, 1.7), 3.0, dt);
+        s.speed = damp(s.speed, clamp(1.6 + dist * 1.3, 1.6, 3.4), 3.0, dt);
 
         const mx = Math.sin(s.yaw) * s.speed * dt;
         const mz = Math.cos(s.yaw) * s.speed * dt;
@@ -1862,9 +1862,9 @@
 
     desired.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
     const followY = state.grounded ? 2.4 : 12.0;
-    camTarget.x = damp(camTarget.x, desired.x, 2.4, dt);
+    camTarget.x = damp(camTarget.x, desired.x, 3.8, dt);
     camTarget.y = damp(camTarget.y, desired.y, followY, dt);
-    camTarget.z = damp(camTarget.z, desired.z, 2.4, dt);
+    camTarget.z = damp(camTarget.z, desired.z, 3.8, dt);
 
     const phi = polar + Math.sin(t * 0.17) * 0.014;
     const sinPhi = Math.sin(phi);

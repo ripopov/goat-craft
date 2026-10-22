@@ -183,7 +183,7 @@
 </style>
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in a meadow. Drag to orbit the camera."></canvas>
+  <canvas id="scene" aria-label="An animated goat in a meadow. Use W A S D to walk, and drag to orbit the camera."></canvas>
   <div id="sun"></div>
   <div id="vignette"></div>
 
@@ -194,7 +194,7 @@
   </header>
 
   <div id="bubble" aria-hidden="true">maa!</div>
-  <div id="hint"><b>drag</b> to orbit &nbsp;·&nbsp; <b>scroll</b> to zoom &nbsp;·&nbsp; <b>click the goat</b></div>
+  <div id="hint"><b>WASD</b> to lead &nbsp;·&nbsp; <b>drag</b> to orbit &nbsp;·&nbsp; <b>scroll</b> to zoom &nbsp;·&nbsp; <b>click the goat</b></div>
   <button id="hi" type="button"><span></span>Say hi</button>
 
   <div id="error" role="alert"></div>
@@ -910,8 +910,31 @@
     jumpT: -1,
     happy: 0,
     earTimer: 2.2,
-    earTwitch: 0
+    earTwitch: 0,
+    manualHold: 0
   };
+
+  const held = { w: false, a: false, s: false, d: false };
+  const moveVec = new THREE.Vector2();
+  const camDir = new THREE.Vector3();
+
+  function readMovement() {
+    const x = (held.d ? 1 : 0) - (held.a ? 1 : 0);
+    const z = (held.w ? 1 : 0) - (held.s ? 1 : 0);
+    if (x === 0 && z === 0) {
+      moveVec.set(0, 0);
+      return moveVec;
+    }
+
+    camera.getWorldDirection(camDir);
+    camDir.y = 0;
+    if (camDir.lengthSq() < 0.01) camDir.set(0, 0, -1);
+    camDir.normalize();
+
+    // camera-relative: forward is into the screen, right is screen-right
+    moveVec.set(camDir.x * z - camDir.z * x, camDir.z * z + camDir.x * x).normalize();
+    return moveVec;
+  }
 
   let blinkTimer = rand(1.6, 3.2);
   let blink = 0;
@@ -950,8 +973,36 @@
       if (s.jumpT >= 1) s.jumpT = -1;
     }
 
+    const input = readMovement();
+    const steering = input.lengthSq() > 0;
     let moving = false;
-    if (s.mode === 'walk') {
+
+    if (steering) {
+      // Player steering overrides the autonomous wanderer.
+      s.manualHold = 3.0;
+      s.mode = 'manual';
+      s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
+      s.speed = damp(s.speed, 1.15, 5, dt);
+
+      goat.position.x += Math.sin(s.yaw) * s.speed * dt;
+      goat.position.z += Math.cos(s.yaw) * s.speed * dt;
+
+      const radius = Math.hypot(goat.position.x, goat.position.z);
+      if (radius > 3.6) {
+        goat.position.x *= 3.6 / radius;
+        goat.position.z *= 3.6 / radius;
+      }
+
+      s.walkPhase += s.speed * dt * 7.6;
+      lastInteract = performance.now();
+      moving = true;
+    } else if (s.manualHold > 0) {
+      // Just after steering, stand and let the player watch for a moment.
+      s.manualHold = Math.max(0, s.manualHold - dt);
+      s.mode = 'idle';
+      s.speed = damp(s.speed, 0, 5, dt);
+      s.wait = Math.max(s.wait, 2.0);
+    } else if (s.mode === 'walk') {
       const dx = s.target.x - goat.position.x;
       const dz = s.target.z - goat.position.z;
       const dist = Math.hypot(dx, dz);
@@ -1060,7 +1111,8 @@
 
   function updateCamera(dt, t) {
     const elapsed = (performance.now() - lastInteract) / 1000;
-    if (elapsed > 3.0 && !drag && !reduceMotion) azimuth += dt * 0.1;
+    const steering = held.w || held.a || held.s || held.d;
+    if (elapsed > 3.0 && !drag && !reduceMotion && !steering) azimuth += dt * 0.1;
 
     desired.set(goat.position.x, 1.25, goat.position.z);
     camTarget.lerp(desired, 1 - Math.exp(-2.4 * dt));
@@ -1151,6 +1203,50 @@
     distance = clamp(distance * (1 + e.deltaY * 0.0012), 4, 11);
     lastInteract = performance.now();
   }, { passive: false });
+
+  function moveKey(e) {
+    switch (e.code) {
+      case 'KeyW': case 'ArrowUp': return 'w';
+      case 'KeyA': case 'ArrowLeft': return 'a';
+      case 'KeyS': case 'ArrowDown': return 's';
+      case 'KeyD': case 'ArrowRight': return 'd';
+    }
+    switch (e.key.toLowerCase()) {
+      case 'w': case 'arrowup': return 'w';
+      case 'a': case 'arrowleft': return 'a';
+      case 's': case 'arrowdown': return 's';
+      case 'd': case 'arrowright': return 'd';
+      default: return null;
+    }
+  }
+
+  window.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = moveKey(e);
+    if (!k) return;
+    if (e.code.indexOf('Arrow') === 0) e.preventDefault();
+    if (!held[k]) {
+      held[k] = true;
+      lastInteract = performance.now();
+    }
+  });
+
+  window.addEventListener('keyup', function (e) {
+    const k = moveKey(e);
+    if (!k) return;
+    if (e.code.indexOf('Arrow') === 0) e.preventDefault();
+    held[k] = false;
+    lastInteract = performance.now();
+  });
+
+  function stopSteering() {
+    held.w = held.a = held.s = held.d = false;
+  }
+
+  window.addEventListener('blur', stopSteering);
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stopSteering();
+  });
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();

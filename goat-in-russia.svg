@@ -4,13 +4,51 @@
 
   <style>
     .goat, .head, .ear, .tail, .beard, .scarf-tail, .eye, .puff, .snow, .twinkle, .wind, .glow, .sparkle { transform-box: view-box; }
-    .eye, .puff { transform-box: fill-box; }
+    .eye, .puff, .pupil, .brow { transform-box: fill-box; }
 
     .goat { animation: bob 3.6s ease-in-out infinite; }
     @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 
-    .head { transform-origin: 492px 334px; animation: nod 4.4s ease-in-out infinite; }
-    @keyframes nod { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(2deg); } }
+    .head { transform-origin: 492px 334px; animation: headlife 19s ease-in-out infinite; }
+    @keyframes headlife {
+      0%, 6%    { transform: rotate(0deg) translate(0,0) scaleX(1); }
+      13%       { transform: rotate(-4deg) translate(-6px,1px) scaleX(.88); }
+      18%       { transform: rotate(-3.2deg) translate(-6px,.4px) scaleX(.885); }
+      24%       { transform: rotate(-4.2deg) translate(-6px,1.4px) scaleX(.88); }
+      30%       { transform: rotate(-13deg) translate(2px,-2px) scaleX(1); }
+      36%       { transform: rotate(-12.4deg) translate(2px,-2.6px) scaleX(1); }
+      42%       { transform: rotate(10deg) translate(-1px,3px) scaleX(1); }
+      48%       { transform: rotate(9.4deg) translate(-1px,3.4px) scaleX(1); }
+      55%       { transform: rotate(5deg) translate(4px,1px) scaleX(1); }
+      61%       { transform: rotate(5.6deg) translate(4px,.6px) scaleX(1); }
+      68%       { transform: rotate(-1deg) translate(0,0) scaleX(1); }
+      73%       { transform: rotate(7deg) translate(0,1.5px) scaleX(1); }
+      77%       { transform: rotate(-2deg) translate(0,-1px) scaleX(1); }
+      81%       { transform: rotate(6deg) translate(0,1px) scaleX(1); }
+      85%       { transform: rotate(-1deg) translate(0,0) scaleX(1); }
+      90%, 100% { transform: rotate(0deg) translate(0,0) scaleX(1); }
+    }
+
+    .pupil { transform-box: fill-box; transform-origin: center; animation: gaze 19s ease-in-out infinite; }
+    @keyframes gaze {
+      0%, 3%   { transform: translate(0,0); }
+      9%, 24%  { transform: translate(-1.6px,-.4px); }
+      27%, 36% { transform: translate(.6px,-1.4px); }
+      39%, 48% { transform: translate(-.8px,1.2px); }
+      52%, 61% { transform: translate(1.4px,-.2px); }
+      66%, 100%{ transform: translate(0,0); }
+    }
+
+    .brow { transform-box: fill-box; transform-origin: center; animation: brow 19s ease-in-out infinite; }
+    @keyframes brow {
+      0%, 5%   { transform: translateY(0); }
+      10%, 24% { transform: translateY(-1.2px); }
+      28%, 36% { transform: translateY(-.5px); }
+      40%, 48% { transform: translateY(.7px); }
+      52%, 66% { transform: translateY(0); }
+      73%, 81% { transform: translateY(-.5px); }
+      90%, 100%{ transform: translateY(0); }
+    }
 
     .ear { transform-origin: 470px 290px; animation: earflick 7s ease-in-out infinite; }
     @keyframes earflick { 0%,84%,100% { transform: rotate(0deg); } 88% { transform: rotate(-14deg); } 92% { transform: rotate(6deg); } }
@@ -25,8 +63,25 @@
     .tail-b { animation-delay: -1.2s; animation-duration: 2.2s; }
     @keyframes flutter { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-4deg); } }
 
-    .eye { transform-origin: center; animation: blink 5.8s infinite; }
-    @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 94.5% { transform: scaleY(.1); } 97% { transform: scaleY(1); } }
+    .eye { transform-origin: center; animation: blink 19s infinite; }
+    @keyframes blink {
+      0%, 3%     { transform: scaleY(1); }
+      4%         { transform: scaleY(.08); }
+      5%         { transform: scaleY(1); }
+      8.5%       { transform: scaleY(1); }
+      9.5%       { transform: scaleY(.08); }
+      10.5%      { transform: scaleY(1); }
+      40%        { transform: scaleY(1); }
+      41%        { transform: scaleY(.08); }
+      42%        { transform: scaleY(1); }
+      71%        { transform: scaleY(1); }
+      72%        { transform: scaleY(.08); }
+      73%        { transform: scaleY(1); }
+      93%        { transform: scaleY(1); }
+      94%        { transform: scaleY(.08); }
+      95%        { transform: scaleY(1); }
+      100%       { transform: scaleY(1); }
+    }
 
     .puff { transform-origin: center; animation: puff 4.8s ease-out infinite; }
     .p2 { animation-delay: -1.6s; }
@@ -49,7 +104,7 @@
     @keyframes shimmer { 0%,100% { opacity: .12; } 50% { opacity: .85; } }
 
     @media (prefers-reduced-motion: reduce) {
-      .goat,.head,.ear,.tail,.beard,.scarf-tail,.eye,.puff,.snow,.twinkle,.wind,.glow,.sparkle { animation: none !important; }
+      .goat,.head,.ear,.tail,.beard,.scarf-tail,.eye,.pupil,.brow,.puff,.snow,.twinkle,.wind,.glow,.sparkle { animation: none !important; }
       .snow, .wind, .puff { opacity: 0; }
       .twinkle { opacity: .7; }
     }
@@ -427,11 +482,13 @@
       <path d="M 550 321 Q 558 327 566 320" stroke="#8a6e5c" stroke-width="2.2" fill="none" stroke-linecap="round"/>
 
       <!-- goat eye with horizontal pupil -->
-      <path d="M 511 279 q 8 -5 15 -1" stroke="#7c6a58" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path class="brow" d="M 511 279 q 8 -5 15 -1" stroke="#7c6a58" stroke-width="2.4" fill="none" stroke-linecap="round"/>
       <g class="eye">
         <ellipse cx="521" cy="290" rx="7.4" ry="7.2" fill="#fdf8ec" stroke="#d3c2a9" stroke-width="1.2"/>
-        <rect x="516.2" y="287.4" width="9.8" height="5.2" rx="2.6" fill="#3b2e26"/>
-        <circle cx="523.6" cy="288.2" r="1.5" fill="#ffffff"/>
+        <g class="pupil">
+          <rect x="516.2" y="287.4" width="9.8" height="5.2" rx="2.6" fill="#3b2e26"/>
+          <circle cx="523.6" cy="288.2" r="1.5" fill="#ffffff"/>
+        </g>
       </g>
 
       <!-- beard -->

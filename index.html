@@ -192,7 +192,7 @@
 </style>
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow. Use W A S D to walk, space to jump, and drag to orbit the camera."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow. Use W A S D to walk, space to jump, E to headbutt and break blocks, and drag to orbit the camera."></canvas>
   <div id="sun"></div>
   <div id="vignette"></div>
 
@@ -203,7 +203,7 @@
   </header>
 
   <div id="bubble" aria-hidden="true">maa!</div>
-  <div id="hint"><b>WASD</b> to lead &nbsp;·&nbsp; <b>space</b> to jump (×3) &nbsp;·&nbsp; <b>drag</b> to orbit &nbsp;·&nbsp; <b>scroll</b> to zoom &nbsp;·&nbsp; <b>click the goat</b></div>
+  <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>space</b> jump ×3 &nbsp;·&nbsp; <b>E</b> headbutt &nbsp;·&nbsp; <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom &nbsp;·&nbsp; <b>click</b> goat</div>
   <button id="hi" type="button"><span></span>Say hi</button>
 
   <div id="error" role="alert"></div>
@@ -320,8 +320,33 @@
     return Math.max(0, Math.floor(1.0 + n1 * 4.2 + n2 * 0.7 + n3 * 0.2));
   }
 
+  const removedBlocks = new Set();
+
+  function blockKey(bx, by, bz) {
+    return bx + ',' + by + ',' + bz;
+  }
+
+  function isRemoved(bx, by, bz) {
+    return removedBlocks.size > 0 && removedBlocks.has(blockKey(bx, by, bz));
+  }
+
+  function topSolidY(bx, bz) {
+    let y = heightBlocks(bx, bz) - 1;
+    if (removedBlocks.size > 0) {
+      while (y >= 0 && removedBlocks.has(blockKey(bx, y, bz))) y--;
+    }
+    return y;
+  }
+
   function surfaceHeight(x, z) {
-    return heightBlocks(Math.floor(x / BLOCK), Math.floor(z / BLOCK)) * BLOCK;
+    const y = topSolidY(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+    return Math.max(0, (y + 1) * BLOCK);
+  }
+
+  function isSolidBlock(bx, by, bz) {
+    if (by < 0) return true;
+    if (by >= heightBlocks(bx, bz)) return false;
+    return !isRemoved(bx, by, bz);
   }
 
   function mulberry32(a) {
@@ -736,29 +761,49 @@
       }
     }
 
+    const hAt = function (lx, lz) {
+      return heights[(lz + 1) * HS + (lx + 1)];
+    };
+
     for (let bz = 0; bz < CHUNK_BLOCKS; bz++) {
       for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
-        const h = heights[(bz + 1) * HS + (bx + 1)];
-        const y = h * BLOCK;
+        const h = hAt(bx, bz);
         const x = bx * BLOCK;
         const z = bz * BLOCK;
-        const shade = 0.93 + hash01(originBX + bx, originBZ + bz) * 0.07;
+        const worldBX = originBX + bx;
+        const worldBZ = originBZ + bz;
+        const nhW = hAt(bx - 1, bz);
+        const nhE = hAt(bx + 1, bz);
+        const nhN = hAt(bx, bz - 1);
+        const nhS = hAt(bx, bz + 1);
 
-        pushTop(data, x, y, z, T_GRASS, shade);
+        for (let by = 0; by < h; by++) {
+          if (isRemoved(worldBX, by, worldBZ)) continue;
 
-        const neighbors = [
-          heights[(bz + 1) * HS + bx],
-          heights[(bz + 1) * HS + (bx + 2)],
-          heights[bz * HS + (bx + 1)],
-          heights[(bz + 2) * HS + (bx + 1)]
-        ];
+          const y = by * BLOCK;
+          const isTop = by === h - 1;
+          const shade = (isTop ? 0.95 : 0.86) + hash01(worldBX, worldBZ) * 0.05;
+          const solidAbove = by + 1 < h && !isRemoved(worldBX, by + 1, worldBZ);
 
-        for (let dir = 0; dir < 4; dir++) {
-          const nh = neighbors[dir];
-          if (nh >= h) continue;
-          pushSide(data, dir, x, z, y - BLOCK, y, T_GRASS_SIDE, shade * 0.94);
-          for (let k = 1; k < h - nh; k++) {
-            pushSide(data, dir, x, z, y - BLOCK * (k + 1), y - BLOCK * k, T_DIRT, shade * 0.8);
+          if (!solidAbove) {
+            pushTop(data, x, y + BLOCK, z, isTop ? T_GRASS : T_DIRT, shade);
+          }
+
+          if (by > 0 && isRemoved(worldBX, by - 1, worldBZ)) {
+            pushBottom(data, x, y, z, T_DIRT, shade * 0.7);
+          }
+
+          if (!(by < nhW && !isRemoved(worldBX - 1, by, worldBZ))) {
+            pushSide(data, 0, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.72);
+          }
+          if (!(by < nhE && !isRemoved(worldBX + 1, by, worldBZ))) {
+            pushSide(data, 1, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.72);
+          }
+          if (!(by < nhN && !isRemoved(worldBX, by, worldBZ - 1))) {
+            pushSide(data, 2, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.7);
+          }
+          if (!(by < nhS && !isRemoved(worldBX, by, worldBZ + 1))) {
+            pushSide(data, 3, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.7);
           }
         }
       }
@@ -998,6 +1043,136 @@
         chunks.delete(key);
       }
     });
+  }
+
+  function rebuildChunkTerrain(cx, cz) {
+    const ch = chunks.get(cx + ',' + cz);
+    if (!ch) return;
+    ch.terrain.geometry.dispose();
+    ch.terrain.geometry = buildTerrainGeometry(cx, cz);
+  }
+
+  function rebuildTerrainAround(bx, bz) {
+    const cx = Math.floor(bx / CHUNK_BLOCKS);
+    const cz = Math.floor(bz / CHUNK_BLOCKS);
+    const lx = bx - cx * CHUNK_BLOCKS;
+    const lz = bz - cz * CHUNK_BLOCKS;
+    const xs = [cx];
+    const zs = [cz];
+
+    if (lx === 0) xs.push(cx - 1);
+    else if (lx === CHUNK_BLOCKS - 1) xs.push(cx + 1);
+    if (lz === 0) zs.push(cz - 1);
+    else if (lz === CHUNK_BLOCKS - 1) zs.push(cz + 1);
+
+    for (let i = 0; i < xs.length; i++) {
+      for (let j = 0; j < zs.length; j++) {
+        rebuildChunkTerrain(xs[i], zs[j]);
+      }
+    }
+  }
+
+  // ---- headbutt / block smashing ----
+  const debris = [];
+  const debrisGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
+  const debrisGrassMat = std(0x74a948, 1);
+  const debrisDirtMat = std(0x8b5a36, 1);
+
+  function spawnBlockDebris(bx, by, bz, grass) {
+    const cx = bx * BLOCK + BLOCK / 2;
+    const cy = by * BLOCK + BLOCK / 2;
+    const cz = bz * BLOCK + BLOCK / 2;
+
+    for (let i = 0; i < 8; i++) {
+      const mesh = new THREE.Mesh(debrisGeo, grass && i < 5 ? debrisGrassMat : debrisDirtMat);
+      mesh.position.set(cx + rand(-0.7, 0.7), cy + rand(-0.7, 0.7), cz + rand(-0.7, 0.7));
+      const scale = rand(0.6, 1.25);
+      mesh.scale.setScalar(scale);
+      mesh.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+      mesh.userData = {
+        baseScale: scale,
+        life: rand(0.55, 0.85),
+        vel: new THREE.Vector3(rand(-2.2, 2.2), rand(1.8, 4.8), rand(-2.2, 2.2)),
+        spin: new THREE.Vector3(rand(-8, 8), rand(-8, 8), rand(-8, 8))
+      };
+      scene.add(mesh);
+      debris.push(mesh);
+    }
+  }
+
+  function updateDebris(dt) {
+    for (let i = debris.length - 1; i >= 0; i--) {
+      const mesh = debris[i];
+      const u = mesh.userData;
+      u.vel.y -= 18 * dt;
+      mesh.position.addScaledVector(u.vel, dt);
+      mesh.rotation.x += u.spin.x * dt;
+      mesh.rotation.y += u.spin.y * dt;
+      mesh.rotation.z += u.spin.z * dt;
+      u.life -= dt;
+
+      if (u.life <= 0) {
+        scene.remove(mesh);
+        debris.splice(i, 1);
+      } else {
+        const k = clamp(u.life / 0.7, 0, 1);
+        mesh.scale.setScalar(u.baseScale * (0.35 + k * 0.65));
+      }
+    }
+  }
+
+  const HEADBUTT_CONTACT = 0.3;
+  const headSamplePoints = [
+    [0, -0.03, 0.55],   // muzzle / nose
+    [0, 0.16, 0.34],    // forehead
+    [0.095, 0.48, -0.36], // horn tips
+    [-0.095, 0.48, -0.36]
+  ];
+  const headSampleWorld = new THREE.Vector3();
+
+  function findHeadbuttTarget() {
+    headPivot.updateWorldMatrix(true, false);
+    let best = null;
+    let bestDist = HEADBUTT_CONTACT;
+
+    for (let i = 0; i < headSamplePoints.length; i++) {
+      const point = headSamplePoints[i];
+      headSampleWorld.set(point[0], point[1], point[2]);
+      headPivot.localToWorld(headSampleWorld);
+
+      const bx0 = Math.floor(headSampleWorld.x / BLOCK);
+      const by0 = Math.floor(headSampleWorld.y / BLOCK);
+      const bz0 = Math.floor(headSampleWorld.z / BLOCK);
+
+      for (let bx = bx0 - 1; bx <= bx0 + 1; bx++) {
+        for (let bz = bz0 - 1; bz <= bz0 + 1; bz++) {
+          for (let by = by0 - 1; by <= by0 + 1; by++) {
+            if (by < 0 || !isSolidBlock(bx, by, bz)) continue;
+            const qx = clamp(headSampleWorld.x, bx * BLOCK, bx * BLOCK + BLOCK);
+            const qy = clamp(headSampleWorld.y, by * BLOCK, by * BLOCK + BLOCK);
+            const qz = clamp(headSampleWorld.z, bz * BLOCK, bz * BLOCK + BLOCK);
+            const d = Math.hypot(headSampleWorld.x - qx, headSampleWorld.y - qy, headSampleWorld.z - qz);
+            if (d < bestDist) {
+              bestDist = d;
+              best = { bx: bx, by: by, bz: bz };
+            }
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function breakBlockInFront() {
+    const target = findHeadbuttTarget();
+    if (!target) return false;
+
+    const wasTop = target.by === heightBlocks(target.bx, target.bz) - 1;
+    removedBlocks.add(blockKey(target.bx, target.by, target.bz));
+    rebuildTerrainAround(target.bx, target.bz);
+    spawnBlockDebris(target.bx, target.by, target.bz, wasTop);
+    blockBreakSound();
+    return true;
   }
 
   // ---- clouds ----
@@ -1413,7 +1588,10 @@
     happy: 0,
     earTimer: 2.2,
     earTwitch: 0,
-    manualHold: 0
+    manualHold: 0,
+    headbutt: -1,
+    headbuttHit: false,
+    headbuttCooldown: 0
   };
 
   const GRAVITY = 26;
@@ -1577,6 +1755,17 @@
       }
     }
 
+    // ---- headbutt timing and impact ----
+    s.headbuttCooldown = Math.max(0, s.headbuttCooldown - dt);
+    let buttPose = 0;
+    let headbuttPending = false;
+    if (s.headbutt >= 0) {
+      s.headbutt += dt;
+      buttPose = Math.sin(clamp(s.headbutt / 0.34, 0, 1) * Math.PI);
+      if (!s.headbuttHit && s.headbutt >= 0.12) headbuttPending = true;
+      if (s.headbutt > 0.34) s.headbutt = -1;
+    }
+
     s.tuck = damp(s.tuck, s.grounded ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
     const stride = moving ? clamp(s.speed / 0.6, 0, 1) : 0;
@@ -1599,14 +1788,16 @@
 
     const bob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     rig.position.y = damp(rig.position.y, bob, 30, dt);
+    rig.position.z = buttPose * 0.18;
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
-    rig.rotation.x = damp(rig.rotation.x, jumpK > 0 ? -0.16 * jumpK : 0, 9, dt);
+    rig.rotation.x = damp(rig.rotation.x, (jumpK > 0 ? -0.16 * jumpK : 0) + buttPose * 0.08, 9, dt);
     rig.rotation.z = moving ? Math.sin(s.walkPhase) * 0.018 : 0;
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
-    if (!moving && s.grounded) {
+    if (s.headbutt >= 0) lookYaw = 0;
+    if (!moving && s.grounded && s.headbutt < 0) {
       const camLocal = goat.worldToLocal(camera.position.clone());
       lookYaw = clamp(Math.atan2(camLocal.x, camLocal.z), -0.6, 0.6) * 0.9;
     }
@@ -1614,7 +1805,14 @@
 
     const headBob = moving ? Math.sin(s.walkPhase * 2) * 0.05 : Math.sin(t * 1.25) * 0.022;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
-    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift, 10, dt);
+    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34, 10, dt);
+    neckPivot.rotation.x = 0.42 + buttPose * 0.55;
+
+    // Only smash the block the head or horns actually touch at the lunge.
+    if (headbuttPending) {
+      s.headbuttHit = true;
+      breakBlockInFront();
+    }
 
     s.earTimer -= dt;
     if (s.earTimer <= 0) {
@@ -1784,6 +1982,12 @@
       return;
     }
 
+    if (e.code === 'KeyE' || e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      if (!e.repeat) startHeadbutt();
+      return;
+    }
+
     const k = moveKey(e);
     if (!k) return;
     if (e.code.indexOf('Arrow') === 0) e.preventDefault();
@@ -1822,6 +2026,20 @@
 
   // ---------------------------------------------------------------- sound
   let audioCtx = null;
+
+  function unlockAudio() {
+    try {
+      if (!audioCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        audioCtx = new Ctx();
+      }
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    } catch (err) {
+      return null;
+    }
+  }
 
   function bleat() {
     try {
@@ -1879,6 +2097,48 @@
     } catch (err) { /* audio is a bonus, never fatal */ }
   }
 
+  function blockBreakSound() {
+    try {
+      const ctx = audioCtx;
+      if (!ctx) return;
+
+      const now = ctx.currentTime + 0.005;
+      const dur = 0.16;
+      const buffer = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * dur)), ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / data.length;
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.4);
+      }
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 800;
+      filter.Q.value = 0.7;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.08;
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(now);
+
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(95, now);
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.12);
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(0.0001, now);
+      og.gain.exponentialRampToValueAtTime(0.11, now + 0.01);
+      og.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+      osc.connect(og);
+      og.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } catch (err) { /* audio is a bonus */ }
+  }
+
   // ---------------------------------------------------------------- bubble
   const bubbleEl = document.getElementById('bubble');
   let bubbleTime = 0;
@@ -1921,6 +2181,16 @@
     lastInteract = performance.now();
   }
 
+  function startHeadbutt() {
+    if (state.headbuttCooldown > 0) return;
+    state.headbutt = 0;
+    state.headbuttHit = false;
+    state.headbuttCooldown = 0.55;
+    state.happy = Math.max(state.happy, 0.4);
+    lastInteract = performance.now();
+    unlockAudio();
+  }
+
   function greet() {
     jump();
     state.happy = 1;
@@ -1957,6 +2227,7 @@
     updateGoat(dt, elapsed);
     updateCamera(dt, elapsed);
     updateChunks();
+    updateDebris(dt);
     updateBubble(dt);
     updateClouds(dt, elapsed);
 

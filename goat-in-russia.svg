@@ -124,21 +124,70 @@
   <!-- birch trees -->
   <g>
     <ellipse cx="700" cy="482" rx="95" ry="11" fill="#c2d5e6" opacity=".5"/>
-    <!-- far tree -->
-    <path d="M 728 480 C 727 442 731 402 729 368 L 741 368 C 739 402 743 442 742 480 Z" fill="#f1eee4"/>
-    <path d="M 731 452 q 6 -3 9 1 M 730 428 q 6 2 9 -2 M 732 400 q 5 -3 8 0 M 731 380 q 5 2 8 -1" stroke="#41403c" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M 733 392 C 720 380 710 374 698 370" stroke="#52504a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    <path d="M 740 410 C 752 398 760 394 772 392" stroke="#52504a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    <!-- near tree -->
-    <path d="M 656 480 C 654 424 660 364 656 304 C 654 274 658 254 664 236 L 680 236 C 674 256 671 276 673 304 C 677 364 671 424 673 480 Z" fill="#f7f4ea"/>
-    <path d="M 660 446 q 8 -4 15 1 M 658 412 q 9 3 14 -2 M 663 378 q 7 -4 13 0 M 659 344 q 9 2 14 -3 M 664 308 q 7 -3 12 1 M 661 272 q 8 -3 13 2" stroke="#41403c" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M 660 306 C 636 290 620 284 604 282" stroke="#504e47" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M 674 326 C 696 312 712 308 728 308" stroke="#504e47" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <path d="M 664 256 C 650 240 640 232 626 226" stroke="#504e47" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    <path d="M 675 268 C 689 252 699 246 713 242" stroke="#504e47" stroke-width="3.5" fill="none" stroke-linecap="round"/>
-    <!-- edge tree -->
-    <path d="M 786 480 C 785 444 789 410 787 380 L 798 380 C 796 410 800 444 800 480 Z" fill="#e9e6dc"/>
-    <path d="M 789 446 q 4 -2 7 1 M 788 420 q 4 2 7 -1 M 789 396 q 4 -2 6 0" stroke="#41403c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+    <!-- far birch -->
+    <path d="M 729 482 C 728 440 733 402 730 364 C 728 336 733 310 741 288 C 746 274 750 262 754 250 L 758 251 C 754 264 750 278 745 292 C 738 314 736 338 739 364 C 742 402 737 440 738 482 Z" fill="#f2efe6"/>
+    <path d="M 732 458 q 5 -2 8 1 M 731 434 q 5 2 8 -1 M 733 410 q 4 -2 7 0 M 732 386 q 5 2 8 -1 M 734 362 q 4 -2 7 1 M 735 338 q 4 2 7 -1 M 738 314 q 4 -2 6 0 M 741 294 q 4 2 6 -1" stroke="#3f3e3a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <g fill="none" stroke="#57554d" stroke-linecap="round">
+      <path d="M 733 350 C 718 340 706 336 692 336" stroke-width="3"/>
+      <path d="M 738 326 C 752 316 764 312 776 314" stroke-width="3"/>
+      <path d="M 740 300 C 728 292 718 288 708 288" stroke-width="2.6"/>
+      <path d="M 748 276 C 758 268 768 264 778 264" stroke-width="2.6"/>
+      <path d="M 754 254 C 750 244 744 236 738 232" stroke-width="2.4"/>
+      <path d="M 754 254 C 758 246 762 240 768 236" stroke-width="2.4"/>
+      <path d="M 692 336 C 686 328 681 324 675 322 M 700 337 C 697 328 693 322 688 317" stroke-width="1.6" stroke="#66645c"/>
+      <path d="M 776 314 C 782 305 787 300 793 296 M 768 313 C 770 322 774 328 779 332" stroke-width="1.6" stroke="#66645c"/>
+      <path d="M 708 288 C 702 280 697 276 691 273 M 716 289 C 714 280 711 274 707 269" stroke-width="1.6" stroke="#66645c"/>
+      <path d="M 778 264 C 784 256 789 252 795 249 M 770 264 C 772 272 776 278 781 282" stroke-width="1.6" stroke="#66645c"/>
+      <path d="M 738 232 C 733 226 729 222 724 219 M 738 232 C 737 224 737 218 738 212" stroke-width="1.5" stroke="#66645c"/>
+      <path d="M 768 236 C 772 230 776 226 781 223 M 768 236 C 769 228 770 222 772 217" stroke-width="1.5" stroke="#66645c"/>
+      <path d="M 776 314 C 781 323 783 332 783 340 M 708 288 C 704 297 703 305 704 312 M 692 336 C 698 344 701 352 702 360" stroke-width="1.4" opacity=".85"/>
+    </g>
+
+    <!-- near birch -->
+    <path d="M 648 482 C 647 430 651 385 649 345 C 647 300 652 255 663 214 C 670 188 677 166 683 148 L 687 149 C 682 170 676 192 669 217 C 659 257 658 300 661 344 C 664 386 663 430 665 482 Z" fill="#f7f4ea"/>
+    <path d="M 650 458 q 7 -3 12 1 M 649 430 q 7 2 12 -2 M 650 402 q 6 -3 11 0 M 650 376 q 7 2 11 -1 M 650 350 q 6 -2 11 1 M 651 324 q 6 2 11 -2 M 653 298 q 6 -2 10 1 M 655 272 q 6 2 10 -1 M 659 247 q 5 -2 9 1 M 662 224 q 5 2 8 -1 M 666 202 q 4 -1 7 1 M 670 184 q 4 1 7 -1" stroke="#3f3e3a" stroke-width="3.2" fill="none" stroke-linecap="round" opacity=".9"/>
+    <g fill="none" stroke="#55534b" stroke-linecap="round">
+      <path d="M 651 332 C 630 320 612 316 594 318" stroke-width="4"/>
+      <path d="M 660 352 C 680 346 700 344 716 348" stroke-width="3.6"/>
+      <path d="M 658 314 C 678 304 698 300 716 304" stroke-width="3.6"/>
+      <path d="M 657 268 C 640 254 624 248 608 248" stroke-width="3.4"/>
+      <path d="M 664 238 C 680 226 694 220 708 218" stroke-width="3.2"/>
+      <path d="M 673 212 C 662 198 652 190 640 186" stroke-width="3"/>
+      <path d="M 676 194 C 686 184 694 178 704 174" stroke-width="2.8"/>
+      <path d="M 680 158 C 674 150 668 144 662 140" stroke-width="2.6"/>
+      <path d="M 683 150 C 680 138 676 130 670 124" stroke-width="2.6"/>
+      <path d="M 683 150 C 686 140 690 134 696 128" stroke-width="2.6"/>
+    </g>
+    <g fill="none" stroke="#63615a" stroke-linecap="round">
+      <path d="M 594 318 C 588 311 584 308 580 306 M 594 318 C 590 328 584 334 576 338 M 606 316 C 600 306 596 300 590 294" stroke-width="1.8"/>
+      <path d="M 716 348 C 724 340 730 334 736 326 M 716 348 C 720 358 726 364 734 368 M 700 345 C 706 336 711 331 717 326" stroke-width="1.7"/>
+      <path d="M 716 304 C 726 294 732 290 739 286 M 716 304 C 720 314 726 320 733 324 M 702 301 C 706 292 711 287 716 282" stroke-width="1.7"/>
+      <path d="M 608 248 C 600 238 594 234 586 231 M 608 248 C 606 258 601 264 594 268 M 620 248 C 618 238 615 231 610 225" stroke-width="1.7"/>
+      <path d="M 708 218 C 716 210 721 206 728 203 M 708 218 C 710 226 714 232 720 236" stroke-width="1.6"/>
+      <path d="M 640 186 C 634 178 629 174 623 171 M 640 186 C 639 194 640 200 642 206" stroke-width="1.6"/>
+      <path d="M 704 174 C 709 166 713 162 719 159 M 704 174 C 704 182 706 188 709 194" stroke-width="1.5"/>
+      <path d="M 662 140 C 656 134 651 130 645 128 M 662 140 C 661 132 662 126 663 120" stroke-width="1.5"/>
+      <path d="M 670 124 C 666 118 662 114 658 112 M 670 124 C 672 116 676 110 682 106" stroke-width="1.5"/>
+      <path d="M 696 128 C 700 122 706 118 712 116 M 696 128 C 694 120 692 114 690 108" stroke-width="1.5"/>
+      <path d="M 716 348 C 722 358 726 368 727 378 M 716 304 C 722 312 725 321 726 331 M 608 248 C 604 258 602 268 602 278 M 594 318 C 601 326 605 334 607 342 M 704 174 C 708 183 710 192 710 201 M 640 186 C 636 195 634 204 634 212" stroke-width="1.4" opacity=".85"/>
+    </g>
+
+    <!-- edge birch -->
+    <path d="M 784 482 C 783 446 788 412 785 380 C 783 358 788 338 794 320 L 798 321 C 792 342 790 362 791 382 C 793 414 789 446 790 482 Z" fill="#e9e6dc"/>
+    <path d="M 786 458 q 4 -2 7 1 M 786 432 q 4 2 7 -1 M 787 406 q 4 -2 6 0 M 786 380 q 4 2 7 -1 M 788 354 q 4 -2 6 1 M 790 332 q 4 1 6 0" stroke="#3f3e3a" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    <g fill="none" stroke="#57554d" stroke-linecap="round">
+      <path d="M 786 418 C 774 410 764 408 754 410" stroke-width="2.6"/>
+      <path d="M 787 390 C 776 382 768 380 758 382" stroke-width="2.4"/>
+      <path d="M 790 358 C 780 350 774 348 766 350" stroke-width="2.3"/>
+      <path d="M 793 334 C 786 326 780 324 774 326" stroke-width="2.2"/>
+      <path d="M 795 324 C 792 314 788 308 782 304" stroke-width="2.2"/>
+      <path d="M 754 410 C 748 402 743 398 737 396 M 762 409 C 760 418 756 424 751 428" stroke-width="1.5" stroke="#66645c"/>
+      <path d="M 758 382 C 752 374 747 370 741 368" stroke-width="1.5" stroke="#66645c"/>
+      <path d="M 766 350 C 760 342 755 338 749 336" stroke-width="1.5" stroke="#66645c"/>
+      <path d="M 782 304 C 778 296 774 292 769 290 M 782 304 C 784 296 786 290 789 286" stroke-width="1.4" stroke="#66645c"/>
+      <path d="M 754 410 C 760 418 763 426 764 434 M 758 382 C 764 390 767 398 768 406 M 766 350 C 772 358 775 366 776 374" stroke-width="1.3" opacity=".85"/>
+    </g>
   </g>
 
   <!-- snow ground -->
@@ -275,6 +324,7 @@
         <path d="M 520 328 C 533 334 541 349 538 365 C 536 377 530 383 525 376 C 519 365 513 346 514 331 C 516 329 518 328 520 328 Z" fill="#e7dac1"/>
         <path d="M 521 338 C 528 348 530 360 527 371" stroke="#d4c4a7" stroke-width="1.7" fill="none" stroke-linecap="round"/>
         <path d="M 531 340 C 535 350 534 360 531 368" stroke="#d4c4a7" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+        <path d="M 526 371 q -2 6 -6 9 M 530 367 q 0 7 -2 11 M 522 371 q -4 4 -8 6" stroke="#d9cbb0" stroke-width="1.6" fill="none" stroke-linecap="round"/>
       </g>
 
       <!-- floppy ear -->

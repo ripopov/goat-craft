@@ -1,0 +1,324 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="background:#0b1830" role="img" aria-labelledby="svgTitle svgDesc">
+  <title id="svgTitle">Goat in Russia</title>
+  <desc id="svgDesc">An animated winter scene: a cheerful goat in an ushanka hat and a red scarf stands in the snow, with onion-domed churches and birch trees behind it and snow falling.</desc>
+
+  <style>
+    .goat, .head, .ear, .tail, .beard, .scarf-tail, .eye, .puff, .snow, .twinkle, .wind, .glow, .sparkle { transform-box: view-box; }
+    .eye, .puff { transform-box: fill-box; }
+
+    .goat { animation: bob 3.6s ease-in-out infinite; }
+    @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+
+    .head { transform-origin: 492px 334px; animation: nod 4.4s ease-in-out infinite; }
+    @keyframes nod { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(2deg); } }
+
+    .ear { transform-origin: 470px 290px; animation: earflick 7s ease-in-out infinite; }
+    @keyframes earflick { 0%,84%,100% { transform: rotate(0deg); } 88% { transform: rotate(-14deg); } 92% { transform: rotate(6deg); } }
+
+    .tail { transform-origin: 310px 352px; animation: wag 1.5s ease-in-out infinite; }
+    @keyframes wag { 0%,100% { transform: rotate(-9deg); } 50% { transform: rotate(9deg); } }
+
+    .beard { transform-origin: 528px 332px; animation: beardsway 3s ease-in-out infinite; }
+    @keyframes beardsway { 0%,100% { transform: rotate(-2deg); } 50% { transform: rotate(3deg); } }
+
+    .scarf-tail { transform-origin: 470px 332px; animation: flutter 2.6s ease-in-out infinite; }
+    .tail-b { animation-delay: -1.2s; animation-duration: 2.2s; }
+    @keyframes flutter { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-4deg); } }
+
+    .eye { transform-origin: center; animation: blink 5.8s infinite; }
+    @keyframes blink { 0%,92%,100% { transform: scaleY(1); } 94.5% { transform: scaleY(.1); } 97% { transform: scaleY(1); } }
+
+    .puff { transform-origin: center; animation: puff 4.8s ease-out infinite; }
+    .p2 { animation-delay: -1.6s; }
+    .p3 { animation-delay: -3.2s; }
+    @keyframes puff { 0% { transform: translate(0,0) scale(.25); opacity: 0; } 12% { opacity: .55; } 70% { opacity: .22; } 100% { transform: translate(80px,-46px) scale(1.8); opacity: 0; } }
+
+    .snow { animation-name: snowfall; animation-timing-function: linear; animation-iteration-count: infinite; }
+    @keyframes snowfall { 0% { transform: translate(0,-40px); opacity: 0; } 8% { opacity: .95; } 85% { opacity: .9; } 100% { transform: translate(-80px, 640px); opacity: 0; } }
+
+    .twinkle { animation: twinkle 3.6s ease-in-out infinite; }
+    @keyframes twinkle { 0%,100% { opacity: .2; } 50% { opacity: .95; } }
+
+    .wind { animation-name: windmove; animation-timing-function: linear; animation-iteration-count: infinite; opacity: 0; }
+    @keyframes windmove { 0% { transform: translateX(0); opacity: 0; } 15% { opacity: .4; } 80% { opacity: .25; } 100% { transform: translateX(-960px); opacity: 0; } }
+
+    .glow { transform-origin: 630px 310px; animation: glow 8s ease-in-out infinite; }
+    @keyframes glow { 0%,100% { transform: scale(1); opacity: .75; } 50% { transform: scale(1.06); opacity: 1; } }
+
+    .sparkle { animation: shimmer 3.4s ease-in-out infinite; }
+    @keyframes shimmer { 0%,100% { opacity: .12; } 50% { opacity: .85; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .goat,.head,.ear,.tail,.beard,.scarf-tail,.eye,.puff,.snow,.twinkle,.wind,.glow,.sparkle { animation: none !important; }
+      .snow, .wind, .puff { opacity: 0; }
+      .twinkle { opacity: .7; }
+    }
+  </style>
+
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#081428"/>
+      <stop offset=".4" stop-color="#223f63"/>
+      <stop offset=".68" stop-color="#6b708c"/>
+      <stop offset=".86" stop-color="#c98f7e"/>
+      <stop offset="1" stop-color="#efc49a"/>
+    </linearGradient>
+    <radialGradient id="sunGlow">
+      <stop offset="0" stop-color="#ffe3af" stop-opacity=".9"/>
+      <stop offset=".45" stop-color="#ffc98a" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#ffb877" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf8ec"/>
+      <stop offset=".65" stop-color="#f0e7d4"/>
+      <stop offset="1" stop-color="#dccfb7"/>
+    </linearGradient>
+  </defs>
+
+  <!-- sky -->
+  <rect width="800" height="600" fill="url(#sky)"/>
+
+  <!-- stars -->
+  <g fill="#ffffff">
+    <circle class="twinkle" cx="80" cy="52" r="2" style="animation-delay:-.4s"/>
+    <circle class="twinkle" cx="150" cy="92" r="1.6" style="animation-delay:-1.8s"/>
+    <circle class="twinkle" cx="232" cy="42" r="2.2" style="animation-delay:-2.7s"/>
+    <circle class="twinkle" cx="300" cy="112" r="1.5" style="animation-delay:-.9s"/>
+    <circle class="twinkle" cx="372" cy="58" r="2" style="animation-delay:-2.2s"/>
+    <circle class="twinkle" cx="452" cy="122" r="1.7" style="animation-delay:-1.2s"/>
+    <circle class="twinkle" cx="522" cy="48" r="2.1" style="animation-delay:-3.1s"/>
+    <circle class="twinkle" cx="602" cy="88" r="1.5" style="animation-delay:-.6s"/>
+    <circle class="twinkle" cx="712" cy="40" r="2" style="animation-delay:-2.4s"/>
+    <circle class="twinkle" cx="762" cy="112" r="1.6" style="animation-delay:-1.5s"/>
+    <circle class="twinkle" cx="40" cy="142" r="1.8" style="animation-delay:-3.5s"/>
+    <circle class="twinkle" cx="282" cy="152" r="1.5" style="animation-delay:-2s"/>
+  </g>
+
+  <!-- low winter sun -->
+  <circle class="glow" cx="630" cy="310" r="150" fill="url(#sunGlow)"/>
+  <circle cx="630" cy="310" r="46" fill="#ffe7bd" opacity=".95"/>
+
+  <!-- distant hills -->
+  <path d="M 0 428 Q 110 392 230 420 T 470 412 T 700 402 T 800 414 L 800 470 L 0 470 Z" fill="#7d90a9" opacity=".55"/>
+
+  <!-- onion domes -->
+  <g fill="#1b2b45" opacity=".92">
+    <!-- small left dome -->
+    <path d="M 8 464 L 8 426 C 8 411 21 408 24 393 C 27 378 31 371 42 356 C 53 371 57 378 60 393 C 63 408 76 411 76 426 L 76 464 Z"/>
+    <path d="M 42 356 L 42 336 M 33 346 L 51 346" stroke="#1b2b45" stroke-width="5" fill="none" stroke-linecap="round"/>
+    <!-- large center dome -->
+    <path d="M 62 464 L 62 412 C 62 390 84 385 88 362 C 92 338 100 330 120 300 C 140 330 148 338 152 362 C 156 385 178 390 178 412 L 178 464 Z"/>
+    <path d="M 120 300 L 120 272 M 109 286 L 131 286" stroke="#1b2b45" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <!-- medium right dome -->
+    <path d="M 218 464 L 218 430 C 218 416 231 413 234 398 C 237 383 241 376 251 364 C 261 376 265 383 268 398 C 271 413 284 416 284 430 L 284 464 Z"/>
+    <path d="M 251 364 L 251 346 M 243 355 L 259 355" stroke="#1b2b45" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- warm windows -->
+  <g fill="#ffcf87" opacity=".85">
+    <rect x="94" y="418" width="13" height="20" rx="6"/>
+    <rect x="133" y="418" width="13" height="20" rx="6"/>
+    <rect x="34" y="430" width="9" height="14" rx="4"/>
+    <rect x="243" y="426" width="10" height="15" rx="4"/>
+  </g>
+
+  <!-- birch trees -->
+  <g>
+    <ellipse cx="700" cy="482" rx="95" ry="11" fill="#c2d5e6" opacity=".5"/>
+    <!-- far tree -->
+    <path d="M 728 480 C 727 442 731 402 729 368 L 741 368 C 739 402 743 442 742 480 Z" fill="#f1eee4"/>
+    <path d="M 731 452 q 6 -3 9 1 M 730 428 q 6 2 9 -2 M 732 400 q 5 -3 8 0 M 731 380 q 5 2 8 -1" stroke="#41403c" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M 733 392 C 720 380 710 374 698 370" stroke="#52504a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path d="M 740 410 C 752 398 760 394 772 392" stroke="#52504a" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <!-- near tree -->
+    <path d="M 656 480 C 654 424 660 364 656 304 C 654 274 658 254 664 236 L 680 236 C 674 256 671 276 673 304 C 677 364 671 424 673 480 Z" fill="#f7f4ea"/>
+    <path d="M 660 446 q 8 -4 15 1 M 658 412 q 9 3 14 -2 M 663 378 q 7 -4 13 0 M 659 344 q 9 2 14 -3 M 664 308 q 7 -3 12 1 M 661 272 q 8 -3 13 2" stroke="#41403c" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M 660 306 C 636 290 620 284 604 282" stroke="#504e47" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M 674 326 C 696 312 712 308 728 308" stroke="#504e47" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M 664 256 C 650 240 640 232 626 226" stroke="#504e47" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <path d="M 675 268 C 689 252 699 246 713 242" stroke="#504e47" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+    <!-- edge tree -->
+    <path d="M 786 480 C 785 444 789 410 787 380 L 798 380 C 796 410 800 444 800 480 Z" fill="#e9e6dc"/>
+    <path d="M 789 446 q 4 -2 7 1 M 788 420 q 4 2 7 -1 M 789 396 q 4 -2 6 0" stroke="#41403c" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- snow ground -->
+  <path d="M 0 462 Q 90 448 180 458 T 360 456 T 540 462 T 720 452 T 800 458 L 800 600 L 0 600 Z" fill="#dfeaf5"/>
+  <path d="M 0 490 Q 110 470 230 484 T 470 480 T 700 490 T 800 482 L 800 600 L 0 600 Z" fill="#eef5fc"/>
+  <path d="M 0 530 Q 140 512 300 526 T 560 522 T 800 534 L 800 600 L 0 600 Z" fill="#f9fcff"/>
+
+  <!-- footprints -->
+  <g fill="#c6d9ea" opacity=".85">
+    <ellipse cx="248" cy="505" rx="9" ry="5" transform="rotate(-12 248 505)"/>
+    <ellipse cx="232" cy="516" rx="9" ry="5" transform="rotate(-12 232 516)"/>
+    <ellipse cx="208" cy="511" rx="8" ry="4.5" transform="rotate(-12 208 511)"/>
+    <ellipse cx="192" cy="522" rx="8" ry="4.5" transform="rotate(-12 192 522)"/>
+  </g>
+
+  <!-- snow sparkles -->
+  <g fill="#ffffff">
+    <path class="sparkle" d="M 140 540 q 3 5 8 8 q -5 3 -8 8 q -3 -5 -8 -8 q 5 -3 8 -8 Z" style="animation-delay:-.7s"/>
+    <path class="sparkle" d="M 340 562 q 2 4 6 6 q -4 2 -6 6 q -2 -4 -6 -6 q 4 -2 6 -6 Z" style="animation-delay:-2.1s"/>
+    <path class="sparkle" d="M 590 546 q 2.5 4 6.5 6.5 q -4 2.5 -6.5 6.5 q -2.5 -4 -6.5 -6.5 q 4 -2.5 6.5 -6.5 Z" style="animation-delay:-1.4s"/>
+  </g>
+
+  <!-- background snow -->
+  <g fill="#ffffff">
+    <g class="snow" style="animation-duration:10s;animation-delay:-3s"><circle cx="40" cy="0" r="2.4"/></g>
+    <g class="snow" style="animation-duration:12s;animation-delay:-7s"><circle cx="95" cy="0" r="3"/></g>
+    <g class="snow" style="animation-duration:8s;animation-delay:-1s"><circle cx="130" cy="0" r="2"/></g>
+    <g class="snow" style="animation-duration:11s;animation-delay:-5s"><circle cx="175" cy="0" r="3.4"/></g>
+    <g class="snow" style="animation-duration:9s;animation-delay:-2s"><circle cx="225" cy="0" r="2.2"/></g>
+    <g class="snow" style="animation-duration:13s;animation-delay:-9s"><circle cx="270" cy="0" r="2.8"/></g>
+    <g class="snow" style="animation-duration:7.5s;animation-delay:-4s"><circle cx="315" cy="0" r="2"/></g>
+    <g class="snow" style="animation-duration:11.5s;animation-delay:-6s"><circle cx="355" cy="0" r="3.2"/></g>
+    <g class="snow" style="animation-duration:9.5s;animation-delay:-1.5s"><circle cx="405" cy="0" r="2.4"/></g>
+    <g class="snow" style="animation-duration:12.5s;animation-delay:-8s"><circle cx="450" cy="0" r="2.8"/></g>
+    <g class="snow" style="animation-duration:8.5s;animation-delay:-3.5s"><circle cx="495" cy="0" r="2"/></g>
+    <g class="snow" style="animation-duration:10.5s;animation-delay:-5.5s"><circle cx="540" cy="0" r="3"/></g>
+    <g class="snow" style="animation-duration:9s;animation-delay:-2.5s"><circle cx="585" cy="0" r="2.2"/></g>
+    <g class="snow" style="animation-duration:12s;animation-delay:-7.5s"><circle cx="625" cy="0" r="3.4"/></g>
+    <g class="snow" style="animation-duration:10s;animation-delay:-4.5s"><circle cx="675" cy="0" r="2.6"/></g>
+    <g class="snow" style="animation-duration:8.5s;animation-delay:-1.8s"><circle cx="720" cy="0" r="2.2"/></g>
+    <g class="snow" style="animation-duration:11s;animation-delay:-6.5s"><circle cx="765" cy="0" r="3"/></g>
+    <g class="snow" style="animation-duration:9.5s;animation-delay:-5s"><circle cx="25" cy="0" r="2"/></g>
+    <g class="snow" style="animation-duration:11s;animation-delay:-8.5s"><circle cx="200" cy="0" r="2.6"/></g>
+    <g class="snow" style="animation-duration:8s;animation-delay:-3.2s"><circle cx="370" cy="0" r="2.2"/></g>
+    <g class="snow" style="animation-duration:10s;animation-delay:-6.2s"><circle cx="520" cy="0" r="2.8"/></g>
+    <g class="snow" style="animation-duration:9s;animation-delay:-2.8s"><circle cx="700" cy="0" r="2.4"/></g>
+  </g>
+
+  <!-- goat shadow -->
+  <ellipse cx="405" cy="482" rx="125" ry="16" fill="#b9cfe2" opacity=".55"/>
+
+  <g class="goat">
+    <!-- far legs -->
+    <rect x="328" y="386" width="22" height="90" rx="11" fill="#d5cab6"/>
+    <rect x="325" y="452" width="28" height="26" rx="9" fill="#43352a"/>
+    <rect x="428" y="389" width="22" height="87" rx="11" fill="#d5cab6"/>
+    <rect x="425" y="452" width="28" height="26" rx="9" fill="#43352a"/>
+
+    <!-- tail -->
+    <g class="tail">
+      <path d="M 310 346 C 298 338 290 327 292 316" stroke="#eadfca" stroke-width="15" fill="none" stroke-linecap="round"/>
+      <ellipse cx="293" cy="311" rx="11" ry="14" transform="rotate(-20 293 311)" fill="#f7f1e3"/>
+      <path d="M 289 304 q 6 -3 9 2" stroke="#e0d4bc" stroke-width="2" fill="none" stroke-linecap="round"/>
+    </g>
+
+    <!-- body -->
+    <ellipse cx="400" cy="362" rx="95" ry="55" fill="url(#bodyGrad)"/>
+    <ellipse cx="396" cy="382" rx="70" ry="30" fill="#e6dcc8" opacity=".8"/>
+    <path d="M 336 340 q 9 7 18 1 M 356 326 q 9 7 18 1 M 434 334 q 9 7 18 1 M 414 320 q 9 7 18 1" stroke="#dbd0ba" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <ellipse cx="366" cy="312" rx="30" ry="7" fill="#ffffff" opacity=".75" transform="rotate(-4 366 312)"/>
+    <ellipse cx="432" cy="311" rx="14" ry="5" fill="#ffffff" opacity=".6" transform="rotate(-4 432 311)"/>
+
+    <!-- near legs -->
+    <rect x="350" y="390" width="24" height="86" rx="12" fill="#eae2d1"/>
+    <rect x="347" y="452" width="30" height="26" rx="9" fill="#4a382b"/>
+    <path d="M 362 470 v 7" stroke="#2e231b" stroke-width="2" stroke-linecap="round"/>
+    <rect x="448" y="392" width="24" height="84" rx="12" fill="#efe7d6"/>
+    <rect x="445" y="452" width="30" height="26" rx="9" fill="#4a382b"/>
+    <path d="M 460 470 v 7" stroke="#2e231b" stroke-width="2" stroke-linecap="round"/>
+
+    <!-- neck -->
+    <path d="M 452 340 C 458 316 478 298 498 288 L 520 318 C 502 338 486 358 474 378 Z" fill="#f6efe0"/>
+
+    <!-- scarf tails -->
+    <g class="scarf-tail tail-a">
+      <path d="M 468 336 C 438 324 412 314 384 310 C 358 307 338 298 322 290 C 334 304 354 314 376 316 C 406 322 438 336 468 352 Z" fill="#d64040"/>
+      <path d="M 462 338 C 436 326 412 318 388 314" stroke="#ef6a6a" stroke-width="3.5" fill="none" opacity=".7" stroke-linecap="round"/>
+      <path d="M 348 300 q 16 8 32 12" stroke="#f3b9b9" stroke-width="3.5" fill="none" opacity=".75" stroke-linecap="round"/>
+      <path d="M 328 292 l -9 -3 M 330 297 l -10 0 M 334 302 l -9 4" stroke="#d64040" stroke-width="3" stroke-linecap="round"/>
+    </g>
+    <g class="scarf-tail tail-b">
+      <path d="M 468 344 C 442 336 420 334 400 328 C 418 320 444 316 468 326 Z" fill="#e05252"/>
+      <path d="M 406 328 l -8 -2 M 407 324 l -8 1 M 408 320 l -7 3" stroke="#e05252" stroke-width="2.6" stroke-linecap="round"/>
+    </g>
+
+    <!-- scarf wrap -->
+    <g transform="rotate(-22 487 334)">
+      <ellipse cx="487" cy="334" rx="33" ry="12" fill="#d64040"/>
+      <path d="M 458 330 Q 487 319 516 330" stroke="#e96666" stroke-width="3" fill="none" opacity=".8"/>
+      <path d="M 461 341 Q 487 350 513 339" stroke="#b02f34" stroke-width="3" fill="none" opacity=".7"/>
+    </g>
+    <circle cx="459" cy="343" r="7" fill="#c93236"/>
+    <path d="M 455 340 q 4 -3 8 0" stroke="#e96666" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+    <!-- head -->
+    <g class="head">
+      <!-- horns -->
+      <path d="M 530 266 C 552 252 566 234 566 206 C 558 226 546 242 522 256 Z" fill="#c0ac8a"/>
+      <path d="M 563 213 C 555 231 545 245 527 256" stroke="#a08c6b" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+      <path d="M 484 262 C 464 248 450 230 450 204 C 458 224 470 240 492 254 Z" fill="#b29d7b"/>
+      <path d="M 453 211 C 460 229 470 243 487 254" stroke="#95815f" stroke-width="3" fill="none" stroke-linecap="round" opacity=".7"/>
+
+      <!-- head shape -->
+      <ellipse cx="506" cy="298" rx="45" ry="38" fill="#f8f2e6"/>
+      <ellipse cx="492" cy="312" rx="28" ry="18" fill="#eee5d2" opacity=".65"/>
+
+      <!-- snout -->
+      <ellipse cx="546" cy="313" rx="27" ry="21" fill="#fcf8ef"/>
+      <ellipse cx="530" cy="305" rx="8" ry="5" fill="#e9b7a8" opacity=".4"/>
+      <ellipse cx="558" cy="306" rx="3.2" ry="4.5" transform="rotate(-15 558 306)" fill="#6d5648"/>
+      <ellipse cx="566" cy="308" rx="3" ry="4" transform="rotate(-15 566 308)" fill="#6d5648"/>
+      <path d="M 550 321 Q 558 327 566 320" stroke="#8a6e5c" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+
+      <!-- goat eye with horizontal pupil -->
+      <path d="M 511 279 q 8 -5 15 -1" stroke="#7c6a58" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <g class="eye">
+        <ellipse cx="521" cy="290" rx="7.4" ry="7.2" fill="#fdf8ec" stroke="#d3c2a9" stroke-width="1.2"/>
+        <rect x="516.2" y="287.4" width="9.8" height="5.2" rx="2.6" fill="#3b2e26"/>
+        <circle cx="523.6" cy="288.2" r="1.5" fill="#ffffff"/>
+      </g>
+
+      <!-- beard -->
+      <g class="beard">
+        <path d="M 520 328 C 533 334 541 349 538 365 C 536 377 530 383 525 376 C 519 365 513 346 514 331 C 516 329 518 328 520 328 Z" fill="#e7dac1"/>
+        <path d="M 521 338 C 528 348 530 360 527 371" stroke="#d4c4a7" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+        <path d="M 531 340 C 535 350 534 360 531 368" stroke="#d4c4a7" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+      </g>
+
+      <!-- floppy ear -->
+      <g class="ear">
+        <g transform="rotate(14 474 294)">
+          <path d="M 470 287 C 453 289 440 303 438 319 C 437 333 444 341 453 337 C 464 331 471 311 472 296 C 472 292 471 289 470 287 Z" fill="#efe6d4"/>
+          <path d="M 464 299 C 453 303 446 313 445 324 C 444 332 448 335 452 332 C 459 327 464 311 465 301 Z" fill="#dfb9ab"/>
+        </g>
+      </g>
+
+      <!-- ushanka hat -->
+      <path d="M 470 268 C 462 277 461 287 466 294 C 475 291 480 280 480 272 Z" fill="#a33538"/>
+      <path d="M 544 268 C 552 277 553 287 548 294 C 539 291 534 280 534 272 Z" fill="#a33538"/>
+      <path d="M 468 274 C 468 238 484 222 507 219 C 530 222 546 238 546 274 Z" fill="#b23c3f"/>
+      <path d="M 473 262 q 34 -9 68 0" stroke="#8f2c30" stroke-width="3" fill="none" opacity=".5"/>
+      <path d="M 464 266 Q 507 252 550 266 Q 553 276 542 278 Q 507 267 472 278 Q 461 276 464 266 Z" fill="#f4ecdb"/>
+      <ellipse cx="467" cy="293" rx="8" ry="4.5" fill="#f4ecdb" transform="rotate(-20 467 293)"/>
+      <ellipse cx="547" cy="293" rx="8" ry="4.5" fill="#f4ecdb" transform="rotate(20 547 293)"/>
+      <path d="M 476 272 q 6 4 12 1 M 500 268 q 6 5 12 1 M 524 270 q 6 4 12 1" stroke="#ded1b9" stroke-width="2" fill="none" stroke-linecap="round" opacity=".8"/>
+      <ellipse cx="500" cy="223" rx="17" ry="6" fill="#ffffff" opacity=".9"/>
+      <ellipse cx="534" cy="240" rx="7" ry="4" fill="#ffffff" opacity=".8" transform="rotate(-22 534 240)"/>
+    </g>
+
+    <!-- cold breath -->
+    <g fill="#ffffff">
+      <circle class="puff p1" cx="574" cy="302" r="7" opacity="0"/>
+      <circle class="puff p2" cx="574" cy="302" r="6" opacity="0"/>
+      <circle class="puff p3" cx="574" cy="302" r="5" opacity="0"/>
+    </g>
+  </g>
+
+  <!-- foreground snow -->
+  <g fill="#ffffff">
+    <g class="snow" style="animation-duration:6.5s;animation-delay:-2s"><circle cx="70" cy="0" r="5.5"/></g>
+    <g class="snow" style="animation-duration:7.5s;animation-delay:-5s"><circle cx="250" cy="0" r="6"/></g>
+    <g class="snow" style="animation-duration:6s;animation-delay:-1s"><circle cx="430" cy="0" r="5"/></g>
+    <g class="snow" style="animation-duration:8s;animation-delay:-3.5s"><circle cx="600" cy="0" r="7"/></g>
+    <g class="snow" style="animation-duration:7s;animation-delay:-4.5s"><circle cx="740" cy="0" r="5.5"/></g>
+    <g class="snow" style="animation-duration:6.8s;animation-delay:-4s"><circle cx="150" cy="0" r="4.5"/></g>
+  </g>
+
+  <!-- drifting wind -->
+  <g stroke="#dce9ff" stroke-width="2" fill="none" stroke-linecap="round">
+    <g class="wind" style="animation-duration:8s;animation-delay:-4s"><path d="M 820 424 q -70 6 -140 0"/></g>
+    <g class="wind" style="animation-duration:9s;animation-delay:-1s"><path d="M 780 372 q -60 5 -120 0"/></g>
+  </g>
+</svg>

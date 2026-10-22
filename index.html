@@ -192,7 +192,7 @@
 </style>
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow. Use W A S D to walk, space to jump, E to headbutt and break blocks, and drag to orbit the camera."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow. Use W A S D to walk, hold Shift to gallop, space to jump, E to headbutt and break blocks, and drag to orbit the camera."></canvas>
   <div id="sun"></div>
   <div id="vignette"></div>
 
@@ -203,7 +203,7 @@
   </header>
 
   <div id="bubble" aria-hidden="true">maa!</div>
-  <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>space</b> jump ×3 &nbsp;·&nbsp; <b>E</b> headbutt &nbsp;·&nbsp; <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom &nbsp;·&nbsp; <b>click</b> goat</div>
+  <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>shift</b> gallop &nbsp;·&nbsp; <b>space</b> jump ×3 &nbsp;·&nbsp; <b>E</b> headbutt &nbsp;·&nbsp; <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom &nbsp;·&nbsp; <b>click</b> goat</div>
   <button id="hi" type="button"><span></span>Say hi</button>
 
   <div id="error" role="alert"></div>
@@ -1514,7 +1514,7 @@
 
   // legs
   const legs = [];
-  function makeLeg(x, z, front, offset) {
+  function makeLeg(x, z, front, offset, runOffset) {
     const hip = new THREE.Group();
     hip.position.set(x, 0.98, z);
     rig.add(hip);
@@ -1551,12 +1551,12 @@
     hoof.receiveShadow = true;
     knee.add(hoof);
 
-    legs.push({ hip: hip, knee: knee, front: front, offset: offset });
+    legs.push({ hip: hip, knee: knee, front: front, offset: offset, runOffset: runOffset });
   }
-  makeLeg(-0.23, 0.42, true, 0);
-  makeLeg(0.23, 0.42, true, Math.PI);
-  makeLeg(-0.25, -0.45, false, Math.PI);
-  makeLeg(0.25, -0.45, false, 0);
+  makeLeg(-0.23, 0.42, true, 0, Math.PI);
+  makeLeg(0.23, 0.42, true, Math.PI, Math.PI * 1.5);
+  makeLeg(-0.25, -0.45, false, Math.PI, 0);
+  makeLeg(0.25, -0.45, false, 0, Math.PI * 0.5);
 
   // forgiving click target
   const hitTarget = new THREE.Mesh(
@@ -1581,6 +1581,8 @@
     yaw: goatYaw,
     speed: 0,
     walkPhase: 0,
+    runPhase: 0,
+    runBlend: 0,
     vy: 0,
     grounded: true,
     jumps: 0,
@@ -1599,7 +1601,7 @@
   const MAX_JUMPS = 3;
   const STEP_CLEARANCE = 0.06;
 
-  const held = { w: false, a: false, s: false, d: false };
+  const held = { w: false, a: false, s: false, d: false, shift: false };
   const moveVec = new THREE.Vector2();
   const camDir = new THREE.Vector3();
 
@@ -1675,15 +1677,17 @@
 
     if (steering) {
       // Player steering overrides the autonomous wanderer.
+      const running = held.shift;
       s.manualHold = 3.0;
       s.mode = 'manual';
       s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
-      s.speed = damp(s.speed, 4.8, 5, dt);
+      s.speed = damp(s.speed, running ? 9.6 : 4.8, 5, dt);
 
       const mx = Math.sin(s.yaw) * s.speed * dt;
       const mz = Math.cos(s.yaw) * s.speed * dt;
       if (moveGoat(mx, mz)) {
-        s.walkPhase += s.speed * dt * 4.6;
+        s.walkPhase += s.speed * dt * (running ? 2.4 : 4.6);
+        if (running) s.runPhase += s.speed * dt * 2.4;
         moving = true;
       }
       lastInteract = performance.now();
@@ -1727,6 +1731,9 @@
     }
 
     goat.rotation.y = s.yaw;
+
+    s.runBlend = damp(s.runBlend, (held.shift && steering && moving) ? 1 : 0, 10, dt);
+    const run = s.runBlend;
 
     // ---- vertical physics: gravity, jumps, and block tops ----
     let groundY = surfaceHeight(goat.position.x, goat.position.z);
@@ -1778,22 +1785,29 @@
         hipTarget = (leg.front ? -0.55 : 0.5) * jumpK;
         kneeTarget = 0.75 * jumpK;
       } else {
-        const ph = s.walkPhase + leg.offset;
-        hipTarget = Math.sin(ph) * 0.6 * stride;
-        kneeTarget = Math.max(0, -Math.cos(ph)) * 0.85 * stride + 0.04;
+        const phW = s.walkPhase + leg.offset;
+        const phR = s.runPhase + leg.runOffset;
+        const hipWalk = Math.sin(phW) * 0.6 * stride;
+        const kneeWalk = Math.max(0, -Math.cos(phW)) * 0.85 * stride + 0.04;
+        const hipRun = Math.sin(phR) * 0.95 * stride;
+        const kneeRun = Math.max(0, -Math.cos(phR)) * 1.15 * stride + 0.04;
+        hipTarget = hipWalk + (hipRun - hipWalk) * run;
+        kneeTarget = kneeWalk + (kneeRun - kneeWalk) * run;
       }
       leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
     }
 
-    const bob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
+    const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
+    const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
+    const bob = walkBob * (1 - run) + runBob * run;
     rig.position.y = damp(rig.position.y, bob, 30, dt);
     rig.position.z = buttPose * 0.18;
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
-    rig.rotation.x = damp(rig.rotation.x, (jumpK > 0 ? -0.16 * jumpK : 0) + buttPose * 0.08, 9, dt);
-    rig.rotation.z = moving ? Math.sin(s.walkPhase) * 0.018 : 0;
+    rig.rotation.x = damp(rig.rotation.x, (jumpK > 0 ? -0.16 * jumpK : 0) + buttPose * 0.08 + Math.sin(s.runPhase + 0.7) * 0.05 * run, 9, dt);
+    rig.rotation.z = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run;
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
     if (s.headbutt >= 0) lookYaw = 0;
@@ -1803,10 +1817,12 @@
     }
     headPivot.rotation.y = damp(headPivot.rotation.y, lookYaw, 3.0, dt);
 
-    const headBob = moving ? Math.sin(s.walkPhase * 2) * 0.05 : Math.sin(t * 1.25) * 0.022;
+    const walkHeadBob = moving ? Math.sin(s.walkPhase * 2) * 0.05 : Math.sin(t * 1.25) * 0.022;
+    const runHeadBob = moving ? Math.sin(s.runPhase * 2) * 0.05 : 0;
+    const headBob = walkHeadBob * (1 - run) + runHeadBob * run;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
-    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34, 10, dt);
-    neckPivot.rotation.x = 0.42 + buttPose * 0.55;
+    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08, 10, dt);
+    neckPivot.rotation.x = 0.42 + buttPose * 0.55 + run * 0.08;
 
     // Only smash the block the head or horns actually touch at the lunge.
     if (headbuttPending) {
@@ -1826,12 +1842,13 @@
       const ear = ears[i];
       const bounce = Math.sin(s.walkPhase * 2 + ear.side) * 0.1 * stride;
       ear.pivot.rotation.z = ear.baseZ + ear.side * (bounce + twitch);
-      ear.pivot.rotation.x = 0.08 + Math.sin(t * 1.1 + ear.side) * 0.035;
+      ear.pivot.rotation.x = 0.08 + Math.sin(t * 1.1 + ear.side) * 0.035 + run * 0.12;
+      ear.pivot.rotation.y = -ear.side * 0.55 * run;
     }
 
     s.happy = Math.max(0, s.happy - dt * 0.75);
-    tailPivot.rotation.z = Math.sin(t * (3.2 + s.happy * 6.5)) * (0.22 + s.happy * 0.3);
-    tailPivot.rotation.x = -0.55 + Math.sin(t * 1.6) * 0.05;
+    tailPivot.rotation.z = Math.sin(t * (3.2 + s.happy * 6.5)) * (0.22 + s.happy * 0.3 + run * 0.14);
+    tailPivot.rotation.x = -0.55 - run * 0.25 + Math.sin(t * 1.6) * 0.05;
 
     blinkTimer -= dt;
     if (blinkTimer <= 0) {
@@ -1862,9 +1879,10 @@
 
     desired.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
     const followY = state.grounded ? 2.4 : 12.0;
-    camTarget.x = damp(camTarget.x, desired.x, 3.8, dt);
+    const followXZ = 3.8 + state.runBlend * 4.2;
+    camTarget.x = damp(camTarget.x, desired.x, followXZ, dt);
     camTarget.y = damp(camTarget.y, desired.y, followY, dt);
-    camTarget.z = damp(camTarget.z, desired.z, 3.8, dt);
+    camTarget.z = damp(camTarget.z, desired.z, followXZ, dt);
 
     const phi = polar + Math.sin(t * 0.17) * 0.014;
     const sinPhi = Math.sin(phi);
@@ -1976,6 +1994,11 @@
   window.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+    if (e.key === 'Shift') {
+      held.shift = true;
+      return;
+    }
+
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
       if (!e.repeat) jump();
@@ -1998,6 +2021,10 @@
   });
 
   window.addEventListener('keyup', function (e) {
+    if (e.key === 'Shift') {
+      held.shift = false;
+      return;
+    }
     const k = moveKey(e);
     if (!k) return;
     if (e.code.indexOf('Arrow') === 0) e.preventDefault();
@@ -2007,6 +2034,7 @@
 
   function stopSteering() {
     held.w = held.a = held.s = held.d = false;
+    held.shift = false;
   }
 
   window.addEventListener('blur', stopSteering);

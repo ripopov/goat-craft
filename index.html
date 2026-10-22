@@ -192,7 +192,7 @@
 </style>
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in a meadow. Use W A S D to walk, and drag to orbit the camera."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow. Use W A S D to walk, space to jump, and drag to orbit the camera."></canvas>
   <div id="sun"></div>
   <div id="vignette"></div>
 
@@ -203,7 +203,7 @@
   </header>
 
   <div id="bubble" aria-hidden="true">maa!</div>
-  <div id="hint"><b>WASD</b> to lead &nbsp;·&nbsp; <b>drag</b> to orbit &nbsp;·&nbsp; <b>scroll</b> to zoom &nbsp;·&nbsp; <b>click the goat</b></div>
+  <div id="hint"><b>WASD</b> to lead &nbsp;·&nbsp; <b>space</b> to jump (×3) &nbsp;·&nbsp; <b>drag</b> to orbit &nbsp;·&nbsp; <b>scroll</b> to zoom &nbsp;·&nbsp; <b>click the goat</b></div>
   <button id="hi" type="button"><span></span>Say hi</button>
 
   <div id="error" role="alert"></div>
@@ -1406,12 +1406,20 @@
     yaw: goatYaw,
     speed: 0,
     walkPhase: 0,
-    jumpT: -1,
+    vy: 0,
+    grounded: true,
+    jumps: 0,
+    tuck: 0,
     happy: 0,
     earTimer: 2.2,
     earTwitch: 0,
     manualHold: 0
   };
+
+  const GRAVITY = 26;
+  const JUMP_SPEED = 12.2;
+  const MAX_JUMPS = 3;
+  const STEP_CLEARANCE = 0.06;
 
   const held = { w: false, a: false, s: false, d: false };
   const moveVec = new THREE.Vector2();
@@ -1438,6 +1446,34 @@
   let blinkTimer = rand(1.6, 3.2);
   let blink = 0;
 
+  function canStandAt(x, z, feetY) {
+    return surfaceHeight(x, z) <= feetY + STEP_CLEARANCE;
+  }
+
+  function moveGoat(dx, dz) {
+    const feetY = goat.position.y;
+    const x = goat.position.x;
+    const z = goat.position.z;
+
+    if (canStandAt(x + dx, z + dz, feetY)) {
+      goat.position.x = x + dx;
+      goat.position.z = z + dz;
+      return true;
+    }
+
+    // slide along the blocking edge
+    let moved = false;
+    if (dx !== 0 && canStandAt(x + dx, z, feetY)) {
+      goat.position.x = x + dx;
+      moved = true;
+    }
+    if (dz !== 0 && canStandAt(goat.position.x, z + dz, feetY)) {
+      goat.position.z = z + dz;
+      moved = true;
+    }
+    return moved;
+  }
+
   function pickTarget() {
     const p = new THREE.Vector3();
     const toCamera = Math.atan2(camera.position.x - goat.position.x, camera.position.z - goat.position.z);
@@ -1455,11 +1491,6 @@
   function updateGoat(dt, t) {
     const s = state;
 
-    if (s.jumpT >= 0) {
-      s.jumpT += dt / 0.85;
-      if (s.jumpT >= 1) s.jumpT = -1;
-    }
-
     const input = readMovement();
     const steering = input.lengthSq() > 0;
     let moving = false;
@@ -1471,11 +1502,13 @@
       s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
       s.speed = damp(s.speed, 2.4, 5, dt);
 
-      goat.position.x += Math.sin(s.yaw) * s.speed * dt;
-      goat.position.z += Math.cos(s.yaw) * s.speed * dt;
-      s.walkPhase += s.speed * dt * 4.6;
+      const mx = Math.sin(s.yaw) * s.speed * dt;
+      const mz = Math.cos(s.yaw) * s.speed * dt;
+      if (moveGoat(mx, mz)) {
+        s.walkPhase += s.speed * dt * 4.6;
+        moving = true;
+      }
       lastInteract = performance.now();
-      moving = true;
     } else if (s.manualHold > 0) {
       // Just after steering, stand and let the player watch for a moment.
       s.manualHold = Math.max(0, s.manualHold - dt);
@@ -1493,10 +1526,18 @@
       } else {
         s.yaw = turnToward(s.yaw, Math.atan2(dx, dz), dt * 4.5);
         s.speed = damp(s.speed, clamp(0.8 + dist * 0.65, 0.8, 1.7), 3.0, dt);
-        goat.position.x += Math.sin(s.yaw) * s.speed * dt;
-        goat.position.z += Math.cos(s.yaw) * s.speed * dt;
-        s.walkPhase += s.speed * dt * 4.6;
-        moving = true;
+
+        const mx = Math.sin(s.yaw) * s.speed * dt;
+        const mz = Math.cos(s.yaw) * s.speed * dt;
+        if (moveGoat(mx, mz)) {
+          s.walkPhase += s.speed * dt * 4.6;
+          moving = true;
+        } else {
+          // The goat will not scramble up ledges on its own.
+          s.mode = 'idle';
+          s.wait = rand(1.2, 2.8);
+          s.speed = 0;
+        }
       }
     } else {
       s.speed = damp(s.speed, 0, 5, dt);
@@ -1509,12 +1550,36 @@
 
     goat.rotation.y = s.yaw;
 
-    const groundY = surfaceHeight(goat.position.x, goat.position.z);
-    goat.position.y = damp(goat.position.y, groundY, 18, dt);
+    // ---- vertical physics: gravity, jumps, and block tops ----
+    let groundY = surfaceHeight(goat.position.x, goat.position.z);
 
-    const stride = clamp(s.speed / 0.6, 0, 1);
-    const jumpK = s.jumpT >= 0 ? Math.sin(Math.PI * clamp(s.jumpT, 0, 1)) : 0;
-    const jumpLift = jumpK * 0.68;
+    if (s.grounded) {
+      if (goat.position.y > groundY + 0.02) {
+        // The ground fell away underneath us.
+        s.grounded = false;
+        s.vy = 0;
+      } else {
+        goat.position.y = groundY;
+        s.vy = 0;
+      }
+    }
+
+    if (!s.grounded) {
+      s.vy -= GRAVITY * dt;
+      goat.position.y += s.vy * dt;
+      groundY = surfaceHeight(goat.position.x, goat.position.z);
+
+      if (s.vy <= 0 && goat.position.y <= groundY) {
+        goat.position.y = groundY;
+        s.vy = 0;
+        s.grounded = true;
+        s.jumps = 0;
+      }
+    }
+
+    s.tuck = damp(s.tuck, s.grounded ? 0 : 1, 12, dt);
+    const jumpK = s.tuck;
+    const stride = moving ? clamp(s.speed / 0.6, 0, 1) : 0;
 
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i];
@@ -1532,8 +1597,8 @@
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
     }
 
-    const bob = moving ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
-    rig.position.y = damp(rig.position.y, bob + jumpLift, 30, dt);
+    const bob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
+    rig.position.y = damp(rig.position.y, bob, 30, dt);
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
@@ -1541,7 +1606,7 @@
     rig.rotation.z = moving ? Math.sin(s.walkPhase) * 0.018 : 0;
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
-    if (!moving && s.jumpT < 0) {
+    if (!moving && s.grounded) {
       const camLocal = goat.worldToLocal(camera.position.clone());
       lookYaw = clamp(Math.atan2(camLocal.x, camLocal.z), -0.6, 0.6) * 0.9;
     }
@@ -1598,7 +1663,10 @@
     if (elapsed > 3.0 && !drag && !reduceMotion && !steering) azimuth += dt * 0.1;
 
     desired.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
-    camTarget.lerp(desired, 1 - Math.exp(-2.4 * dt));
+    const followY = state.grounded ? 2.4 : 12.0;
+    camTarget.x = damp(camTarget.x, desired.x, 2.4, dt);
+    camTarget.y = damp(camTarget.y, desired.y, followY, dt);
+    camTarget.z = damp(camTarget.z, desired.z, 2.4, dt);
 
     const phi = polar + Math.sin(t * 0.17) * 0.014;
     const sinPhi = Math.sin(phi);
@@ -1709,6 +1777,13 @@
 
   window.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      if (!e.repeat) jump();
+      return;
+    }
+
     const k = moveKey(e);
     if (!k) return;
     if (e.code.indexOf('Arrow') === 0) e.preventDefault();
@@ -1837,8 +1912,17 @@
     }
   }
 
+  function jump() {
+    if (!state.grounded && state.jumps >= MAX_JUMPS) return;
+    if (state.grounded) state.jumps = 0;
+    state.jumps++;
+    state.vy = JUMP_SPEED;
+    state.grounded = false;
+    lastInteract = performance.now();
+  }
+
   function greet() {
-    if (state.jumpT < 0) state.jumpT = 0.0001;
+    jump();
     state.happy = 1;
     bleat();
     showBubble(Math.random() < 0.7 ? 'maa!' : 'mehh!');

@@ -46,16 +46,35 @@
       });
     }
 
+    const musicButton = document.getElementById('music');
+    if (musicButton) {
+      musicButton.addEventListener('click', function () {
+        if (M.ui.onMusicToggle) M.ui.onMusicToggle();
+      });
+    }
+
     if (M.config.coarsePointer) {
       const hint = document.getElementById('hint');
       if (hint) hint.innerHTML = '<b>drag</b> to orbit &nbsp;·&nbsp; <b>pinch</b> to zoom &nbsp;·&nbsp; <b>tap the goat</b>';
     }
   }
 
+  function setMusic(on) {
+    const button = document.getElementById('music');
+    if (!button) return;
+    button.classList.toggle('on', !!on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    button.setAttribute('aria-label', on ? 'Turn music off' : 'Turn music on');
+    const label = button.querySelector('.label');
+    if (label) label.textContent = on ? 'Music on' : 'Music';
+  }
+
   M.ui = {
     init: init,
     showBubble: showBubble,
     updateBubble: updateBubble,
-    onGreet: null
+    setMusic: setMusic,
+    onGreet: null,
+    onMusicToggle: null
   };
 })(window.Meadow = window.Meadow || {});

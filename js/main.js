@@ -75,6 +75,11 @@
     M.goat.greet();
   };
 
+  M.ui.onMusicToggle = function () {
+    const on = M.music.toggle();
+    M.ui.setMusic(on);
+  };
+
   const clock = new THREE.Clock();
   let elapsed = 0;
 

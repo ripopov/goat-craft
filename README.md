@@ -15,6 +15,7 @@ css/style.css       page + HUD styling
 vendor/three.min.js three.js r149 (classic UMD build)
 js/core.js          shared config, math helpers, material helper
 js/audio.js         WebAudio bleat + headbutt thud
+js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
 js/world.js         procedural terrain, chunk streaming, block removal, debris
 js/environment.js   lights, sun shadows, sky dome, drifting clouds
@@ -33,3 +34,4 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **E** — headbutt a block the head/horns actually touch
 - **Drag** — orbit · **Wheel / pinch** — zoom
 - **Click / tap the goat**, or **Say hi** — bleat and jump
+- **Music** (top-right button) — start/stop the generated folk soundtrack

@@ -141,7 +141,9 @@
       drag.y = e.clientY;
       drag.moved += Math.abs(dx) + Math.abs(dy);
       azimuth -= dx * 0.006;
-      polar = clamp(polar + dy * 0.004, 0.32, 1.45);
+      // polar is measured from the vertical, so larger values lower the
+      // camera. Dragging down should look down: decrease polar to raise it.
+      polar = clamp(polar - dy * 0.004, 0.32, 1.45);
     }
   });
 
@@ -197,7 +199,9 @@
     const dx = clamp(rawX, -260, 260);
     const dy = clamp(rawY, -260, 260);
     azimuth -= dx * LOOK_YAW;
-    polar = clamp(polar + dy * LOOK_PITCH, 0.24, 1.47);
+    // Standard mouse-look pitch: move the mouse up to look up, down to look
+    // down. Small polar values place the orbit camera high and look downward.
+    polar = clamp(polar - dy * LOOK_PITCH, 0.24, 1.47);
     if (lookClick) lookClick.moved += Math.abs(rawX) + Math.abs(rawY);
     lastInteraction = performance.now();
   });

@@ -21,6 +21,19 @@
   let drag = null;
   let pinch = null;
 
+  // Pointer Lock gives a conventional third-person mouse-look: no button held,
+  // no dragging. Browsers require a real user gesture to capture the pointer,
+  // so the visible "Mouse look" button (or F) is the entry point and Esc exits.
+  const LOOK_YAW = 0.003;
+  const LOOK_PITCH = 0.0022;
+  const supportsPointerLock = !M.config.coarsePointer &&
+    typeof canvas.requestPointerLock === 'function' &&
+    typeof document.exitPointerLock === 'function';
+  let lookActive = false;
+  let lookClick = null;
+  let lookButton = null;
+  let defaultHint = '';
+
   function noteActivity() {
     lastInteraction = performance.now();
   }
@@ -48,7 +61,7 @@
     if (held.w || held.a || held.s || held.d) lastInteraction = performance.now();
     const elapsed = (performance.now() - lastInteraction) / 1000;
     const steering = held.w || held.a || held.s || held.d;
-    if (elapsed > 3.0 && !drag && !reduceMotion && !steering) azimuth += dt * 0.1;
+    if (elapsed > 3.0 && !drag && !lookActive && !reduceMotion && !steering) azimuth += dt * 0.1;
 
     const waterTop = world.waterLevelAt ? world.waterLevelAt(goat.position.x, goat.position.z) : 0;
     desired.set(
@@ -92,6 +105,11 @@
   }
 
   canvas.addEventListener('pointerdown', function (e) {
+    if (lookActive) {
+      lookClick = { button: e.button, time: performance.now(), moved: 0 };
+      lastInteraction = performance.now();
+      return;
+    }
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     lastInteraction = performance.now();
@@ -109,7 +127,7 @@
   });
 
   canvas.addEventListener('pointermove', function (e) {
-    if (!pointers.has(e.pointerId)) return;
+    if (lookActive || !pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     lastInteraction = performance.now();
 
@@ -128,6 +146,16 @@
   });
 
   function releasePointer(e) {
+    const isClickUp = e.type === 'pointerup';
+    if (lookActive) {
+      if (isClickUp && lookClick && lookClick.button === e.button &&
+          performance.now() - lookClick.time < 550 && lookClick.moved < 9) {
+        if (e.button === 0 && M.controls.onHeadbutt) M.controls.onHeadbutt();
+        else if (e.button === 2 && M.controls.onStomp) M.controls.onStomp();
+      }
+      lookClick = null;
+      return;
+    }
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
 
@@ -136,7 +164,7 @@
       drag = { id: entry[0], x: entry[1].x, y: entry[1].y, moved: 99, time: performance.now(), button: -1 };
       pinch = null;
     } else if (pointers.size === 0) {
-      if (drag && drag.id === e.pointerId && drag.moved < 9 && performance.now() - drag.time < 550) {
+      if (isClickUp && drag && drag.id === e.pointerId && drag.moved < 9 && performance.now() - drag.time < 550) {
         if (drag.button === 0 && M.controls.onTap) M.controls.onTap(e.clientX, e.clientY);
         else if (drag.button === 2 && M.controls.onStomp) M.controls.onStomp();
       }
@@ -158,6 +186,83 @@
     distance = clamp(distance * (1 + e.deltaY * 0.0012), 4, 11);
     lastInteraction = performance.now();
   }, { passive: false });
+
+  // Pointer Lock reports relative movement rather than client coordinates.
+  // Feed it into the same azimuth/polar orbit used by the touch fallback.
+  document.addEventListener('mousemove', function (e) {
+    if (!lookActive) return;
+    const rawX = e.movementX || 0;
+    const rawY = e.movementY || 0;
+    if (rawX === 0 && rawY === 0) return;
+    const dx = clamp(rawX, -260, 260);
+    const dy = clamp(rawY, -260, 260);
+    azimuth -= dx * LOOK_YAW;
+    polar = clamp(polar + dy * LOOK_PITCH, 0.24, 1.47);
+    if (lookClick) lookClick.moved += Math.abs(rawX) + Math.abs(rawY);
+    lastInteraction = performance.now();
+  });
+
+  function setLookButton(active) {
+    if (!lookButton) return;
+    lookButton.classList.toggle('on', active);
+    lookButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    lookButton.setAttribute('aria-label', active ? 'Release mouse capture' : 'Capture mouse for free look');
+    lookButton.title = active ? 'Press Esc to release the mouse' : 'Capture the pointer for mouse look (Esc releases)';
+    const label = lookButton.querySelector('.label');
+    if (label) label.textContent = active ? 'Mouse captured' : 'Mouse look';
+  }
+
+  function setLookHint(active) {
+    if (M.config.coarsePointer) return;
+    const hint = document.getElementById('hint');
+    if (!hint) return;
+    hint.innerHTML = active
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      : defaultHint;
+  }
+
+  function setLookUi(active) {
+    document.body.classList.toggle('look-active', active);
+    setLookButton(active);
+    setLookHint(active);
+  }
+
+  function requestLook() {
+    if (!supportsPointerLock || lookActive) return false;
+    try {
+      const pending = canvas.requestPointerLock();
+      if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+    } catch (err) {
+      return false;
+    }
+    return true;
+  }
+
+  function releaseLook() {
+    if (document.pointerLockElement === canvas && typeof document.exitPointerLock === 'function') {
+      try { document.exitPointerLock(); } catch (err) { /* ignore */ }
+    }
+  }
+
+  document.addEventListener('pointerlockchange', function () {
+    const active = document.pointerLockElement === canvas;
+    lookActive = active;
+    lookClick = null;
+    if (active) {
+      drag = null;
+      pinch = null;
+      pointers.clear();
+      canvas.classList.remove('dragging');
+    }
+    setLookUi(active);
+    lastInteraction = performance.now();
+  });
+
+  document.addEventListener('pointerlockerror', function () {
+    lookActive = false;
+    lookClick = null;
+    setLookUi(false);
+  });
 
   function digitKey(e) {
     const code = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
@@ -185,6 +290,14 @@
   window.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+    // Chrome usually releases pointer lock itself on Escape, but handling it
+    // explicitly keeps the state in sync (and makes the test harness reliable).
+    if (e.key === 'Escape' && lookActive) {
+      e.preventDefault();
+      releaseLook();
+      return;
+    }
+
     if (e.key === 'Shift') {
       held.shift = true;
       return;
@@ -202,6 +315,15 @@
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
       if (!e.repeat && M.controls.onJump) M.controls.onJump();
+      return;
+    }
+
+    if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') {
+      if (!supportsPointerLock) return;
+      e.preventDefault();
+      if (e.repeat) return;
+      if (lookActive) releaseLook();
+      else requestLook();
       return;
     }
 
@@ -250,11 +372,35 @@
 
   function init(camera) {
     cameraRef = camera;
+
+    const hint = document.getElementById('hint');
+    if (hint) defaultHint = hint.innerHTML;
+
+    lookButton = document.getElementById('look');
+    if (!supportsPointerLock) {
+      if (lookButton) lookButton.hidden = true;
+      if (hint && !M.config.coarsePointer) {
+        hint.innerHTML = hint.innerHTML.replace(' &nbsp;·&nbsp; <b>F</b> mouse look', '');
+      }
+      return;
+    }
+    if (lookButton) {
+      lookButton.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        lookButton.blur();
+        if (lookActive) releaseLook();
+        else requestLook();
+      });
+    }
   }
 
   M.controls = {
     init: init,
     update: updateCamera,
+    requestLook: requestLook,
+    releaseLook: releaseLook,
+    get lookActive() { return lookActive; },
     getMovement: getMovement,
     noteActivity: noteActivity,
     snapTo: snapTo,

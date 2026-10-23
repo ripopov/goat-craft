@@ -28,7 +28,7 @@ js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/goat.js          goat rig, coat, gaits, physics, jumps, headbutt and hoof stomp
 js/animals.js       sheep, cow and stag NPCs: grazing, jumping, turf quarrying, stair building and pit escape
-js/controls.js      orbit camera, keyboard and pointer/touch input
+js/controls.js      pointer-lock mouse look, orbit camera, keyboard and touch input
 js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
 scripts/check-site.mjs  checks local asset references in the built site
@@ -47,7 +47,8 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Right click** — stomp the block beneath the goat
 - **1–9 / 0** — select hotbar slot (slot 1 is horns and hooves; broken blocks stack in the other slots)
 - Selected blocks ride on the goat's horns and are set down by the headbutt lunge.
-- **Drag** — orbit · **Wheel / pinch** — zoom
+- **Mouse look** (button / **F**) — capture the pointer and steer the third-person camera with the mouse; **Esc** releases it
+- **Drag / pinch** — orbit and zoom while the pointer is free (drag and pinch are the touch fallback)
 - **Say hi** — bleat and jump
 - **Music** (top-right button) — start/stop the generated folk soundtrack
 

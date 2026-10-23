@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with ponds full of fish, and a herd of sheep, a cow and a stag that graze, jump, quarry turf and build spiral sky stairs. Use W A S D to walk, hold Shift to gallop, space to jump, E or left click to headbutt (or place the carried block), right click to stomp the block beneath the goat, number keys 1-0 to select hotbar items, and drag to orbit the camera."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with ponds full of fish, and a herd of sheep, a cow and a stag that graze, jump, quarry turf and build spiral sky stairs. Use W A S D to walk, hold Shift to gallop, space to jump, E or left click to headbutt (or place the carried block), right click to stomp the block beneath the goat, number keys 1-0 to select hotbar items, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
   <div id="vignette"></div>
 
   <header class="hud">
@@ -21,9 +21,12 @@
     <div id="item-name" aria-live="polite">Horns &amp; Hooves</div>
     <div id="hotbar" role="toolbar" aria-label="Item bar"></div>
   </div>
-  <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>shift</b> gallop &nbsp;·&nbsp; <b>space</b> jump ×3 &nbsp;·&nbsp; <b>E</b> / <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>drag</b> orbit &nbsp;·&nbsp; <b>scroll</b> zoom</div>
+  <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>shift</b> gallop &nbsp;·&nbsp; <b>space</b> jump ×3 &nbsp;·&nbsp; <b>E</b> / <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>F</b> mouse look &nbsp;·&nbsp; <b>scroll</b> zoom</div>
   <button id="hi" type="button"><span></span>Say hi</button>
-  <button id="music" type="button" aria-pressed="false" aria-label="Turn music on"><span class="note">♪</span><span class="label">Music</span></button>
+  <div class="top-actions">
+    <button id="look" type="button" aria-pressed="false" aria-label="Capture mouse for free look" title="Capture the pointer for mouse look (Esc releases)"><span class="mouse" aria-hidden="true">⌖</span><span class="label">Mouse look</span></button>
+    <button id="music" type="button" aria-pressed="false" aria-label="Turn music on"><span class="note">♪</span><span class="label">Music</span></button>
+  </div>
 
   <div id="error" role="alert"></div>
 

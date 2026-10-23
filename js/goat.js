@@ -354,6 +354,19 @@
   const JUMP_SPEED = 12.2;
   const MAX_JUMPS = 3;
   const STEP_CLEARANCE = 0.06;
+
+  // Collision probes in goat-local space: [side, forward]. Checking only the
+  // centre let the muzzle and chest sink into a block before the goat stopped,
+  // so the footprint reaches out to the nose and around the shoulders.
+  const FOOTPRINT = [
+    [0, 1.25],
+    [0.2, 1.0],
+    [-0.2, 1.0],
+    [0.38, 0.55],
+    [-0.38, 0.55],
+    [0.46, 0],
+    [-0.46, 0]
+  ];
   const STOMP_LIFT_END = 0.24;
   const STOMP_IMPACT = 0.36;
   const STOMP_END = 0.54;
@@ -361,16 +374,27 @@
   let blinkTimer = rand(1.6, 3.2);
   let blink = 0;
 
-  function canStandAt(x, z, feetY) {
-    return worldRef.surfaceHeight(x, z) <= feetY + STEP_CLEARANCE;
+  function canStandAt(x, z, feetY, yaw) {
+    const sin = Math.sin(yaw);
+    const cos = Math.cos(yaw);
+    const top = feetY + STEP_CLEARANCE;
+
+    for (let i = 0; i < FOOTPRINT.length; i++) {
+      const side = FOOTPRINT[i][0];
+      const ahead = FOOTPRINT[i][1];
+      const px = x + sin * ahead + cos * side;
+      const pz = z + cos * ahead - sin * side;
+      if (worldRef.surfaceHeight(px, pz) > top) return false;
+    }
+    return true;
   }
 
-  function moveGoat(dx, dz) {
+  function moveGoat(dx, dz, yaw) {
     const feetY = goat.position.y;
     const x = goat.position.x;
     const z = goat.position.z;
 
-    if (canStandAt(x + dx, z + dz, feetY)) {
+    if (canStandAt(x + dx, z + dz, feetY, yaw)) {
       goat.position.x = x + dx;
       goat.position.z = z + dz;
       return true;
@@ -378,11 +402,11 @@
 
     // slide along the blocking edge
     let moved = false;
-    if (dx !== 0 && canStandAt(x + dx, z, feetY)) {
+    if (dx !== 0 && canStandAt(x + dx, z, feetY, yaw)) {
       goat.position.x = x + dx;
       moved = true;
     }
-    if (dz !== 0 && canStandAt(goat.position.x, z + dz, feetY)) {
+    if (dz !== 0 && canStandAt(goat.position.x, z + dz, feetY, yaw)) {
       goat.position.z = z + dz;
       moved = true;
     }
@@ -416,7 +440,7 @@
 
       const mx = Math.sin(s.yaw) * s.speed * dt;
       const mz = Math.cos(s.yaw) * s.speed * dt;
-      if (moveGoat(mx, mz)) {
+      if (moveGoat(mx, mz, s.yaw)) {
         s.walkPhase += s.speed * dt * (running ? 2.4 : 4.6);
         if (running) s.runPhase += s.speed * dt * 2.4;
         moving = true;
@@ -441,7 +465,7 @@
 
         const mx = Math.sin(s.yaw) * s.speed * dt;
         const mz = Math.cos(s.yaw) * s.speed * dt;
-        if (moveGoat(mx, mz)) {
+        if (moveGoat(mx, mz, s.yaw)) {
           s.walkPhase += s.speed * dt * 4.6;
           moving = true;
         } else {

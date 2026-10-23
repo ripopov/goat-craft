@@ -51,6 +51,13 @@
     ui: M.ui
   });
 
+  M.animals.init({
+    scene: scene,
+    world: M.world,
+    audio: M.audio,
+    goat: M.goat
+  });
+
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
 
@@ -102,6 +109,7 @@
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.world.update(M.goat.group.position, dt, elapsed);
     M.items.update(dt, elapsed, M.goat.group);
+    M.animals.update(dt, elapsed, M.goat.group);
     M.environment.update(camera, M.goat.group, dt, elapsed);
     M.ui.updateBubble(dt, M.goat.headPivot, camera);
 

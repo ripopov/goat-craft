@@ -14,7 +14,7 @@
 
   let azimuth = 0.72;
   let polar = 1.4;
-  let distance = 6.4;
+  let distance = 7.6;
   const camTarget = new THREE.Vector3();
   const desired = new THREE.Vector3();
   const pointers = new Map();

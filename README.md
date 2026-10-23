@@ -5,7 +5,7 @@
 
 **Play online: [ripopov.github.io/goat-craft](https://ripopov.github.io/goat-craft/)**
 
-A small, endless blocky meadow with a procedural goat, built with three.js.
+A small, endless blocky meadow with a procedural goat, a wandering herd of animals, and a one-minute day/night cycle, built with three.js.
 
 
 ## Run it
@@ -26,6 +26,7 @@ js/items.js         ten-slot hotbar, block drops, pickup and item stacking
 js/world.js         procedural terrain, chunk streaming, block removal, drops and debris
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/goat.js          goat rig, coat, gaits, physics, jumps, headbutt and hoof stomp
+js/animals.js       sheep, cow and stag NPCs: wandering, grazing, block carrying and placement
 js/controls.js      orbit camera, keyboard and pointer/touch input
 js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
@@ -50,6 +51,8 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Music** (top-right button) — start/stop the generated folk soundtrack
 
 The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long.
+
+A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). They wander and graze independently. Every so often one roots up a nearby block, carries it between its horns, then finds a clear spot and sets it down. Those are real world blocks: they stay in the world, collide with the player, and can be broken again. The herd leaves player-placed blocks alone.
 
 All action sounds (hoofbeats, jump, landing, headbutt, stomp, pickup and breathing) are synthesized in-browser; there are no audio files.
 

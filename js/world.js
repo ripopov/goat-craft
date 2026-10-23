@@ -979,15 +979,19 @@
     }
   }
 
-  function placeBlock(kind, bx, by, bz) {
-    if (!ITEM_TILES[kind] || !Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
+  function canPlaceBlock(bx, by, bz) {
+    if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
     if (by < 0) return false;
     if (!chunkForBlock(bx, bz)) return false;
     if (isSolidBlock(bx, by, bz)) return false;
     if (propKindAt(bx, by, bz)) return false;
+    return !placedBlocks.has(blockKey(bx, by, bz));
+  }
+
+  function placeBlock(kind, bx, by, bz) {
+    if (!ITEM_TILES[kind] || !canPlaceBlock(bx, by, bz)) return false;
 
     const key = blockKey(bx, by, bz);
-    if (placedBlocks.has(key)) return false;
     placedBlocks.set(key, kind);
     rebuildChunkProps(
       Math.floor(bx / CHUNK_BLOCKS),
@@ -1108,28 +1112,109 @@
     return best;
   }
 
+  // Break one block cell no matter whether it belongs to the terrain or to a
+  // prop (tree, stone, player-placed block). Returns the broken kind, or null.
+  // Animals use this with drop: false so the block can go straight onto their
+  // horns instead of competing with the player's item drops.
+  function breakBlockAt(bx, by, bz, options) {
+    if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz) || by < 0) return null;
+    const opts = options || {};
+    const key = blockKey(bx, by, bz);
+    const propKind = propKindAt(bx, by, bz);
+
+    if (propKind) {
+      if (opts.protectPlaced && placedBlocks.has(key)) return null;
+      removePropBlock(bx, by, bz);
+      rebuildChunkProps(
+        Math.floor(bx / CHUNK_BLOCKS),
+        Math.floor(bz / CHUNK_BLOCKS)
+      );
+      spawnBlockDebris(bx, by, bz, propKind);
+      if (opts.drop !== false) spawnBlockDrop(bx, by, bz, propKind);
+      return propKind;
+    }
+
+    if (!isSolidBlock(bx, by, bz)) return null;
+    const wasTop = by === heightBlocks(bx, bz) - 1;
+    const kind = wasTop ? 'grass' : 'dirt';
+    removedBlocks.add(key);
+    rebuildTerrainAround(bx, bz);
+    spawnBlockDebris(bx, by, bz, kind);
+    if (opts.drop !== false) spawnBlockDrop(bx, by, bz, kind);
+    return kind;
+  }
+
+  // Find a nearby natural block an animal could nibble loose. Props such as
+  // low logs and stones are preferred; when none exist, a topsoil block is a
+  // reliable fallback. Player-placed blocks are protected by default.
+  function findBreakableNear(x, z, feetY, radius, options) {
+    const opts = options || {};
+    const maxDist2 = radius * radius;
+    let best = null;
+    let bestScore = Infinity;
+
+    chunks.forEach(function (ch) {
+      if (!ch.propBlocks || ch.propBlocks.size === 0) return;
+      ch.propBlocks.forEach(function (kind, key) {
+        if (kind === 'leaves') return;
+        if (opts.protectPlaced !== false && placedBlocks.has(key)) return;
+        const parts = key.split(',');
+        const bx = +parts[0];
+        const by = +parts[1];
+        const bz = +parts[2];
+        const cx = (bx + 0.5) * BLOCK;
+        const cy = (by + 0.5) * BLOCK;
+        const cz = (bz + 0.5) * BLOCK;
+        if (opts.avoid && Math.hypot(cx - opts.avoid.x, cz - opts.avoid.z) < (opts.avoid.radius || 3)) return;
+        if (cy < feetY + 0.25 || cy > feetY + 2.55) return;
+        const dx = cx - x;
+        const dz = cz - z;
+        const dist2 = dx * dx + dz * dz;
+        if (dist2 > maxDist2 || dist2 < 1.8) return;
+
+        let score = dist2;
+        if (kind === 'stone') score -= 2.5;
+        if (kind === 'log') score += 3.5;
+        if (score < bestScore) {
+          bestScore = score;
+          best = { type: 'prop', bx: bx, by: by, bz: bz, kind: kind, x: cx, y: cy, z: cz };
+        }
+      });
+    });
+
+    if (best || opts.allowTerrain === false) return best;
+
+    const bx0 = Math.floor(x / BLOCK);
+    const bz0 = Math.floor(z / BLOCK);
+    const r = Math.ceil(radius / BLOCK);
+    for (let bx = bx0 - r; bx <= bx0 + r; bx++) {
+      for (let bz = bz0 - r; bz <= bz0 + r; bz++) {
+        const by = topSolidY(bx, bz);
+        if (by < 0) continue;
+        const cx = (bx + 0.5) * BLOCK;
+        const cz = (bz + 0.5) * BLOCK;
+        if (opts.avoid && Math.hypot(cx - opts.avoid.x, cz - opts.avoid.z) < (opts.avoid.radius || 3)) continue;
+        const top = (by + 1) * BLOCK;
+        if (top < feetY - 0.1 || top > feetY + 1.6) continue;
+        const dx = cx - x;
+        const dz = cz - z;
+        const dist2 = dx * dx + dz * dz;
+        if (dist2 > maxDist2 || dist2 < 1.8) continue;
+        const kind = by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt';
+        if (dist2 < bestScore) {
+          bestScore = dist2;
+          best = { type: 'terrain', bx: bx, by: by, bz: bz, kind: kind, x: cx, y: top, z: cz };
+        }
+      }
+    }
+
+    return best;
+  }
+
   function breakBlockInFront(headPivot) {
     const target = findHeadbuttTarget(headPivot);
     if (!target) return false;
-
-    if (target.kind !== 'terrain') {
-      removePropBlock(target.bx, target.by, target.bz);
-      rebuildChunkProps(
-        Math.floor(target.bx / CHUNK_BLOCKS),
-        Math.floor(target.bz / CHUNK_BLOCKS)
-      );
-      spawnBlockDebris(target.bx, target.by, target.bz, target.kind);
-      spawnBlockDrop(target.bx, target.by, target.bz, target.kind);
-      return true;
-    }
-
-    const wasTop = target.by === heightBlocks(target.bx, target.bz) - 1;
-    const kind = wasTop ? 'grass' : 'dirt';
-    removedBlocks.add(blockKey(target.bx, target.by, target.bz));
-    rebuildTerrainAround(target.bx, target.bz);
-    spawnBlockDebris(target.bx, target.by, target.bz, kind);
-    spawnBlockDrop(target.bx, target.by, target.bz, kind);
-    return true;
+    return !!breakBlockAt(target.bx, target.by, target.bz);
   }
 
   function breakBlockBelow(x, z, feetY) {
@@ -1233,6 +1318,9 @@
     landingHeight: landingHeight,
     breakBlockInFront: breakBlockInFront,
     breakBlockBelow: breakBlockBelow,
+    breakBlockAt: breakBlockAt,
+    findBreakableNear: findBreakableNear,
+    canPlaceBlock: canPlaceBlock,
     placeBlock: placeBlock,
     blockIcon: blockIcon,
     makeBlockMesh: makeBlockMesh,

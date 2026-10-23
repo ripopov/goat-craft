@@ -354,6 +354,7 @@
   const JUMP_SPEED = 12.2;
   const MAX_JUMPS = 3;
   const STEP_CLEARANCE = 0.06;
+  const BODY_HEIGHT = 1.9;
 
   // Collision probes in goat-local space: [side, forward]. Checking only the
   // centre let the muzzle and chest sink into a block before the goat stopped,
@@ -377,14 +378,15 @@
   function canStandAt(x, z, feetY, yaw) {
     const sin = Math.sin(yaw);
     const cos = Math.cos(yaw);
-    const top = feetY + STEP_CLEARANCE;
+    const bottom = feetY + STEP_CLEARANCE;
+    const top = feetY + BODY_HEIGHT;
 
     for (let i = 0; i < FOOTPRINT.length; i++) {
       const side = FOOTPRINT[i][0];
       const ahead = FOOTPRINT[i][1];
       const px = x + sin * ahead + cos * side;
       const pz = z + cos * ahead - sin * side;
-      if (worldRef.surfaceHeight(px, pz) > top) return false;
+      if (worldRef.blockedAt(px, pz, bottom, top)) return false;
     }
     return true;
   }
@@ -490,7 +492,11 @@
     const run = s.runBlend;
 
     // ---- vertical physics: gravity, jumps, and block tops ----
-    let groundY = worldRef.surfaceHeight(goat.position.x, goat.position.z);
+    let groundY = worldRef.supportHeight(
+      goat.position.x,
+      goat.position.z,
+      goat.position.y + STEP_CLEARANCE
+    );
 
     if (s.grounded) {
       if (goat.position.y > groundY + 0.02) {
@@ -504,9 +510,14 @@
     }
 
     if (!s.grounded) {
+      const prevY = goat.position.y;
       s.vy -= GRAVITY * dt;
       goat.position.y += s.vy * dt;
-      groundY = worldRef.surfaceHeight(goat.position.x, goat.position.z);
+      groundY = worldRef.supportHeight(
+        goat.position.x,
+        goat.position.z,
+        Math.max(prevY, goat.position.y)
+      );
 
       if (s.vy <= 0 && goat.position.y <= groundY) {
         const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
@@ -611,7 +622,7 @@
 
     if (stompPending) {
       s.stompHit = true;
-      const broke = s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z);
+      const broke = s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
       audioRef.stomp(broke);
       if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
     }

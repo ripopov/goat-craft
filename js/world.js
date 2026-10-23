@@ -53,6 +53,7 @@
   }
 
   const removedBlocks = new Set();
+  const removedPropBlocks = new Set();
 
   function blockKey(bx, by, bz) {
     return bx + ',' + by + ',' + bz;
@@ -79,6 +80,66 @@
     if (by < 0) return true;
     if (by >= heightBlocks(bx, bz)) return false;
     return !isRemoved(bx, by, bz);
+  }
+
+  function chunkForBlock(bx, bz) {
+    return chunks.get(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS)) || null;
+  }
+
+  function propKindAt(bx, by, bz) {
+    if (by < 0) return null;
+    const ch = chunkForBlock(bx, bz);
+    if (!ch || !ch.propBlocks) return null;
+    return ch.propBlocks.get(blockKey(bx, by, bz)) || null;
+  }
+
+  function solidKindAt(bx, by, bz) {
+    return propKindAt(bx, by, bz) || (isSolidBlock(bx, by, bz) ? 'terrain' : null);
+  }
+
+  // Does any solid terrain or prop block intersect the vertical slice from minY
+  // to maxY at this point? Props above the goat (canopies) are ignored.
+  function blockedAt(x, z, minY, maxY) {
+    const bx = Math.floor(x / BLOCK);
+    const bz = Math.floor(z / BLOCK);
+
+    if (surfaceHeight(x, z) > minY) return true;
+
+    const ch = chunkForBlock(bx, bz);
+    if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return false;
+
+    const firstBy = Math.max(0, Math.floor(minY / BLOCK) - 1);
+    const lastBy = Math.floor(maxY / BLOCK);
+    for (let by = firstBy; by <= lastBy; by++) {
+      const bottom = by * BLOCK;
+      const top = bottom + BLOCK;
+      if (top <= minY) continue;
+      if (bottom >= maxY) break;
+      if (ch.propBlocks.has(blockKey(bx, by, bz))) return true;
+    }
+    return false;
+  }
+
+  // Highest solid top at or below maxY. Leaving the ceiling below a canopy
+  // keeps the goat on the ground while it walks under the tree.
+  function supportHeight(x, z, maxY) {
+    const bx = Math.floor(x / BLOCK);
+    const bz = Math.floor(z / BLOCK);
+    let best = surfaceHeight(x, z);
+    if (best > maxY + 0.001) return best;
+
+    const ch = chunkForBlock(bx, bz);
+    if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return best;
+
+    const topBy = Math.floor(maxY / BLOCK) - 1;
+    for (let by = topBy; by >= 0; by--) {
+      if (ch.propBlocks.has(blockKey(bx, by, bz))) {
+        const top = (by + 1) * BLOCK;
+        if (top > best) best = top;
+        break;
+      }
+    }
+    return best;
   }
 
   function mulberry32(a) {
@@ -469,7 +530,7 @@
   }
 
   // ---- trees, rocks ----
-  function addTree(data, cx, cz, bx, bz, rnd) {
+  function addTree(addBlock, cx, cz, bx, bz, rnd) {
     const worldBX = cx * CHUNK_BLOCKS + bx;
     const worldBZ = cz * CHUNK_BLOCKS + bz;
     const baseY = heightBlocks(worldBX, worldBZ) * BLOCK;
@@ -478,7 +539,7 @@
     const trunkH = 5 + Math.floor(rnd() * 3);
 
     for (let i = 0; i < trunkH; i++) {
-      pushBlock(data, x, baseY + i * BLOCK, z, T_LOG_TOP, T_LOG, T_LOG, 0.94, 0.84);
+      addBlock(x, baseY + i * BLOCK, z, T_LOG_TOP, T_LOG, T_LOG, 0.94, 0.84, 'log');
     }
 
     const start = trunkH - 3;
@@ -503,21 +564,32 @@
       const ly = +p[1];
       const dz = +p[2];
       const shade = 0.82 + rnd() * 0.12;
-      pushBlock(
-        data,
+      addBlock(
         x + dx * BLOCK,
         baseY + ly * BLOCK,
         z + dz * BLOCK,
         T_LEAVES, T_LEAVES, T_LEAVES,
-        shade, shade
+        shade, shade,
+        'leaves'
       );
     });
   }
 
   function buildPropsGeometry(cx, cz) {
     const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
+    const blocks = new Map();
     const rnd = mulberry32(hashInt(cx, cz, 0x51ed270b));
     const trees = [];
+
+    function addBlock(x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide, kind) {
+      const bx = cx * CHUNK_BLOCKS + Math.round(x / BLOCK);
+      const bz = cz * CHUNK_BLOCKS + Math.round(z / BLOCK);
+      const by = Math.round(y / BLOCK);
+      const key = blockKey(bx, by, bz);
+      if (removedPropBlocks.has(key)) return;
+      blocks.set(key, kind);
+      pushBlock(data, x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide);
+    }
 
     let treeCount = rnd() < 0.72 ? 1 : 0;
     if (rnd() < 0.18) treeCount++;
@@ -538,7 +610,7 @@
       }
       if (!ok) continue;
       trees.push({ bx: bx, bz: bz });
-      addTree(data, cx, cz, bx, bz, rnd);
+      addTree(addBlock, cx, cz, bx, bz, rnd);
     }
 
     if (rnd() < 0.28) {
@@ -552,20 +624,20 @@
         for (let i = 0; i < count; i++) {
           const ox = Math.floor(rnd() * 2);
           const oz = Math.floor(rnd() * 2);
-          pushBlock(
-            data,
+          addBlock(
             rx * BLOCK + ox * BLOCK,
             baseY,
             rz * BLOCK + oz * BLOCK,
             T_STONE, T_STONE, T_STONE,
-            0.95, 0.8
+            0.95, 0.8,
+            'stone'
           );
         }
       }
     }
 
     if (data.idx.length === 0) return null;
-    return dataToGeometry(data, false);
+    return { geometry: dataToGeometry(data, false), blocks: blocks };
   }
 
   // ---- flowers and grass tufts ----
@@ -641,13 +713,15 @@
     terrain.receiveShadow = true;
     group.add(terrain);
 
-    const propsGeo = buildPropsGeometry(cx, cz);
+    const propsInfo = buildPropsGeometry(cx, cz);
     let props = null;
-    if (propsGeo) {
-      props = new THREE.Mesh(propsGeo, blockMat);
+    let propBlocks = new Map();
+    if (propsInfo) {
+      props = new THREE.Mesh(propsInfo.geometry, blockMat);
       props.castShadow = true;
       props.receiveShadow = true;
       group.add(props);
+      propBlocks = propsInfo.blocks;
     }
 
     const plantsGeo = buildPlantsGeometry(cx, cz);
@@ -658,7 +732,15 @@
     }
 
     worldGroup.add(group);
-    chunks.set(key, { group: group, terrain: terrain, props: props, plants: plants, cx: cx, cz: cz });
+    chunks.set(key, {
+      group: group,
+      terrain: terrain,
+      props: props,
+      propBlocks: propBlocks,
+      plants: plants,
+      cx: cx,
+      cz: cz
+    });
   }
 
   const chunkOffsets = [];
@@ -704,6 +786,29 @@
     ch.terrain.geometry = buildTerrainGeometry(cx, cz);
   }
 
+  function rebuildChunkProps(cx, cz) {
+    const ch = chunks.get(cx + ',' + cz);
+    if (!ch) return;
+
+    if (ch.props) {
+      ch.group.remove(ch.props);
+      ch.props.geometry.dispose();
+      ch.props = null;
+    }
+
+    const info = buildPropsGeometry(cx, cz);
+    if (!info) {
+      ch.propBlocks = new Map();
+      return;
+    }
+
+    ch.props = new THREE.Mesh(info.geometry, blockMat);
+    ch.props.castShadow = true;
+    ch.props.receiveShadow = true;
+    ch.group.add(ch.props);
+    ch.propBlocks = info.blocks;
+  }
+
   function rebuildTerrainAround(bx, bz) {
     const cx = Math.floor(bx / CHUNK_BLOCKS);
     const cz = Math.floor(bz / CHUNK_BLOCKS);
@@ -729,14 +834,22 @@
   const debrisGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
   const debrisGrassMat = std(0x74a948, 1);
   const debrisDirtMat = std(0x8b5a36, 1);
+  const debrisStoneMat = std(0x93938c, 1);
+  const debrisLogMat = std(0x6e5233, 1);
+  const debrisLeafMat = std(0x4f7a35, 1);
 
-  function spawnBlockDebris(bx, by, bz, grass) {
+  function spawnBlockDebris(bx, by, bz, kind) {
     const cx = bx * BLOCK + BLOCK / 2;
     const cy = by * BLOCK + BLOCK / 2;
     const cz = bz * BLOCK + BLOCK / 2;
 
     for (let i = 0; i < 8; i++) {
-      const mesh = new THREE.Mesh(debrisGeo, grass && i < 5 ? debrisGrassMat : debrisDirtMat);
+      let mat = debrisDirtMat;
+      if (kind === 'stone') mat = debrisStoneMat;
+      else if (kind === 'log') mat = debrisLogMat;
+      else if (kind === 'leaves') mat = debrisLeafMat;
+      else if (kind === 'grass' && i < 5) mat = debrisGrassMat;
+      const mesh = new THREE.Mesh(debrisGeo, mat);
       mesh.position.set(cx + rand(-0.7, 0.7), cy + rand(-0.7, 0.7), cz + rand(-0.7, 0.7));
       const scale = rand(0.6, 1.25);
       mesh.scale.setScalar(scale);
@@ -799,14 +912,16 @@
       for (let bx = bx0 - 1; bx <= bx0 + 1; bx++) {
         for (let bz = bz0 - 1; bz <= bz0 + 1; bz++) {
           for (let by = by0 - 1; by <= by0 + 1; by++) {
-            if (by < 0 || !isSolidBlock(bx, by, bz)) continue;
+            if (by < 0) continue;
+            const kind = solidKindAt(bx, by, bz);
+            if (!kind) continue;
             const qx = clamp(headSampleWorld.x, bx * BLOCK, bx * BLOCK + BLOCK);
             const qy = clamp(headSampleWorld.y, by * BLOCK, by * BLOCK + BLOCK);
             const qz = clamp(headSampleWorld.z, bz * BLOCK, bz * BLOCK + BLOCK);
             const d = Math.hypot(headSampleWorld.x - qx, headSampleWorld.y - qy, headSampleWorld.z - qz);
             if (d < bestDist) {
               bestDist = d;
-              best = { bx: bx, by: by, bz: bz };
+              best = { bx: bx, by: by, bz: bz, kind: kind };
             }
           }
         }
@@ -819,23 +934,62 @@
     const target = findHeadbuttTarget(headPivot);
     if (!target) return false;
 
+    if (target.kind !== 'terrain') {
+      removedPropBlocks.add(blockKey(target.bx, target.by, target.bz));
+      rebuildChunkProps(
+        Math.floor(target.bx / CHUNK_BLOCKS),
+        Math.floor(target.bz / CHUNK_BLOCKS)
+      );
+      spawnBlockDebris(target.bx, target.by, target.bz, target.kind);
+      return true;
+    }
+
     const wasTop = target.by === heightBlocks(target.bx, target.bz) - 1;
     removedBlocks.add(blockKey(target.bx, target.by, target.bz));
     rebuildTerrainAround(target.bx, target.bz);
-    spawnBlockDebris(target.bx, target.by, target.bz, wasTop);
+    spawnBlockDebris(target.bx, target.by, target.bz, wasTop ? 'grass' : 'dirt');
     return true;
   }
 
-  function breakBlockBelow(x, z) {
+  function breakBlockBelow(x, z, feetY) {
     const bx = Math.floor(x / BLOCK);
     const bz = Math.floor(z / BLOCK);
-    const by = topSolidY(bx, bz);
+    const ch = chunkForBlock(bx, bz);
+
+    let propBy = -1;
+    let propKind = null;
+    if (ch && ch.propBlocks && ch.propBlocks.size > 0) {
+      const topBy = Math.floor((feetY + 0.02) / BLOCK) - 1;
+      for (let by = topBy; by >= 0; by--) {
+        propKind = ch.propBlocks.get(blockKey(bx, by, bz));
+        if (propKind) {
+          propBy = by;
+          break;
+        }
+      }
+    }
+
+    const terrainBy = topSolidY(bx, bz);
+    const terrainTop = (terrainBy + 1) * BLOCK;
+    const propTop = propBy >= 0 ? (propBy + 1) * BLOCK : -1;
+
+    if (propBy >= 0 && propTop >= terrainTop - 0.001) {
+      removedPropBlocks.add(blockKey(bx, propBy, bz));
+      rebuildChunkProps(
+        Math.floor(bx / CHUNK_BLOCKS),
+        Math.floor(bz / CHUNK_BLOCKS)
+      );
+      spawnBlockDebris(bx, propBy, bz, propKind);
+      return true;
+    }
+
+    const by = terrainBy;
     if (by < 0 || !isSolidBlock(bx, by, bz)) return false;
 
     const wasTop = by === heightBlocks(bx, bz) - 1;
     removedBlocks.add(blockKey(bx, by, bz));
     rebuildTerrainAround(bx, bz);
-    spawnBlockDebris(bx, by, bz, wasTop);
+    spawnBlockDebris(bx, by, bz, wasTop ? 'grass' : 'dirt');
     return true;
   }
 
@@ -888,6 +1042,8 @@
     init: init,
     update: update,
     surfaceHeight: surfaceHeight,
+    blockedAt: blockedAt,
+    supportHeight: supportHeight,
     breakBlockInFront: breakBlockInFront,
     breakBlockBelow: breakBlockBelow
   };

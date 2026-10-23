@@ -26,6 +26,11 @@
   // so the visible "Mouse look" button (or F) is the entry point and Esc exits.
   const LOOK_YAW = 0.003;
   const LOOK_PITCH = 0.0022;
+  // polar is measured from the vertical: 0 is overhead, PI/2 is level, and
+  // values beyond PI/2 point the view upward. Keep enough room to see the sky.
+  const POLAR_MIN = 0.24;
+  const POLAR_MAX = 2.85;
+  const LOOK_CLEARANCE = 2.4;
   const supportsPointerLock = !M.config.coarsePointer &&
     typeof canvas.requestPointerLock === 'function' &&
     typeof document.exitPointerLock === 'function';
@@ -36,6 +41,14 @@
 
   function noteActivity() {
     lastInteraction = performance.now();
+  }
+
+  // Keep the boom from entering the goat when looking up and zoomed all the
+  // way in. At the default distance this still permits a nearly overhead sky
+  // view; close zoom trades some upward angle for clearance around the body.
+  function maxPolar() {
+    const ratio = clamp(LOOK_CLEARANCE / Math.max(distance, 0.001), 0, 1);
+    return Math.min(POLAR_MAX, Math.PI - Math.asin(ratio));
   }
 
   function getMovement(camera) {
@@ -75,7 +88,7 @@
     camTarget.y = damp(camTarget.y, desired.y, followY, dt);
     camTarget.z = damp(camTarget.z, desired.z, followXZ, dt);
 
-    const phi = polar + Math.sin(t * 0.17) * 0.014;
+    const phi = Math.min(polar + Math.sin(t * 0.17) * 0.014, maxPolar());
     const sinPhi = Math.sin(phi);
     const px = camTarget.x + distance * sinPhi * Math.sin(azimuth);
     const py = camTarget.y + distance * Math.cos(phi);
@@ -94,7 +107,23 @@
     const floor = surface + 1.1;
     if (cameraRef.position.y < floor) cameraRef.position.y = floor;
 
-    cameraRef.lookAt(camTarget);
+    if (phi > Math.PI / 2) {
+      // At steep upward angles the orbit point falls below the ground. The
+      // ground clamp alone would make a naive lookAt target horizontal and
+      // leave no way to look up, so preserve the intended orbit direction;
+      // the goat slides low in frame while the camera tilts up toward the sky.
+      const lx = camTarget.x - px;
+      const ly = camTarget.y - py;
+      const lz = camTarget.z - pz;
+      const len = Math.hypot(lx, ly, lz) || 1;
+      cameraRef.lookAt(
+        cameraRef.position.x + lx / len,
+        cameraRef.position.y + ly / len,
+        cameraRef.position.z + lz / len
+      );
+    } else {
+      cameraRef.lookAt(camTarget);
+    }
   }
 
 
@@ -133,7 +162,10 @@
 
     if (pointers.size === 2 && pinch) {
       const d = pinchDistance();
-      if (d > 0) distance = clamp(pinch.radius * (pinch.dist / d), 4, 11);
+      if (d > 0) {
+        distance = clamp(pinch.radius * (pinch.dist / d), 4, 11);
+        polar = clamp(polar, POLAR_MIN, maxPolar());
+      }
     } else if (drag && e.pointerId === drag.id) {
       const dx = e.clientX - drag.x;
       const dy = e.clientY - drag.y;
@@ -143,7 +175,7 @@
       azimuth -= dx * 0.006;
       // polar is measured from the vertical, so larger values lower the
       // camera. Dragging down should look down: decrease polar to raise it.
-      polar = clamp(polar - dy * 0.004, 0.32, 1.45);
+      polar = clamp(polar - dy * 0.004, POLAR_MIN, maxPolar());
     }
   });
 
@@ -186,6 +218,7 @@
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
     distance = clamp(distance * (1 + e.deltaY * 0.0012), 4, 11);
+    polar = clamp(polar, POLAR_MIN, maxPolar());
     lastInteraction = performance.now();
   }, { passive: false });
 
@@ -201,7 +234,7 @@
     azimuth -= dx * LOOK_YAW;
     // Standard mouse-look pitch: move the mouse up to look up, down to look
     // down. Small polar values place the orbit camera high and look downward.
-    polar = clamp(polar - dy * LOOK_PITCH, 0.24, 1.47);
+    polar = clamp(polar - dy * LOOK_PITCH, POLAR_MIN, maxPolar());
     if (lookClick) lookClick.moved += Math.abs(rawX) + Math.abs(rawY);
     lastInteraction = performance.now();
   });

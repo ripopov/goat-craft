@@ -1,11 +1,16 @@
 # Meadow Goat
 
+[![CI](https://github.com/ripopov/goat-craft/actions/workflows/ci.yml/badge.svg)](https://github.com/ripopov/goat-craft/actions/workflows/ci.yml)
+[![Deploy to GitHub Pages](https://github.com/ripopov/goat-craft/actions/workflows/pages.yml/badge.svg)](https://github.com/ripopov/goat-craft/actions/workflows/pages.yml)
+
+**Play online: [ripopov.github.io/goat-craft](https://ripopov.github.io/goat-craft/)**
+
 A small, endless blocky meadow with a procedural goat, built with three.js.
 
 
 ## Run it
 
-Open **`index.html`** directly in a browser (`file://`). No server, build step or package install is required. Keep the folder structure intact.
+Open **`index.html`** directly in a browser (`file://`). No server, build step or package install is required for local play. Keep the folder structure intact.
 
 ## Structure
 
@@ -23,6 +28,10 @@ js/environment.js   lights, sun shadows, sky dome, drifting clouds
 js/goat.js          goat rig, coat, gaits, physics, jumps, headbutt and hoof stomp
 js/controls.js      orbit camera, keyboard and pointer/touch input
 js/main.js          bootstraps the scene and owns the render loop
+scripts/build-site.mjs  copies the playable files into _site/
+scripts/check-site.mjs  checks local asset references in the built site
+.github/workflows/ci.yml    syntax, asset and served-page checks
+.github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
 
 The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` namespace. They are deliberately not ES modules: browsers block `import` and `fetch` from `file://` for security reasons, which would require a local server. Classic `<script src>` tags work from disk, so this remains a zero-server static page.
@@ -41,3 +50,9 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Music** (top-right button) — start/stop the generated folk soundtrack
 
 All action sounds (hoofbeats, jump, landing, headbutt, stomp, pickup and breathing) are synthesized in-browser; there are no audio files.
+
+## CI and hosting
+
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server.
+
+Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-site:
+    name: Static site checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check JavaScript syntax
+        run: |
+          for file in js/*.js; do
+            node --check "$file"
+          done
+
+      - name: Build static site
+        run: node scripts/build-site.mjs
+
+      - name: Check static assets
+        run: node scripts/check-site.mjs _site
+
+      - name: Smoke-test the built page
+        run: |
+          python3 -m http.server 4173 --bind 127.0.0.1 --directory _site >/tmp/goat-craft-http.log 2>&1 &
+          server=$!
+          trap 'kill "$server"' EXIT
+
+          for i in $(seq 1 20); do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ >/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+
+          curl --fail --silent --show-error http://127.0.0.1:4173/ | grep -q "Meadow Goat"
+          curl --fail --silent --show-error http://127.0.0.1:4173/css/style.css >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:4173/js/items.js >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:4173/vendor/three.min.js >/dev/null
+          echo "Static site served successfully."

@@ -80,6 +80,14 @@
     M.ui.setMusic(on);
   };
 
+  function wakeAudio() {
+    M.audio.unlock();
+  }
+
+  window.addEventListener('pointerdown', wakeAudio);
+  window.addEventListener('keydown', wakeAudio);
+  window.addEventListener('wheel', wakeAudio, { passive: true });
+
   const clock = new THREE.Clock();
   let elapsed = 0;
 

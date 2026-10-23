@@ -490,10 +490,13 @@
       groundY = worldRef.surfaceHeight(goat.position.x, goat.position.z);
 
       if (s.vy <= 0 && goat.position.y <= groundY) {
+        const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
         goat.position.y = groundY;
         s.vy = 0;
         s.grounded = true;
         s.jumps = 0;
+        s.footTimer = Math.max(s.footTimer, 0.14);
+        audioRef.land(impact);
       }
     }
 
@@ -565,6 +568,27 @@
       if (worldRef.breakBlockInFront(headPivot)) audioRef.thud();
     }
 
+    // Soft footfalls while moving, and a quiet breath while resting.
+    if (moving && s.grounded) {
+      s.footTimer -= dt;
+      if (s.footTimer <= 0) {
+        audioRef.step(s.runBlend > 0.5, s.speed);
+        s.footTimer = 0.3 - s.runBlend * 0.11;
+      }
+    } else {
+      s.footTimer = Math.min(s.footTimer, 0.08);
+    }
+
+    if (!moving && s.grounded && s.headbutt < 0) {
+      s.breathTimer -= dt;
+      if (s.breathTimer <= 0) {
+        audioRef.breath();
+        s.breathTimer = rand(6, 11);
+      }
+    } else {
+      s.breathTimer = Math.min(s.breathTimer, 2.5);
+    }
+
     s.earTimer -= dt;
     if (s.earTimer <= 0) {
       s.earTimer = rand(2.4, 6);
@@ -605,6 +629,8 @@
     state.vy = JUMP_SPEED;
     state.grounded = false;
     controlsRef.noteActivity();
+    audioRef.unlock();
+    audioRef.jump();
   }
 
   function startHeadbutt() {
@@ -615,6 +641,7 @@
     state.happy = Math.max(state.happy, 0.4);
     controlsRef.noteActivity();
     audioRef.unlock();
+    audioRef.whoosh();
   }
 
   function greet() {
@@ -652,6 +679,8 @@
       earTimer: 2.2,
       earTwitch: 0,
       manualHold: 0,
+      footTimer: 0.08,
+      breathTimer: rand(6, 10),
       headbutt: -1,
       headbuttHit: false,
       headbuttCooldown: 0

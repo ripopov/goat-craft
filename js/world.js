@@ -11,7 +11,9 @@
   let blockMat = null;
   let plantTex = null;
   let plantMat = null;
+  let waterMat = null;
   const wind = { value: 0 };
+  const waterTime = { value: 0 };
 
 
   // ------------------------------------------------------------------ world
@@ -20,6 +22,23 @@
   const CHUNK_SIZE = CHUNK_BLOCKS * BLOCK;
   const RENDER_RADIUS = M.config.renderRadius;
   const WORLD_SEED = 1337;
+
+  // Ponds are seeded on a 64-block lattice. A pond is a shallow, self-
+  // contained bowl with one full block of wading depth below the waterline.
+  // The starter pond is hand-placed in the view beyond the goat so the meadow
+  // always introduces water without relying on a lucky lattice roll.
+  const POND_CELL = 64;
+  const POND_PAD = 14;
+  const POND_DENSITY = 0.58;
+  const POND_MIN_RADIUS = 8;
+  const POND_MAX_RADIUS = 13;
+  const POND_SEED = 0x51a7c0de;
+  const POND_WATER_GAP = 0.55;
+  const POND_EDGE = 1.08;
+  const POND_INNER = 0.70;
+  const STARTER_PONDS = [
+    { id: 'pond-starter', cx: -10, cz: -2, r: 10, phase: 0.8, rimBlock: 4 }
+  ];
 
   function hashInt(x, z, seed) {
     let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(z | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b9);
@@ -46,11 +65,246 @@
     return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
   }
 
-  function heightBlocks(bx, bz) {
+  function rawHeightBlocks(bx, bz) {
     const n1 = valueNoise(bx * 0.045 + 11.3, bz * 0.045 - 7.1);
     const n2 = valueNoise(bx * 0.13 - 31.7, bz * 0.13 + 18.4);
     const n3 = valueNoise(bx * 0.31 + 101.2, bz * 0.31 - 73.5);
     return Math.max(0, Math.floor(1.0 + n1 * 4.2 + n2 * 0.7 + n3 * 0.2));
+  }
+
+  const pondPlanCache = new Map();
+  let starterPondPlans = null;
+
+  function makePondPlan(cx, cz, r, id, phase, seed, starter, rimOverride) {
+    // The waterline sits below the lowest raw rim block, so it normally
+    // cannot spill over the surrounding meadow. A starter pond may explicitly
+    // raise the rim one block to sit on a visible terrace; the radial bank
+    // shaping below keeps even that basin enclosed.
+    let rimBlock = 99;
+    for (let i = 0; i < 32; i++) {
+      const angle = i / 32 * Math.PI * 2;
+      const bx = Math.floor(cx + Math.cos(angle) * r * 1.02);
+      const bz = Math.floor(cz + Math.sin(angle) * r * 1.02);
+      rimBlock = Math.min(rimBlock, rawHeightBlocks(bx, bz));
+    }
+    rimBlock = Math.max(2, rimBlock);
+    if (rimOverride) rimBlock = Math.max(rimBlock, rimOverride);
+    const floorBlock = Math.max(0, rimBlock - 1);
+    return {
+      id: id,
+      cx: cx,
+      cz: cz,
+      r: r,
+      phase: phase,
+      seed: seed,
+      starter: !!starter,
+      rimBlock: rimBlock,
+      floorBlock: floorBlock,
+      waterLevel: rimBlock * BLOCK - POND_WATER_GAP
+    };
+  }
+
+  function getStarterPondPlans() {
+    if (starterPondPlans) return starterPondPlans;
+    starterPondPlans = STARTER_PONDS.map(function (spec) {
+      return makePondPlan(spec.cx, spec.cz, spec.r, spec.id, spec.phase, 0x51a7c0de, true, spec.rimBlock);
+    });
+    return starterPondPlans;
+  }
+
+  function pondPlanForCell(gx, gz) {
+    const key = gx + ',' + gz;
+    if (pondPlanCache.has(key)) return pondPlanCache.get(key);
+
+    const rnd = mulberry32(hashInt(gx, gz, POND_SEED));
+    let plan = null;
+    if (rnd() <= POND_DENSITY) {
+      const cx = gx * POND_CELL + POND_PAD + rnd() * (POND_CELL - POND_PAD * 2);
+      const cz = gz * POND_CELL + POND_PAD + rnd() * (POND_CELL - POND_PAD * 2);
+      const r = POND_MIN_RADIUS + rnd() * (POND_MAX_RADIUS - POND_MIN_RADIUS);
+      const phase = rnd() * Math.PI * 2;
+      const seed = hashInt(gx, gz, POND_SEED ^ 0x9e3779b9);
+      const clearOfSpawn = Math.hypot(cx, cz) >= r + 8;
+      let clearOfStarter = true;
+      const starters = getStarterPondPlans();
+      for (let i = 0; i < starters.length; i++) {
+        if (Math.hypot(cx - starters[i].cx, cz - starters[i].cz) < r + starters[i].r + 4) {
+          clearOfStarter = false;
+          break;
+        }
+      }
+      if (clearOfSpawn && clearOfStarter) {
+        plan = makePondPlan(cx, cz, r, 'pond-' + gx + ',' + gz, phase, seed, false);
+      }
+    }
+
+    pondPlanCache.set(key, plan);
+    return plan;
+  }
+
+  function pondShape(plan, bx, bz) {
+    const dx = bx + 0.5 - plan.cx;
+    const dz = bz + 0.5 - plan.cz;
+    const angle = Math.atan2(dz, dx);
+    const limit = plan.r * (
+      1 +
+      Math.sin(angle * 3 + plan.phase) * 0.06 +
+      Math.sin(angle * 5 - plan.phase * 0.7) * 0.025
+    );
+    const dist = Math.hypot(dx, dz);
+    return { dist: dist, limit: limit, score: dist / limit };
+  }
+
+  function pondInfluenceAtBlock(bx, bz) {
+    const gx = Math.floor(bx / POND_CELL);
+    const gz = Math.floor(bz / POND_CELL);
+    let best = null;
+
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const plan = pondPlanForCell(gx + dx, gz + dz);
+        if (!plan) continue;
+        const shape = pondShape(plan, bx, bz);
+        if (shape.dist > shape.limit * POND_EDGE) continue;
+        if (!best || shape.score < best.score) {
+          best = {
+            plan: plan,
+            dist: shape.dist,
+            limit: shape.limit,
+            score: shape.score
+          };
+        }
+      }
+    }
+
+    const starters = getStarterPondPlans();
+    for (let i = 0; i < starters.length; i++) {
+      const plan = starters[i];
+      const shape = pondShape(plan, bx, bz);
+      if (shape.dist > shape.limit * POND_EDGE) continue;
+      if (!best || shape.score < best.score) {
+        best = {
+          plan: plan,
+          dist: shape.dist,
+          limit: shape.limit,
+          score: shape.score
+        };
+      }
+    }
+    return best;
+  }
+
+  function pondHeightAt(bx, bz, base, info) {
+    const inner = info.limit * POND_INNER;
+    const outer = info.limit * POND_EDGE;
+    const floor = info.plan.floorBlock;
+    if (info.dist <= inner) return floor;
+
+    // Outside the water the bank rises back to the meadow, and to the pond's
+    // rim block where the original ground was lower. This keeps every pond
+    // from leaking across its shoreline.
+    const bank = Math.max(base, info.plan.rimBlock);
+    const t = clamp((info.dist - inner) / (outer - inner), 0, 1);
+    const smooth = t * t * (3 - 2 * t);
+    return Math.max(0, Math.round(floor + (bank - floor) * smooth));
+  }
+
+  function heightBlocks(bx, bz) {
+    const base = rawHeightBlocks(bx, bz);
+    const info = pondInfluenceAtBlock(bx, bz);
+    if (!info) return base;
+    return pondHeightAt(bx, bz, base, info);
+  }
+
+  // Water is a column whose carved floor sits below the pond waterline.
+  // Slopes and banks are dry even though they belong to the pond area.
+  function waterInfoAtBlock(bx, bz) {
+    const info = pondInfluenceAtBlock(bx, bz);
+    if (!info) return null;
+    // Follow terrain edits as well as the procedural basin, so digging a
+    // deeper hole raises the measured water depth and the water sides extend
+    // down to the new floor.
+    const top = (topSolidY(bx, bz) + 1) * BLOCK;
+    const level = info.plan.waterLevel;
+    if (top >= level - 0.02) return null;
+    return {
+      plan: info.plan,
+      level: level,
+      top: top,
+      depth: level - top,
+      bx: bx,
+      bz: bz
+    };
+  }
+
+  function isWaterColumn(bx, bz) {
+    return !!waterInfoAtBlock(bx, bz);
+  }
+
+  function isPondArea(bx, bz) {
+    const info = pondInfluenceAtBlock(bx, bz);
+    return !!info && info.dist <= info.limit * POND_EDGE;
+  }
+
+  function waterDepthAt(x, z) {
+    const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+    return info ? info.depth : 0;
+  }
+
+  function waterLevelAt(x, z) {
+    const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+    return info ? info.level : 0;
+  }
+
+  // Pond plans in the neighbourhood of a world-space point. Fish use this to
+  // generate and cull their shoals without depending on chunk streaming.
+  function pondsNear(x, z, radius) {
+    const reach = Math.max(0, radius || 0);
+    const bx0 = Math.floor((x - reach) / BLOCK);
+    const bx1 = Math.floor((x + reach) / BLOCK);
+    const bz0 = Math.floor((z - reach) / BLOCK);
+    const bz1 = Math.floor((z + reach) / BLOCK);
+    const gx0 = Math.floor(bx0 / POND_CELL) - 1;
+    const gx1 = Math.floor(bx1 / POND_CELL) + 1;
+    const gz0 = Math.floor(bz0 / POND_CELL) - 1;
+    const gz1 = Math.floor(bz1 / POND_CELL) + 1;
+    const found = new Map();
+
+    function consider(plan) {
+      if (!plan || found.has(plan.id)) return;
+      const wx = plan.cx * BLOCK;
+      const wz = plan.cz * BLOCK;
+      const dist = Math.hypot(wx - x, wz - z);
+      if (dist > reach + plan.r * BLOCK * 0.8) return;
+      found.set(plan.id, {
+        id: plan.id,
+        cx: plan.cx,
+        cz: plan.cz,
+        x: wx,
+        z: wz,
+        r: plan.r,
+        phase: plan.phase,
+        seed: plan.seed,
+        starter: plan.starter,
+        rimBlock: plan.rimBlock,
+        floorBlock: plan.floorBlock,
+        waterLevel: plan.waterLevel,
+        waterRadius: plan.r * BLOCK * 0.72,
+        distance: dist
+      });
+    }
+
+    for (let gz = gz0; gz <= gz1; gz++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        consider(pondPlanForCell(gx, gz));
+      }
+    }
+    const starters = getStarterPondPlans();
+    for (let i = 0; i < starters.length; i++) consider(starters[i]);
+
+    return Array.from(found.values()).sort(function (a, b) {
+      return a.distance - b.distance;
+    });
   }
 
   const removedBlocks = new Set();
@@ -512,6 +766,73 @@
     }
   }
 
+  // ---- water surfaces ----
+  // Water is built from the same coarse block columns as the terrain. A top
+  // quad covers every flooded cell and thin side quads close the volume at
+  // the shoreline, so the pond reads as water with depth rather than a blue
+  // decal floating over a hole.
+  function pushWaterTop(data, x, y, z, shade) {
+    pushQuad(
+      data,
+      [[x, y, z], [x, y, z + BLOCK], [x + BLOCK, y, z + BLOCK], [x + BLOCK, y, z]],
+      [0, 1, 0],
+      [[0, 0], [1, 0], [1, 1], [0, 1]],
+      shade
+    );
+  }
+
+  function pushWaterSide(data, dir, x, z, y0, y1, shade) {
+    const uvs = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    if (dir === 0) {
+      pushQuad(data, [[x, y0, z], [x, y0, z + BLOCK], [x, y1, z + BLOCK], [x, y1, z]], [-1, 0, 0], uvs, shade);
+    } else if (dir === 1) {
+      pushQuad(data, [[x + BLOCK, y0, z + BLOCK], [x + BLOCK, y0, z], [x + BLOCK, y1, z], [x + BLOCK, y1, z + BLOCK]], [1, 0, 0], uvs, shade);
+    } else if (dir === 2) {
+      pushQuad(data, [[x + BLOCK, y0, z], [x, y0, z], [x, y1, z], [x + BLOCK, y1, z]], [0, 0, -1], uvs, shade);
+    } else {
+      pushQuad(data, [[x, y0, z + BLOCK], [x + BLOCK, y0, z + BLOCK], [x + BLOCK, y1, z + BLOCK], [x, y1, z + BLOCK]], [0, 0, 1], uvs, shade);
+    }
+  }
+
+  function buildWaterGeometry(cx, cz) {
+    const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
+    const originBX = cx * CHUNK_BLOCKS;
+    const originBZ = cz * CHUNK_BLOCKS;
+
+    for (let bz = 0; bz < CHUNK_BLOCKS; bz++) {
+      for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
+        const worldBX = originBX + bx;
+        const worldBZ = originBZ + bz;
+        const water = waterInfoAtBlock(worldBX, worldBZ);
+        if (!water) continue;
+
+        const x = bx * BLOCK;
+        const z = bz * BLOCK;
+        const level = water.level;
+        const shade = 0.86 + hash01(worldBX, worldBZ) * 0.14;
+        pushWaterTop(data, x, level, z, shade);
+
+        const neighbours = [
+          [worldBX - 1, worldBZ],
+          [worldBX + 1, worldBZ],
+          [worldBX, worldBZ - 1],
+          [worldBX, worldBZ + 1]
+        ];
+        const bottom = water.top + 0.015;
+        for (let dir = 0; dir < 4; dir++) {
+          const n = waterInfoAtBlock(neighbours[dir][0], neighbours[dir][1]);
+          if (n && Math.abs(n.level - level) < 0.01) continue;
+          if (level - bottom > 0.02) {
+            pushWaterSide(data, dir, x, z, bottom, level, shade * 0.78);
+          }
+        }
+      }
+    }
+
+    if (data.idx.length === 0) return null;
+    return dataToGeometry(data, false);
+  }
+
   function dataToGeometry(data, withBend) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(data.pos, 3));
@@ -649,6 +970,8 @@
         const z = bz * BLOCK;
         const worldBX = originBX + bx;
         const worldBZ = originBZ + bz;
+        const water = waterInfoAtBlock(worldBX, worldBZ);
+        const waterLevel = water ? water.level : -1;
         const nhW = hAt(bx - 1, bz);
         const nhE = hAt(bx + 1, bz);
         const nhN = hAt(bx, bz - 1);
@@ -661,9 +984,15 @@
           const isTop = by === h - 1;
           const shade = (isTop ? 0.95 : 0.86) + hash01(worldBX, worldBZ) * 0.05;
           const solidAbove = by + 1 < h && !isRemoved(worldBX, by + 1, worldBZ);
+          // The pond floor and submerged sides use mud-coloured dirt instead
+          // of bright meadow grass. The surrounding bank stays grassy at the
+          // waterline.
+          const submerged = waterLevel > y + 0.02;
+          const topTile = isTop && !submerged ? T_GRASS : T_DIRT;
+          const sideTile = isTop && !submerged ? T_GRASS_SIDE : T_DIRT;
 
           if (!solidAbove) {
-            pushTop(data, x, y + BLOCK, z, isTop ? T_GRASS : T_DIRT, shade);
+            pushTop(data, x, y + BLOCK, z, topTile, shade);
           }
 
           if (by > 0 && isRemoved(worldBX, by - 1, worldBZ)) {
@@ -671,16 +1000,16 @@
           }
 
           if (!(by < nhW && !isRemoved(worldBX - 1, by, worldBZ))) {
-            pushSide(data, 0, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.72);
+            pushSide(data, 0, x, z, y, y + BLOCK, sideTile, shade * 0.72);
           }
           if (!(by < nhE && !isRemoved(worldBX + 1, by, worldBZ))) {
-            pushSide(data, 1, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.72);
+            pushSide(data, 1, x, z, y, y + BLOCK, sideTile, shade * 0.72);
           }
           if (!(by < nhN && !isRemoved(worldBX, by, worldBZ - 1))) {
-            pushSide(data, 2, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.7);
+            pushSide(data, 2, x, z, y, y + BLOCK, sideTile, shade * 0.7);
           }
           if (!(by < nhS && !isRemoved(worldBX, by, worldBZ + 1))) {
-            pushSide(data, 3, x, z, y, y + BLOCK, isTop ? T_GRASS_SIDE : T_DIRT, shade * 0.7);
+            pushSide(data, 3, x, z, y, y + BLOCK, sideTile, shade * 0.7);
           }
         }
       }
@@ -761,9 +1090,12 @@
       for (let attempt = 0; attempt < 14; attempt++) {
         bx = 3 + Math.floor(rnd() * 11);
         bz = 3 + Math.floor(rnd() * 11);
-        const wx = (cx * CHUNK_BLOCKS + bx) * BLOCK + BLOCK / 2;
-        const wz = (cz * CHUNK_BLOCKS + bz) * BLOCK + BLOCK / 2;
+        const worldBX = cx * CHUNK_BLOCKS + bx;
+        const worldBZ = cz * CHUNK_BLOCKS + bz;
+        const wx = worldBX * BLOCK + BLOCK / 2;
+        const wz = worldBZ * BLOCK + BLOCK / 2;
         if (wx * wx + wz * wz < 225) continue;
+        if (isPondArea(worldBX, worldBZ)) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
         ok = true;
         break;
@@ -778,8 +1110,10 @@
       const rz = 2 + Math.floor(rnd() * 12);
       const wx = (cx * CHUNK_BLOCKS + rx) * BLOCK + BLOCK / 2;
       const wz = (cz * CHUNK_BLOCKS + rz) * BLOCK + BLOCK / 2;
-      if (wx * wx + wz * wz > 100) {
-        const baseY = heightBlocks(cx * CHUNK_BLOCKS + rx, cz * CHUNK_BLOCKS + rz) * BLOCK;
+      const stoneWorldBX = cx * CHUNK_BLOCKS + rx;
+      const stoneWorldBZ = cz * CHUNK_BLOCKS + rz;
+      if (wx * wx + wz * wz > 100 && !isPondArea(stoneWorldBX, stoneWorldBZ)) {
+        const baseY = heightBlocks(stoneWorldBX, stoneWorldBZ) * BLOCK;
         const count = 1 + Math.floor(rnd() * 3);
         for (let i = 0; i < count; i++) {
           const ox = Math.floor(rnd() * 2);
@@ -862,6 +1196,7 @@
       const bz = Math.floor(rnd() * CHUNK_BLOCKS);
       const worldBX = cx * CHUNK_BLOCKS + bx;
       const worldBZ = cz * CHUNK_BLOCKS + bz;
+      if (waterInfoAtBlock(worldBX, worldBZ)) continue;
       const y = heightBlocks(worldBX, worldBZ) * BLOCK + 0.02;
       const x = bx * BLOCK + BLOCK * 0.5 + (rnd() - 0.5) * BLOCK * 0.7;
       const z = bz * BLOCK + BLOCK * 0.5 + (rnd() - 0.5) * BLOCK * 0.7;
@@ -913,6 +1248,15 @@
       group.add(plants);
     }
 
+    const waterGeo = buildWaterGeometry(cx, cz);
+    let water = null;
+    if (waterGeo) {
+      water = new THREE.Mesh(waterGeo, waterMat);
+      water.receiveShadow = true;
+      water.renderOrder = 3;
+      group.add(water);
+    }
+
     worldGroup.add(group);
     chunks.set(key, {
       group: group,
@@ -920,6 +1264,7 @@
       props: props,
       propBlocks: propBlocks,
       plants: plants,
+      water: water,
       cx: cx,
       cz: cz
     });
@@ -956,9 +1301,26 @@
         ch.terrain.geometry.dispose();
         if (ch.props) ch.props.geometry.dispose();
         if (ch.plants) ch.plants.geometry.dispose();
+        if (ch.water) ch.water.geometry.dispose();
         chunks.delete(key);
       }
     });
+  }
+
+  function rebuildChunkWater(cx, cz) {
+    const ch = chunks.get(cx + ',' + cz);
+    if (!ch) return;
+    if (ch.water) {
+      ch.group.remove(ch.water);
+      ch.water.geometry.dispose();
+      ch.water = null;
+    }
+    const geo = buildWaterGeometry(cx, cz);
+    if (!geo) return;
+    ch.water = new THREE.Mesh(geo, waterMat);
+    ch.water.receiveShadow = true;
+    ch.water.renderOrder = 3;
+    ch.group.add(ch.water);
   }
 
   function rebuildChunkTerrain(cx, cz) {
@@ -966,6 +1328,7 @@
     if (!ch) return;
     ch.terrain.geometry.dispose();
     ch.terrain.geometry = buildTerrainGeometry(cx, cz);
+    rebuildChunkWater(cx, cz);
   }
 
   function rebuildChunkProps(cx, cz) {
@@ -1316,6 +1679,30 @@
       vertexColors: true
     });
 
+    waterMat = new THREE.MeshStandardMaterial({
+      color: 0x358ba7,
+      roughness: 0.2,
+      metalness: 0.04,
+      transparent: true,
+      opacity: 0.56,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      vertexColors: true,
+      emissive: 0x0a2b38,
+      emissiveIntensity: 0.2
+    });
+    waterMat.onBeforeCompile = function (shader) {
+      shader.uniforms.uWaterTime = waterTime;
+      shader.vertexShader = 'uniform float uWaterTime;\n' + shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+         float waterWave = sin(position.x * 0.72 + uWaterTime * 1.4) * 0.018
+                         + cos(position.z * 0.63 - uWaterTime * 1.05) * 0.016;
+         transformed.y += waterWave;`
+      );
+    };
+    waterMat.customProgramCacheKey = function () { return 'meadow-water-waves'; };
+
     plantTex = makePlantAtlas();
     plantMat = new THREE.MeshStandardMaterial({
       map: plantTex,
@@ -1348,6 +1735,7 @@
     updateChunks(player);
     updateDebris(dt);
     wind.value = t;
+    waterTime.value = t;
   }
 
   M.world = {
@@ -1364,6 +1752,12 @@
     blockInfoAt: blockInfoAt,
     topSoilInfo: topSoilInfo,
     isPlacedBlock: isPlacedBlock,
+    isWaterColumn: isWaterColumn,
+    isPondArea: isPondArea,
+    waterDepthAt: waterDepthAt,
+    waterLevelAt: waterLevelAt,
+    waterInfoAtBlock: waterInfoAtBlock,
+    pondsNear: pondsNear,
     canPlaceBlock: canPlaceBlock,
     placeBlock: placeBlock,
     blockIcon: blockIcon,

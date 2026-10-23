@@ -50,5 +50,6 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:4173/ | grep -q "Meadow Goat"
           curl --fail --silent --show-error http://127.0.0.1:4173/css/style.css >/dev/null
           curl --fail --silent --show-error http://127.0.0.1:4173/js/items.js >/dev/null
+          curl --fail --silent --show-error http://127.0.0.1:4173/js/fish.js >/dev/null
           curl --fail --silent --show-error http://127.0.0.1:4173/vendor/three.min.js >/dev/null
           echo "Static site served successfully."

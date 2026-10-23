@@ -827,6 +827,14 @@
 
     if (!canStandAt(animal, nx, nz, p.y, yaw, loose)) return false;
 
+    // The herd drinks at the shore but does not wade into ponds. If an
+    // animal somehow ends up in the water, allow it to walk back out.
+    const targetWet = worldRef.isWaterColumn(Math.floor(nx / BLOCK), Math.floor(nz / BLOCK));
+    if (targetWet) {
+      const currentlyWet = worldRef.isWaterColumn(Math.floor(p.x / BLOCK), Math.floor(p.z / BLOCK));
+      if (!currentlyWet) return false;
+    }
+
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
       const oldD = Math.hypot(p.x - g.x, p.z - g.z);
@@ -991,6 +999,8 @@
       for (let dz = -1; dz <= 1; dz++) {
         const px = (bx + dx + 0.5) * bs;
         const pz = (bz + dz + 0.5) * bs;
+        if (worldRef.isPondArea(bx + dx, bz + dz)) return null;
+        if (worldRef.isWaterColumn(bx + dx, bz + dz)) return null;
         if (Math.abs(worldRef.surfaceHeight(px, pz) - groundY) > 0.01) return null;
         if (!worldRef.canPlaceBlock(bx + dx, baseBy, bz + dz)) return null;
         for (let k = 0; k < 5; k++) {
@@ -1168,6 +1178,7 @@
           }
         }
         if (nearSite) continue;
+        if (worldRef.isPondArea(bx, bz) || worldRef.isWaterColumn(bx, bz)) continue;
         const info = worldRef.topSoilInfo(bx, bz);
         if (!info) continue;
         if (Math.abs(info.top - levelY) > 0.35 &&
@@ -1254,6 +1265,8 @@
 
       if (Math.hypot(x - player.x, z - player.z) < 2.2) continue;
       if (Math.abs(y - p.y) > 2.4) continue;
+      if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
+      if (worldRef.isPondArea(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
       if (!canStandAt(animal, x, z, y, angle)) continue;
       if (!actorSpotClear(animal, x, z, 0.35)) continue;
 
@@ -1294,6 +1307,7 @@
         const distance = distances[d];
         const x = tx + Math.sin(angle) * distance;
         const z = tz + Math.cos(angle) * distance;
+        if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
         const y = nearestGround(x, z);
         if (Math.abs(y - p.y) > maxRise) continue;
         if (opts.levelY !== undefined && Math.abs(y - opts.levelY) > 0.45) continue;
@@ -2844,6 +2858,8 @@
       const z = cz + Math.cos(angle) * radius;
       const y = nearestGround(x, z);
       if (y < 0.01) continue;
+      if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
+      if (worldRef.isPondArea(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
       const yaw = rand(0, Math.PI * 2);
       if (!canStandAt(ignore || animals[0], x, z, y, yaw)) continue;
       if (goatRef && Math.hypot(x - goatRef.group.position.x, z - goatRef.group.position.z) < 4.0) continue;
@@ -2874,6 +2890,8 @@
       const z = pz + Math.cos(angle) * distance;
       const y = nearestGround(x, z);
       if (Math.abs(y - gy) > 1.4) continue;
+      if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
+      if (worldRef.isPondArea(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
       if (Math.hypot(x - goatRef.group.position.x, z - goatRef.group.position.z) < 2.6) continue;
       if (!canStandAt(animal, x, z, y, Math.atan2(goatRef.group.position.x - x, goatRef.group.position.z - z))) continue;
       if (!actorSpotClearForSpawn(x, z)) continue;
@@ -3027,6 +3045,8 @@
       probe.def = SPECIES[entry.species];
       let spawn = null;
       if (canStandAt(probe, preferred.x, preferred.z, preferred.y, preferred.yaw) &&
+          !worldRef.isWaterColumn(Math.floor(preferred.x / BLOCK), Math.floor(preferred.z / BLOCK)) &&
+          !worldRef.isPondArea(Math.floor(preferred.x / BLOCK), Math.floor(preferred.z / BLOCK)) &&
           actorSpotClearForSpawn(preferred.x, preferred.z) &&
           Math.abs(preferred.y - goatRef.group.position.y) < 1.4) {
         spawn = preferred;

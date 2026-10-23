@@ -50,7 +50,12 @@
     const steering = held.w || held.a || held.s || held.d;
     if (elapsed > 3.0 && !drag && !reduceMotion && !steering) azimuth += dt * 0.1;
 
-    desired.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
+    const waterTop = world.waterLevelAt ? world.waterLevelAt(goat.position.x, goat.position.z) : 0;
+    desired.set(
+      goat.position.x,
+      Math.max(goat.position.y + 1.25, waterTop > 0 ? waterTop + 0.25 : 0),
+      goat.position.z
+    );
     const followY = state.grounded ? 2.4 : 12.0;
     const followXZ = 3.8 + state.runBlend * 4.2;
     camTarget.x = damp(camTarget.x, desired.x, followXZ, dt);
@@ -67,7 +72,13 @@
     cameraRef.position.y = damp(cameraRef.position.y, py, 14, dt);
     cameraRef.position.z = damp(cameraRef.position.z, pz, 14, dt);
 
-    const floor = world.surfaceHeight(cameraRef.position.x, cameraRef.position.z) + 1.1;
+    // When the orbit camera drifts over a pond, keep it above the waterline
+    // instead of dropping to the flooded floor and ending up inside the goat.
+    const surface = Math.max(
+      world.surfaceHeight(cameraRef.position.x, cameraRef.position.z),
+      world.waterLevelAt ? world.waterLevelAt(cameraRef.position.x, cameraRef.position.z) : 0
+    );
+    const floor = surface + 1.1;
     if (cameraRef.position.y < floor) cameraRef.position.y = floor;
 
     cameraRef.lookAt(camTarget);

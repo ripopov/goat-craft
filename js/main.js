@@ -58,6 +58,11 @@
     goat: M.goat
   });
 
+  M.fish.init({
+    scene: scene,
+    world: M.world
+  });
+
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
 
@@ -108,6 +113,7 @@
     M.goat.update(dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.world.update(M.goat.group.position, dt, elapsed);
+    M.fish.update(dt, elapsed, M.goat.group.position);
     M.items.update(dt, elapsed, M.goat.group);
     M.animals.update(dt, elapsed, M.goat.group);
     M.environment.update(camera, M.goat.group, dt, elapsed);

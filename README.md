@@ -31,9 +31,9 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **WASD / arrow keys** — move
 - **Shift** — gallop (2× speed, four-beat gait)
 - **Space** — jump (up to three times in the air)
-- **E** — headbutt a block the head/horns actually touch
+- **E / left click / tap** — headbutt a block the head/horns actually touch
 - **Drag** — orbit · **Wheel / pinch** — zoom
-- **Click / tap the goat**, or **Say hi** — bleat and jump
+- **Say hi** — bleat and jump
 - **Music** (top-right button) — start/stop the generated folk soundtrack
 
 All action sounds (hoofbeats, jump, landing, headbutt and breathing) are synthesized in-browser; there are no audio files.

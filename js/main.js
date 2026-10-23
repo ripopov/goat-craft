@@ -60,15 +60,8 @@
     M.goat.startHeadbutt();
   };
 
-  const raycaster = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
-
-  M.controls.onTap = function (clientX, clientY) {
-    ndc.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
-    raycaster.setFromCamera(ndc, camera);
-    if (raycaster.intersectObject(M.goat.group, true).length > 0) {
-      M.goat.greet();
-    }
+  M.controls.onTap = function () {
+    M.goat.startHeadbutt();
   };
 
   M.ui.onGreet = function () {

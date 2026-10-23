@@ -86,7 +86,7 @@
     lastInteraction = performance.now();
 
     if (pointers.size === 1) {
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, time: performance.now() };
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, time: performance.now(), button: e.button };
       pinch = null;
       canvas.classList.add('dragging');
     } else {
@@ -122,10 +122,10 @@
 
     if (pointers.size === 1) {
       const entry = pointers.entries().next().value;
-      drag = { id: entry[0], x: entry[1].x, y: entry[1].y, moved: 99, time: performance.now() };
+      drag = { id: entry[0], x: entry[1].x, y: entry[1].y, moved: 99, time: performance.now(), button: -1 };
       pinch = null;
     } else if (pointers.size === 0) {
-      if (drag && drag.id === e.pointerId && drag.moved < 9 && performance.now() - drag.time < 550) {
+      if (drag && drag.id === e.pointerId && drag.button === 0 && drag.moved < 9 && performance.now() - drag.time < 550) {
         if (M.controls.onTap) M.controls.onTap(e.clientX, e.clientY);
       }
       drag = null;

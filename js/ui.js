@@ -55,7 +55,7 @@
 
     if (M.config.coarsePointer) {
       const hint = document.getElementById('hint');
-      if (hint) hint.innerHTML = '<b>drag</b> to orbit &nbsp;·&nbsp; <b>pinch</b> to zoom &nbsp;·&nbsp; <b>tap the goat</b>';
+      if (hint) hint.innerHTML = '<b>drag</b> to orbit &nbsp;·&nbsp; <b>pinch</b> to zoom &nbsp;·&nbsp; <b>tap</b> headbutt';
     }
   }
 

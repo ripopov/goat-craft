@@ -60,6 +60,10 @@
     M.goat.startHeadbutt();
   };
 
+  M.controls.onStomp = function () {
+    M.goat.startStomp();
+  };
+
   M.controls.onTap = function () {
     M.goat.startHeadbutt();
   };

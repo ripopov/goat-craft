@@ -826,6 +826,19 @@
     return true;
   }
 
+  function breakBlockBelow(x, z) {
+    const bx = Math.floor(x / BLOCK);
+    const bz = Math.floor(z / BLOCK);
+    const by = topSolidY(bx, bz);
+    if (by < 0 || !isSolidBlock(bx, by, bz)) return false;
+
+    const wasTop = by === heightBlocks(bx, bz) - 1;
+    removedBlocks.add(blockKey(bx, by, bz));
+    rebuildTerrainAround(bx, bz);
+    spawnBlockDebris(bx, by, bz, wasTop);
+    return true;
+  }
+
 
   function init(scene, renderer) {
     sceneRef = scene;
@@ -875,6 +888,7 @@
     init: init,
     update: update,
     surfaceHeight: surfaceHeight,
-    breakBlockInFront: breakBlockInFront
+    breakBlockInFront: breakBlockInFront,
+    breakBlockBelow: breakBlockBelow
   };
 })(window.Meadow = window.Meadow || {});

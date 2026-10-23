@@ -317,6 +317,79 @@
     } catch (err) { /* audio is a bonus */ }
   }
 
+  function stomp(broke) {
+    try {
+      const audio = unlock();
+      if (!audio) return;
+
+      const now = audio.currentTime + 0.002;
+      const dest = out(0);
+
+      // heavy hoof hitting packed earth
+      const osc = audio.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(86, now);
+      osc.frequency.exponentialRampToValueAtTime(42, now + 0.18);
+      const gain = audio.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.07, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.26);
+
+      const hiss = audio.createBufferSource();
+      hiss.buffer = noiseBuffer;
+      const filter = audio.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 420;
+      filter.Q.value = 0.7;
+      const ng = audio.createGain();
+      ng.gain.setValueAtTime(0.0001, now);
+      ng.gain.exponentialRampToValueAtTime(0.024, now + 0.006);
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.17);
+      hiss.connect(filter);
+      filter.connect(ng);
+      ng.connect(dest);
+      hiss.start(now, rand(0, 0.45));
+      hiss.stop(now + 0.19);
+
+      if (broke) {
+        const crack = audio.createBufferSource();
+        crack.buffer = noiseBuffer;
+        const crackFilter = audio.createBiquadFilter();
+        crackFilter.type = 'bandpass';
+        crackFilter.frequency.value = 1750;
+        crackFilter.Q.value = 1.2;
+        const crackGain = audio.createGain();
+        crackGain.gain.setValueAtTime(0.0001, now);
+        crackGain.gain.exponentialRampToValueAtTime(0.022, now + 0.004);
+        crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+        crack.connect(crackFilter);
+        crackFilter.connect(crackGain);
+        crackGain.connect(dest);
+        crack.start(now, rand(0, 0.5));
+        crack.stop(now + 0.09);
+
+        const scatter = audio.createBufferSource();
+        scatter.buffer = noiseBuffer;
+        const scatterFilter = audio.createBiquadFilter();
+        scatterFilter.type = 'highpass';
+        scatterFilter.frequency.value = 950;
+        const scatterGain = audio.createGain();
+        scatterGain.gain.setValueAtTime(0.0001, now + 0.01);
+        scatterGain.gain.exponentialRampToValueAtTime(0.011, now + 0.025);
+        scatterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+        scatter.connect(scatterFilter);
+        scatterFilter.connect(scatterGain);
+        scatterGain.connect(dest);
+        scatter.start(now + 0.01, rand(0, 0.4));
+        scatter.stop(now + 0.18);
+      }
+    } catch (err) { /* audio is a bonus */ }
+  }
+
   function breath() {
     try {
       const audio = ctx;
@@ -350,6 +423,7 @@
     jump: jump,
     whoosh: whoosh,
     land: land,
+    stomp: stomp,
     breath: breath
   };
 })(window.Meadow = window.Meadow || {});

@@ -125,8 +125,9 @@
       drag = { id: entry[0], x: entry[1].x, y: entry[1].y, moved: 99, time: performance.now(), button: -1 };
       pinch = null;
     } else if (pointers.size === 0) {
-      if (drag && drag.id === e.pointerId && drag.button === 0 && drag.moved < 9 && performance.now() - drag.time < 550) {
-        if (M.controls.onTap) M.controls.onTap(e.clientX, e.clientY);
+      if (drag && drag.id === e.pointerId && drag.moved < 9 && performance.now() - drag.time < 550) {
+        if (drag.button === 0 && M.controls.onTap) M.controls.onTap(e.clientX, e.clientY);
+        else if (drag.button === 2 && M.controls.onStomp) M.controls.onStomp();
       }
       drag = null;
       pinch = null;
@@ -136,6 +137,10 @@
 
   canvas.addEventListener('pointerup', releasePointer);
   canvas.addEventListener('pointercancel', releasePointer);
+
+  canvas.addEventListener('contextmenu', function (e) {
+    e.preventDefault();
+  });
 
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
@@ -228,6 +233,7 @@
     snapTo: snapTo,
     onJump: null,
     onHeadbutt: null,
+    onStomp: null,
     onTap: null,
     get running() { return held.shift; }
   };

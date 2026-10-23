@@ -14,12 +14,12 @@ index.html          markup only
 css/style.css       page + HUD styling
 vendor/three.min.js three.js r149 (classic UMD build)
 js/core.js          shared config, math helpers, material helper
-js/audio.js         WebAudio bleat, hoofbeats, jump/land, headbutt and breath sounds
+js/audio.js         WebAudio bleat, hoofbeats, jump/land, headbutt/stomp and breath sounds
 js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
 js/world.js         procedural terrain, chunk streaming, block removal, debris
 js/environment.js   lights, sun shadows, sky dome, drifting clouds
-js/goat.js          goat rig, coat, gaits, physics, jumps and headbutt
+js/goat.js          goat rig, coat, gaits, physics, jumps, headbutt and hoof stomp
 js/controls.js      orbit camera, keyboard and pointer/touch input
 js/main.js          bootstraps the scene and owns the render loop
 ```
@@ -31,9 +31,10 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **WASD / arrow keys** — move
 - **Shift** — gallop (2× speed, four-beat gait)
 - **Space** — jump (up to three times in the air)
-- **E / left click / tap** — headbutt a block the head/horns actually touch
+- **Left click / tap / E** — headbutt a block the head/horns actually touch
+- **Right click** — stomp the block beneath the goat
 - **Drag** — orbit · **Wheel / pinch** — zoom
 - **Say hi** — bleat and jump
 - **Music** (top-right button) — start/stop the generated folk soundtrack
 
-All action sounds (hoofbeats, jump, landing, headbutt and breathing) are synthesized in-browser; there are no audio files.
+All action sounds (hoofbeats, jump, landing, headbutt, stomp and breathing) are synthesized in-browser; there are no audio files.

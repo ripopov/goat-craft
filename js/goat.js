@@ -349,19 +349,14 @@
   makeLeg(0.23, 0.42, true, Math.PI, Math.PI * 1.5);
   makeLeg(-0.25, -0.45, false, Math.PI, 0);
   makeLeg(0.25, -0.45, false, 0, Math.PI * 0.5);
-
-  // forgiving click target
-  const hitTarget = new THREE.Mesh(
-    new THREE.SphereGeometry(1, 8, 6),
-    new THREE.MeshBasicMaterial({ visible: false })
-  );
-  hitTarget.position.set(0, 1.25, -0.02);
-  hitTarget.scale.set(0.78, 1.18, 1.05);
-  goat.add(hitTarget);
+  const stompLeg = legs[1];
   const GRAVITY = 26;
   const JUMP_SPEED = 12.2;
   const MAX_JUMPS = 3;
   const STEP_CLEARANCE = 0.06;
+  const STOMP_LIFT_END = 0.24;
+  const STOMP_IMPACT = 0.36;
+  const STOMP_END = 0.54;
 
   let blinkTimer = rand(1.6, 3.2);
   let blink = 0;
@@ -511,6 +506,23 @@
       if (s.headbutt > 0.34) s.headbutt = -1;
     }
 
+    // ---- hoof stomp timing ----
+    s.stompCooldown = Math.max(0, s.stompCooldown - dt);
+    let stompLift = 0;
+    let stompPending = false;
+    if (s.stomp >= 0) {
+      s.stomp += dt;
+      if (s.stomp < STOMP_LIFT_END) {
+        const v = clamp(s.stomp / STOMP_LIFT_END, 0, 1);
+        stompLift = v * v * (3 - 2 * v);
+      } else if (s.stomp < STOMP_IMPACT) {
+        const v = clamp((s.stomp - STOMP_LIFT_END) / (STOMP_IMPACT - STOMP_LIFT_END), 0, 1);
+        stompLift = 1 - v * v * (3 - 2 * v);
+      }
+      if (!s.stompHit && s.stomp >= STOMP_IMPACT) stompPending = true;
+      if (s.stomp > STOMP_END) s.stomp = -1;
+    }
+
     s.tuck = damp(s.tuck, s.grounded ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
     const stride = moving ? clamp(s.speed / 0.6, 0, 1) : 0;
@@ -532,6 +544,10 @@
         hipTarget = hipWalk + (hipRun - hipWalk) * run;
         kneeTarget = kneeWalk + (kneeRun - kneeWalk) * run;
       }
+      if (leg === stompLeg) {
+        hipTarget -= 0.72 * stompLift;
+        kneeTarget += 1.35 * stompLift;
+      }
       leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
     }
@@ -544,12 +560,13 @@
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
+    const stompTilt = -0.05 * stompLift;
     rig.rotation.x = damp(rig.rotation.x, (jumpK > 0 ? -0.16 * jumpK : 0) + buttPose * 0.08 + Math.sin(s.runPhase + 0.7) * 0.05 * run, 9, dt);
-    rig.rotation.z = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run;
+    rig.rotation.z = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run + stompTilt;
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
-    if (s.headbutt >= 0) lookYaw = 0;
-    if (!moving && s.grounded && s.headbutt < 0) {
+    if (s.headbutt >= 0 || s.stomp >= 0) lookYaw = 0;
+    if (!moving && s.grounded && s.headbutt < 0 && s.stomp < 0) {
       const camLocal = goat.worldToLocal(cameraRef.position.clone());
       lookYaw = clamp(Math.atan2(camLocal.x, camLocal.z), -0.6, 0.6) * 0.9;
     }
@@ -568,6 +585,13 @@
       if (worldRef.breakBlockInFront(headPivot)) audioRef.thud();
     }
 
+    if (stompPending) {
+      s.stompHit = true;
+      const broke = s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z);
+      audioRef.stomp(broke);
+      if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
+    }
+
     // Soft footfalls while moving, and a quiet breath while resting.
     if (moving && s.grounded) {
       s.footTimer -= dt;
@@ -579,7 +603,7 @@
       s.footTimer = Math.min(s.footTimer, 0.08);
     }
 
-    if (!moving && s.grounded && s.headbutt < 0) {
+    if (!moving && s.grounded && s.headbutt < 0 && s.stomp < 0) {
       s.breathTimer -= dt;
       if (s.breathTimer <= 0) {
         audioRef.breath();
@@ -644,6 +668,15 @@
     audioRef.whoosh();
   }
 
+  function startStomp() {
+    if (!state.grounded || state.stompCooldown > 0) return;
+    state.stomp = 0;
+    state.stompHit = false;
+    state.stompCooldown = 0.7;
+    controlsRef.noteActivity();
+    audioRef.unlock();
+  }
+
   function greet() {
     jump();
     state.happy = 1;
@@ -683,7 +716,10 @@
       breathTimer: rand(6, 10),
       headbutt: -1,
       headbuttHit: false,
-      headbuttCooldown: 0
+      headbuttCooldown: 0,
+      stomp: -1,
+      stompHit: false,
+      stompCooldown: 0
     };
 
     M.goat.group = goat;
@@ -696,6 +732,7 @@
     update: updateGoat,
     jump: jump,
     startHeadbutt: startHeadbutt,
+    startStomp: startStomp,
     greet: greet,
     group: null,
     headPivot: null,

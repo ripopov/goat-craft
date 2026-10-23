@@ -55,6 +55,7 @@
 
   const removedBlocks = new Set();
   const removedPropBlocks = new Set();
+  const placedBlocks = new Map();
 
   function blockKey(bx, by, bz) {
     return bx + ',' + by + ',' + bz;
@@ -699,12 +700,12 @@
     const rnd = mulberry32(hashInt(cx, cz, 0x51ed270b));
     const trees = [];
 
-    function addBlock(x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide, kind) {
+    function addBlock(x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide, kind, force) {
       const bx = cx * CHUNK_BLOCKS + Math.round(x / BLOCK);
       const bz = cz * CHUNK_BLOCKS + Math.round(z / BLOCK);
       const by = Math.round(y / BLOCK);
       const key = blockKey(bx, by, bz);
-      if (removedPropBlocks.has(key)) return;
+      if (!force && removedPropBlocks.has(key)) return;
       blocks.set(key, kind);
       pushBlock(data, x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide);
     }
@@ -753,6 +754,27 @@
         }
       }
     }
+
+    // Player-placed blocks are kept separately from procedural props, but they
+    // render and collide through the same per-chunk prop map.
+    placedBlocks.forEach(function (kind, key) {
+      const parts = key.split(',');
+      const bx = +parts[0];
+      const by = +parts[1];
+      const bz = +parts[2];
+      if (Math.floor(bx / CHUNK_BLOCKS) !== cx || Math.floor(bz / CHUNK_BLOCKS) !== cz) return;
+
+      const def = ITEM_TILES[kind] || ITEM_TILES.dirt;
+      addBlock(
+        (bx - cx * CHUNK_BLOCKS) * BLOCK,
+        by * BLOCK,
+        (bz - cz * CHUNK_BLOCKS) * BLOCK,
+        def.top, def.side, def.bottom,
+        0.96, 0.84,
+        kind,
+        true
+      );
+    });
 
     if (data.idx.length === 0) return null;
     return { geometry: dataToGeometry(data, false), blocks: blocks };
@@ -947,6 +969,32 @@
     }
   }
 
+  function removePropBlock(bx, by, bz) {
+    const key = blockKey(bx, by, bz);
+    if (placedBlocks.has(key)) {
+      placedBlocks.delete(key);
+    } else {
+      removedPropBlocks.add(key);
+    }
+  }
+
+  function placeBlock(kind, bx, by, bz) {
+    if (!ITEM_TILES[kind] || !Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
+    if (by < 0) return false;
+    if (!chunkForBlock(bx, bz)) return false;
+    if (isSolidBlock(bx, by, bz)) return false;
+    if (propKindAt(bx, by, bz)) return false;
+
+    const key = blockKey(bx, by, bz);
+    if (placedBlocks.has(key)) return false;
+    placedBlocks.set(key, kind);
+    rebuildChunkProps(
+      Math.floor(bx / CHUNK_BLOCKS),
+      Math.floor(bz / CHUNK_BLOCKS)
+    );
+    return true;
+  }
+
   // ---- headbutt / block smashing ----
   const debris = [];
   const debrisGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
@@ -1064,7 +1112,7 @@
     if (!target) return false;
 
     if (target.kind !== 'terrain') {
-      removedPropBlocks.add(blockKey(target.bx, target.by, target.bz));
+      removePropBlock(target.bx, target.by, target.bz);
       rebuildChunkProps(
         Math.floor(target.bx / CHUNK_BLOCKS),
         Math.floor(target.bz / CHUNK_BLOCKS)
@@ -1106,7 +1154,7 @@
     const propTop = propBy >= 0 ? (propBy + 1) * BLOCK : -1;
 
     if (propBy >= 0 && propTop >= terrainTop - 0.001) {
-      removedPropBlocks.add(blockKey(bx, propBy, bz));
+      removePropBlock(bx, propBy, bz);
       rebuildChunkProps(
         Math.floor(bx / CHUNK_BLOCKS),
         Math.floor(bz / CHUNK_BLOCKS)
@@ -1182,7 +1230,9 @@
     landingHeight: landingHeight,
     breakBlockInFront: breakBlockInFront,
     breakBlockBelow: breakBlockBelow,
+    placeBlock: placeBlock,
     blockIcon: blockIcon,
-    makeBlockMesh: makeBlockMesh
+    makeBlockMesh: makeBlockMesh,
+    blockSize: BLOCK
   };
 })(window.Meadow = window.Meadow || {});

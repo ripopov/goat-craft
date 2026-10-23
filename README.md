@@ -32,9 +32,10 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **WASD / arrow keys** — move
 - **Shift** — gallop (2× speed, four-beat gait)
 - **Space** — jump (up to three times in the air)
-- **Left click / tap / E** — headbutt a block the head/horns actually touch
+- **Left click / tap / E** — headbutt a block the head/horns actually touch; with a block selected, place it instead
 - **Right click** — stomp the block beneath the goat
 - **1–9 / 0** — select hotbar slot (slot 1 is horns and hooves; broken blocks stack in the other slots)
+- Selected blocks ride on the goat's horns and are set down by the headbutt lunge.
 - **Drag** — orbit · **Wheel / pinch** — zoom
 - **Say hi** — bleat and jump
 - **Music** (top-right button) — start/stop the generated folk soundtrack

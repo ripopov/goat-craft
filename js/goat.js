@@ -415,6 +415,27 @@
     return moved;
   }
 
+  // A freshly placed block can overlap the muzzle. Back the goat out until
+  // its real collision footprint is clear again.
+  function makeRoomAfterPlacement() {
+    const s = state;
+    const x0 = goat.position.x;
+    const z0 = goat.position.z;
+    if (canStandAt(x0, z0, goat.position.y, s.yaw)) return;
+
+    const backX = -Math.sin(s.yaw);
+    const backZ = -Math.cos(s.yaw);
+    for (let i = 1; i <= 28; i++) {
+      const x = x0 + backX * 0.08 * i;
+      const z = z0 + backZ * 0.08 * i;
+      if (canStandAt(x, z, goat.position.y, s.yaw)) {
+        goat.position.x = x;
+        goat.position.z = z;
+        return;
+      }
+    }
+  }
+
   function pickTarget() {
     const p = new THREE.Vector3();
     const toCamera = Math.atan2(cameraRef.position.x - goat.position.x, cameraRef.position.z - goat.position.z);
@@ -614,10 +635,18 @@
     headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08, 10, dt);
     neckPivot.rotation.x = 0.42 + buttPose * 0.55 + run * 0.08;
 
-    // Only smash the block the head or horns actually touch at the lunge.
+    // With a block on the horns, the same lunge places it instead of smashing.
     if (headbuttPending) {
       s.headbuttHit = true;
-      if (worldRef.breakBlockInFront(headPivot)) audioRef.thud();
+      const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
+      if (carrying) {
+        if (M.items.placeSelectedBlock()) {
+          makeRoomAfterPlacement();
+          audioRef.thud();
+        }
+      } else if (worldRef.breakBlockInFront(headPivot)) {
+        audioRef.thud();
+      }
     }
 
     if (stompPending) {

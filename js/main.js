@@ -52,6 +52,7 @@
   });
 
   M.controls.snapTo(M.goat.group.position);
+  M.items.refreshHeld();
 
   M.controls.onJump = function () {
     M.goat.jump();

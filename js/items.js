@@ -9,6 +9,9 @@
   const PICKUP_RADIUS = 1.4;
   const PICKUP_HEIGHT = 1.8;
   const MAX_DROPS = 160;
+  const PLACE_HEIGHT = 2.4;
+  const HELD_SCALE = 0.32;
+  const HELD_POS = { x: 0, y: 0.70, z: -0.35 };
 
   const ITEM_NAMES = {
     grass: 'Grass Block',
@@ -32,9 +35,83 @@
   const iconCache = Object.create(null);
   let toolIcon = null;
   let lastFullNotice = -10;
+  let heldMesh = null;
+  let heldKind = null;
 
   function itemName(kind) {
     return ITEM_NAMES[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1));
+  }
+
+  function selectedBlockKind() {
+    const item = slots[selectedSlot];
+    return item && item.kind !== 'tool' ? item.kind : null;
+  }
+
+  function hasSelectedBlock() {
+    return !!selectedBlockKind();
+  }
+
+  // The selected stack is carried impaled on the goat's horns.
+  function updateHeldBlock() {
+    const head = M.goat && M.goat.headPivot;
+    if (!head) return;
+
+    const kind = selectedBlockKind();
+    if (heldKind === kind && heldMesh && heldMesh.parent === head) return;
+
+    if (heldMesh) {
+      if (heldMesh.parent) heldMesh.parent.remove(heldMesh);
+      heldMesh = null;
+    }
+    heldKind = kind;
+
+    if (!kind || !M.world || !M.world.makeBlockMesh) return;
+    heldMesh = M.world.makeBlockMesh(kind);
+    heldMesh.scale.setScalar(HELD_SCALE);
+    heldMesh.position.set(HELD_POS.x, HELD_POS.y, HELD_POS.z);
+    heldMesh.castShadow = true;
+    heldMesh.receiveShadow = true;
+    head.add(heldMesh);
+  }
+
+  function refreshHeld() {
+    updateHeldBlock();
+  }
+
+  // Place the carried block in the cell the goat is facing. The block is set
+  // on top of whatever solid is already there (ground, stone, a low wall), and
+  // the goat backs out if the new block overlaps its body.
+  function placeSelectedBlock() {
+    const kind = selectedBlockKind();
+    if (!kind || !M.world || !M.world.placeBlock || !M.world.landingHeight || !M.goat || !M.goat.group) {
+      return false;
+    }
+
+    const goat = M.goat.group;
+    const state = M.goat.state;
+    const size = M.world.blockSize || 2;
+    const yaw = state ? state.yaw : goat.rotation.y;
+    const dx = Math.round(Math.sin(yaw));
+    const dz = Math.round(Math.cos(yaw));
+    const bx = Math.floor(goat.position.x / size) + dx;
+    const bz = Math.floor(goat.position.z / size) + dz;
+    const cx = (bx + 0.5) * size;
+    const cz = (bz + 0.5) * size;
+
+    const top = M.world.landingHeight(cx, cz, goat.position.y + PLACE_HEIGHT);
+    const by = Math.floor((top + 0.001) / size);
+
+    if (!M.world.placeBlock(kind, bx, by, bz)) return false;
+
+    const item = slots[selectedSlot];
+    if (item) {
+      item.count--;
+      if (item.count <= 0) slots[selectedSlot] = null;
+      renderSlot(selectedSlot);
+      renderSelection();
+      flashSlot(selectedSlot);
+    }
+    return true;
   }
 
   // ---------------------------------------------------------------- artwork
@@ -193,6 +270,8 @@
         ? item.name + (item.kind !== 'tool' && item.count > 1 ? ' × ' + item.count : '')
         : 'Empty Slot';
     }
+
+    updateHeldBlock();
   }
 
   function flashSlot(index) {
@@ -368,8 +447,13 @@
     addItem: addItem,
     selectSlot: selectSlot,
     itemName: itemName,
+    hasSelectedBlock: hasSelectedBlock,
+    placeSelectedBlock: placeSelectedBlock,
+    refreshHeld: refreshHeld,
     slots: slots,
     get selectedSlot() { return selectedSlot; },
+    get heldMesh() { return heldMesh; },
+    get heldKind() { return heldKind; },
     get drops() { return drops; }
   };
 })(window.Meadow = window.Meadow || {});

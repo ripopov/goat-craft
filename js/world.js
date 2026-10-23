@@ -7,6 +7,7 @@
   let sceneRef = null;
   let rendererRef = null;
   let blockTex = null;
+  let blockAtlasCanvas = null;
   let blockMat = null;
   let plantTex = null;
   let plantMat = null;
@@ -142,6 +143,26 @@
     return best;
   }
 
+  // Highest actual solid top at or below maxY, including blocks inside a
+  // cavity. Item drops use this instead of supportHeight because a drop can
+  // sit in a hole cut into a taller terrain column.
+  function landingHeight(x, z, maxY) {
+    const bx = Math.floor(x / BLOCK);
+    const bz = Math.floor(z / BLOCK);
+    const ch = chunkForBlock(bx, bz);
+    const topBy = Math.floor(maxY / BLOCK) - 1;
+
+    for (let by = topBy; by >= 0; by--) {
+      if (ch && ch.propBlocks && ch.propBlocks.has(blockKey(bx, by, bz))) {
+        return (by + 1) * BLOCK;
+      }
+      if (isSolidBlock(bx, by, bz)) {
+        return (by + 1) * BLOCK;
+      }
+    }
+    return 0;
+  }
+
   function mulberry32(a) {
     return function () {
       a |= 0;
@@ -270,6 +291,7 @@
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestMipmapLinearFilter;
     tex.anisotropy = Math.min(8, rendererRef.capabilities.getMaxAnisotropy());
+    blockAtlasCanvas = canvas;
     return tex;
   }
 
@@ -462,6 +484,102 @@
     geo.setIndex(data.idx);
     geo.computeBoundingSphere();
     return geo;
+  }
+
+  // ---- block item art ----
+  // Terrain and prop blocks share the atlas, so drops and hotbar icons can use
+  // exactly the same wood, stone, leaf and soil textures as the world.
+  const ITEM_TILES = {
+    grass: { top: T_GRASS, side: T_GRASS_SIDE, bottom: T_DIRT },
+    dirt: { top: T_DIRT, side: T_DIRT, bottom: T_DIRT },
+    stone: { top: T_STONE, side: T_STONE, bottom: T_STONE },
+    log: { top: T_LOG_TOP, side: T_LOG, bottom: T_LOG_TOP },
+    leaves: { top: T_LEAVES, side: T_LEAVES, bottom: T_LEAVES }
+  };
+  const iconCache = Object.create(null);
+  const dropMeshGeometries = Object.create(null);
+
+  function atlasTileRect(tile) {
+    const col = tile % ATLAS_GRID;
+    const row = Math.floor(tile / ATLAS_GRID);
+    return { x: col * CELL + TILE_PAD, y: row * CELL + TILE_PAD };
+  }
+
+  function drawIconFace(ctx, tile, a, u, v, shade) {
+    const src = atlasTileRect(tile);
+
+    function facePath() {
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(a[0] + u[0], a[1] + u[1]);
+      ctx.lineTo(a[0] + u[0] + v[0], a[1] + u[1] + v[1]);
+      ctx.lineTo(a[0] + v[0], a[1] + v[1]);
+      ctx.closePath();
+    }
+
+    ctx.save();
+    facePath();
+    ctx.clip();
+    ctx.setTransform(u[0] / TILE, u[1] / TILE, v[0] / TILE, v[1] / TILE, a[0], a[1]);
+    ctx.drawImage(blockAtlasCanvas, src.x, src.y, TILE, TILE, 0, 0, TILE, TILE);
+    ctx.restore();
+
+    ctx.save();
+    facePath();
+    ctx.fillStyle = shade;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    facePath();
+    ctx.strokeStyle = 'rgba(35, 46, 28, .32)';
+    ctx.lineWidth = Math.max(1, ctx.canvas.width / 80);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function blockIcon(kind, size) {
+    if (!blockAtlasCanvas) return '';
+    const px = Math.max(32, Math.round(size || 64));
+    const key = kind + ':' + px;
+    if (iconCache[key]) return iconCache[key];
+
+    const def = ITEM_TILES[kind] || ITEM_TILES.dirt;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = px;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    const s = px / 64;
+
+    // isometric cube: top diamond, left face, right face
+    const top = [32 * s, 4 * s];
+    const topU = [28 * s, 16 * s];
+    const topV = [-28 * s, 16 * s];
+    const left = [4 * s, 20 * s];
+    const leftU = [28 * s, 16 * s];
+    const faceV = [0, 26 * s];
+    const right = [32 * s, 36 * s];
+    const rightU = [28 * s, -16 * s];
+
+    drawIconFace(ctx, def.side, left, leftU, faceV, 'rgba(22, 31, 17, .18)');
+    drawIconFace(ctx, def.side, right, rightU, faceV, 'rgba(255, 255, 255, .03)');
+    drawIconFace(ctx, def.top, top, topU, topV, 'rgba(255, 255, 255, .05)');
+
+    const url = canvas.toDataURL('image/png');
+    iconCache[key] = url;
+    return url;
+  }
+
+  function makeBlockMesh(kind) {
+    const def = ITEM_TILES[kind] || ITEM_TILES.dirt;
+    let geo = dropMeshGeometries[kind];
+    if (!geo) {
+      const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
+      pushBlock(data, -BLOCK / 2, -BLOCK / 2, -BLOCK / 2, def.top, def.side, def.bottom, 1.0, 0.82);
+      geo = dataToGeometry(data, false);
+      dropMeshGeometries[kind] = geo;
+    }
+    return new THREE.Mesh(geo, blockMat);
   }
 
   // ---- terrain mesh ----
@@ -838,6 +956,17 @@
   const debrisLogMat = std(0x6e5233, 1);
   const debrisLeafMat = std(0x4f7a35, 1);
 
+  function spawnBlockDrop(bx, by, bz, kind) {
+    if (M.items && M.items.dropBlock) {
+      M.items.dropBlock(
+        kind,
+        bx * BLOCK + BLOCK / 2,
+        by * BLOCK + BLOCK / 2,
+        bz * BLOCK + BLOCK / 2
+      );
+    }
+  }
+
   function spawnBlockDebris(bx, by, bz, kind) {
     const cx = bx * BLOCK + BLOCK / 2;
     const cy = by * BLOCK + BLOCK / 2;
@@ -941,13 +1070,16 @@
         Math.floor(target.bz / CHUNK_BLOCKS)
       );
       spawnBlockDebris(target.bx, target.by, target.bz, target.kind);
+      spawnBlockDrop(target.bx, target.by, target.bz, target.kind);
       return true;
     }
 
     const wasTop = target.by === heightBlocks(target.bx, target.bz) - 1;
+    const kind = wasTop ? 'grass' : 'dirt';
     removedBlocks.add(blockKey(target.bx, target.by, target.bz));
     rebuildTerrainAround(target.bx, target.bz);
-    spawnBlockDebris(target.bx, target.by, target.bz, wasTop ? 'grass' : 'dirt');
+    spawnBlockDebris(target.bx, target.by, target.bz, kind);
+    spawnBlockDrop(target.bx, target.by, target.bz, kind);
     return true;
   }
 
@@ -980,6 +1112,7 @@
         Math.floor(bz / CHUNK_BLOCKS)
       );
       spawnBlockDebris(bx, propBy, bz, propKind);
+      spawnBlockDrop(bx, propBy, bz, propKind);
       return true;
     }
 
@@ -987,9 +1120,11 @@
     if (by < 0 || !isSolidBlock(bx, by, bz)) return false;
 
     const wasTop = by === heightBlocks(bx, bz) - 1;
+    const kind = wasTop ? 'grass' : 'dirt';
     removedBlocks.add(blockKey(bx, by, bz));
     rebuildTerrainAround(bx, bz);
-    spawnBlockDebris(bx, by, bz, wasTop ? 'grass' : 'dirt');
+    spawnBlockDebris(bx, by, bz, kind);
+    spawnBlockDrop(bx, by, bz, kind);
     return true;
   }
 
@@ -1044,7 +1179,10 @@
     surfaceHeight: surfaceHeight,
     blockedAt: blockedAt,
     supportHeight: supportHeight,
+    landingHeight: landingHeight,
     breakBlockInFront: breakBlockInFront,
-    breakBlockBelow: breakBlockBelow
+    breakBlockBelow: breakBlockBelow,
+    blockIcon: blockIcon,
+    makeBlockMesh: makeBlockMesh
   };
 })(window.Meadow = window.Meadow || {});

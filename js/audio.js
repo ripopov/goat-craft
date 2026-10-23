@@ -390,6 +390,32 @@
     } catch (err) { /* audio is a bonus */ }
   }
 
+  function pickup() {
+    try {
+      const audio = unlock();
+      if (!audio) return;
+
+      const now = audio.currentTime + 0.01;
+      const dest = out(rand(-0.18, 0.18));
+      const notes = [rand(600, 680), rand(880, 980)];
+
+      for (let i = 0; i < notes.length; i++) {
+        const start = now + i * 0.055;
+        const osc = audio.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(notes[i], start);
+        const gain = audio.createGain();
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.035, start + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.17);
+        osc.connect(gain);
+        gain.connect(dest);
+        osc.start(start);
+        osc.stop(start + 0.2);
+      }
+    } catch (err) { /* audio is a bonus */ }
+  }
+
   function breath() {
     try {
       const audio = ctx;
@@ -424,6 +450,7 @@
     whoosh: whoosh,
     land: land,
     stomp: stomp,
+    pickup: pickup,
     breath: breath
   };
 })(window.Meadow = window.Meadow || {});

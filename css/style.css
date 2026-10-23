@@ -2,6 +2,7 @@
   :root {
     --ink: #33412e;
     --cream: #fdf7e8;
+    --bar-bottom: max(clamp(16px, 3vw, 26px), env(safe-area-inset-bottom));
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -92,7 +93,7 @@
   #hint {
     position: fixed;
     left: 50%;
-    bottom: clamp(18px, 3.4vw, 30px);
+    bottom: calc(var(--bar-bottom) + 108px);
     transform: translateX(-50%);
     z-index: 3;
     padding: 9px 16px;
@@ -109,6 +110,115 @@
     pointer-events: none;
   }
   #hint b { font-weight: 600; color: #2f3e2a; }
+
+  #inventory {
+    position: fixed;
+    left: 50%;
+    bottom: var(--bar-bottom);
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    pointer-events: none;
+  }
+  #item-name {
+    max-width: min(78vw, 420px);
+    overflow: hidden;
+    padding: 4px 11px;
+    border: 1px solid rgba(255, 255, 255, .5);
+    border-radius: 999px;
+    background: rgba(253, 248, 235, .64);
+    box-shadow: 0 5px 18px rgba(40, 60, 30, .14);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    color: #3f5038;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .035em;
+    line-height: 1.25;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  #hotbar {
+    display: flex;
+    align-items: stretch;
+    gap: clamp(2px, .5vw, 4px);
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, .42);
+    border-radius: 12px;
+    background: rgba(41, 55, 34, .64);
+    box-shadow: 0 10px 28px rgba(27, 43, 20, .25), inset 0 1px 0 rgba(255, 255, 255, .12);
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+    pointer-events: auto;
+    touch-action: manipulation;
+  }
+  .slot {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: clamp(28px, 5.2vw, 46px);
+    aspect-ratio: 1;
+    appearance: none;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 7px;
+    background: rgba(20, 29, 16, .48);
+    color: var(--cream);
+    font: inherit;
+    cursor: pointer;
+    transition: transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease;
+  }
+  .slot:hover { background: rgba(73, 92, 58, .58); border-color: rgba(255, 255, 255, .38); }
+  .slot.selected {
+    transform: translateY(-2px);
+    border-color: #f2cf7a;
+    background: rgba(86, 106, 66, .78);
+    box-shadow: 0 0 0 2px rgba(242, 207, 122, .24), 0 4px 12px rgba(15, 25, 12, .25);
+  }
+  .slot:focus-visible { outline: 2px solid #f8f0d8; outline-offset: 2px; }
+  .slot .key {
+    position: absolute;
+    top: 2px;
+    left: 4px;
+    color: rgba(253, 248, 235, .48);
+    font-size: 8.5px;
+    font-weight: 600;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .slot .icon {
+    width: 78%;
+    height: 78%;
+    object-fit: contain;
+    image-rendering: pixelated;
+    filter: drop-shadow(0 2px 2px rgba(10, 18, 8, .35));
+    pointer-events: none;
+  }
+  .slot .count {
+    position: absolute;
+    right: 4px;
+    bottom: 2px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1px 1px rgba(7, 12, 5, .9), 0 0 4px rgba(7, 12, 5, .65);
+    pointer-events: none;
+  }
+  @keyframes slot-pop {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.14); background: rgba(142, 161, 102, .9); }
+    100% { transform: scale(1); }
+  }
+  .slot.pop { animation: slot-pop .3s ease; }
+  .slot.selected.pop { animation-name: slot-pop-selected; }
+  @keyframes slot-pop-selected {
+    0% { transform: translateY(-2px) scale(1); }
+    45% { transform: translateY(-2px) scale(1.14); background: rgba(142, 161, 102, .9); }
+    100% { transform: translateY(-2px) scale(1); }
+  }
 
   #hi {
     position: fixed;
@@ -179,9 +289,12 @@
   }
   #error.show { display: grid; }
 
-  @media (max-width: 680px) {
+  @media (max-width: 840px) {
     #hint { display: none; }
-    #hi { bottom: max(18px, env(safe-area-inset-bottom)); right: 18px; }
+  }
+
+  @media (max-width: 680px) {
+    #hi { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 86px); right: 16px; }
   }
 
   #music {

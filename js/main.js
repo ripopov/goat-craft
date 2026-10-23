@@ -39,6 +39,7 @@
   M.environment.init(scene, M.config.coarsePointer);
   M.world.init(scene, renderer);
   M.ui.init();
+  M.items.init(scene);
   M.controls.init(camera);
 
   M.goat.init({
@@ -68,6 +69,10 @@
     M.goat.startHeadbutt();
   };
 
+  M.controls.onSelectSlot = function (index) {
+    M.items.selectSlot(index);
+  };
+
   M.ui.onGreet = function () {
     M.goat.greet();
   };
@@ -95,6 +100,7 @@
     M.goat.update(dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.world.update(M.goat.group.position, dt, elapsed);
+    M.items.update(dt, elapsed, M.goat.group);
     M.environment.update(camera, M.goat.group, dt, elapsed);
     M.ui.updateBubble(dt, M.goat.headPivot, camera);
 

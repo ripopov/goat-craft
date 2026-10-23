@@ -148,6 +148,13 @@
     lastInteraction = performance.now();
   }, { passive: false });
 
+  function digitKey(e) {
+    const code = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
+    if (code) return +code[1];
+    if (/^[0-9]$/.test(e.key || '')) return +e.key;
+    return -1;
+  }
+
   function moveKey(e) {
     switch (e.code) {
       case 'KeyW': case 'ArrowUp': return 'w';
@@ -169,6 +176,15 @@
 
     if (e.key === 'Shift') {
       held.shift = true;
+      return;
+    }
+
+    const digit = digitKey(e);
+    if (digit >= 0) {
+      e.preventDefault();
+      if (!e.repeat && M.controls.onSelectSlot) {
+        M.controls.onSelectSlot(digit === 0 ? 9 : digit - 1);
+      }
       return;
     }
 
@@ -235,6 +251,7 @@
     onHeadbutt: null,
     onStomp: null,
     onTap: null,
+    onSelectSlot: null,
     get running() { return held.shift; }
   };
 })(window.Meadow = window.Meadow || {});

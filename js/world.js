@@ -99,6 +99,47 @@
     return propKindAt(bx, by, bz) || (isSolidBlock(bx, by, bz) ? 'terrain' : null);
   }
 
+  // Detailed block lookup used by the herd's construction AI. Player-placed
+  // props are distinguished from natural ones so animals never quarry or
+  // dismantle something the player built.
+  function blockInfoAt(bx, by, bz) {
+    if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz) || by < 0) return null;
+    const key = blockKey(bx, by, bz);
+    const prop = propKindAt(bx, by, bz);
+    if (prop) {
+      const placed = placedBlocks.has(key);
+      return { bx: bx, by: by, bz: bz, kind: prop, type: placed ? 'placed' : 'prop', placed: placed };
+    }
+    if (!isSolidBlock(bx, by, bz)) return null;
+    return {
+      bx: bx,
+      by: by,
+      bz: bz,
+      kind: by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt',
+      type: 'terrain',
+      placed: false
+    };
+  }
+
+  // The highest natural soil block in a column. Props and player blocks above
+  // it are intentionally ignored; callers can test the cell above before
+  // quarrying so they do not mine underneath a tree or a build.
+  function topSoilInfo(bx, bz) {
+    const by = topSolidY(bx, bz);
+    if (by < 0) return null;
+    return {
+      bx: bx,
+      by: by,
+      bz: bz,
+      kind: by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt',
+      top: (by + 1) * BLOCK
+    };
+  }
+
+  function isPlacedBlock(bx, by, bz) {
+    return placedBlocks.has(blockKey(bx, by, bz));
+  }
+
   // Does any solid terrain or prop block intersect the vertical slice from minY
   // to maxY at this point? Props above the goat (canopies) are ignored.
   function blockedAt(x, z, minY, maxY) {
@@ -1320,6 +1361,9 @@
     breakBlockBelow: breakBlockBelow,
     breakBlockAt: breakBlockAt,
     findBreakableNear: findBreakableNear,
+    blockInfoAt: blockInfoAt,
+    topSoilInfo: topSoilInfo,
+    isPlacedBlock: isPlacedBlock,
     canPlaceBlock: canPlaceBlock,
     placeBlock: placeBlock,
     blockIcon: blockIcon,

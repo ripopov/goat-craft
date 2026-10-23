@@ -7,6 +7,17 @@
   const BODY_CLEARANCE = 0.06;
   const MAX_GRASS_BITS = 48;
 
+  // Herd construction tuning. Animals quarry a shallow patch layer by layer,
+  // carry a batch of turf on their horns, then build a little ziggurat: a 3x3
+  // base, a 2x2 second tier, and a two-column stair that keeps climbing.
+  const CARRY_LIMIT = 34;
+  const TOWER_STEPS = 20;
+  const JUMP_SPEED = 12.8;
+  const JUMP_COOLDOWN = 0.52;
+  const AIR_CONTROL = 2.15;
+  const ESCAPE_TIMEOUT = 22;
+  const PIT_CHECK_INTERVAL = 0.55;
+
   // ------------------------------------------------------------------------
   // Species
   // ------------------------------------------------------------------------
@@ -770,16 +781,23 @@
     return (worldRef && worldRef.blockSize) || BLOCK;
   }
 
-  function canStandAt(animal, x, z, feetY, yaw) {
+  // The normal footprint reaches all the way to the nose. That is important
+  // on open ground, but on a two-metre spiral stair the nose probe would
+  // collide with the next step even when the body is properly on the current
+  // one. A compact footprint is used only while climbing/traversing.
+  const STEP_FOOTPRINT = [[0, 0.22], [0.2, 0], [-0.2, 0], [0.3, -0.35], [-0.3, -0.35]];
+
+  function canStandAt(animal, x, z, feetY, yaw, loose) {
     const def = animal.def;
     const scale = def.scale;
+    const footprint = loose ? STEP_FOOTPRINT : def.footprint;
     const sin = Math.sin(yaw);
     const cos = Math.cos(yaw);
     const bottom = feetY + BODY_CLEARANCE;
     const top = feetY + def.bodyHeight * scale;
 
-    for (let i = 0; i < def.footprint.length; i++) {
-      const probe = def.footprint[i];
+    for (let i = 0; i < footprint.length; i++) {
+      const probe = footprint[i];
       const px = x + sin * probe[1] * scale + cos * probe[0] * scale;
       const pz = z + cos * probe[1] * scale - sin * probe[0] * scale;
       if (worldRef.blockedAt(px, pz, bottom, top)) return false;
@@ -805,21 +823,9 @@
   function moveStep(animal, nx, nz, yaw) {
     const p = animal.group.position;
     const s = animal.state;
-    let feetY = p.y;
-    let can = canStandAt(animal, nx, nz, feetY, yaw);
+    const loose = s.mode === 'climbBuild' || s.mode === 'traverseTower';
 
-    // Small animals are nimble enough to hop up a single block. This lets a
-    // sheep that wandered down a bank return to the herd instead of pacing
-    // against a two-metre lip forever.
-    if (!can && s.grounded) {
-      const raised = worldRef.supportHeight(nx, nz, feetY + BLOCK + 0.1);
-      const rise = raised - feetY;
-      if (rise > 0.12 && rise <= BLOCK + 0.1 && canStandAt(animal, nx, nz, raised, yaw)) {
-        feetY = raised;
-        can = true;
-      }
-    }
-    if (!can) return false;
+    if (!canStandAt(animal, nx, nz, p.y, yaw, loose)) return false;
 
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
@@ -836,11 +842,39 @@
       const newD = Math.hypot(nx - o.x, nz - o.z);
       if (newD < min && newD <= oldD + 0.001) return false;
     }
-    if (feetY !== p.y) {
-      p.y = feetY;
-      s.vy = 0;
-      s.grounded = true;
-      s.landPulse = 1;
+    return true;
+  }
+
+  function jumpSurfaceAt(animal, nx, nz, yaw) {
+    const s = animal.state;
+    const p = animal.group.position;
+    if (!s.grounded || s.jumpCooldown > 0) return null;
+
+    const raised = worldRef.supportHeight(nx, nz, p.y + BLOCK + 0.1);
+    const rise = raised - p.y;
+    if (rise <= 0.12 || rise > BLOCK + 0.12) return null;
+    if (!canStandAt(animal, nx, nz, raised, yaw,
+      s.mode === 'climbBuild' || s.mode === 'traverseTower')) return null;
+
+    // Do not try to jump through a canopy, a low ceiling, or the underside of
+    // a tower. The animal needs room for its whole body above the new ledge.
+    const bodyH = animal.def.bodyHeight * animal.def.scale;
+    if (worldRef.blockedAt(p.x, p.z, p.y + bodyH - 0.08, raised + bodyH + 0.12)) return null;
+    return raised;
+  }
+
+  function startJump(animal, reason) {
+    const s = animal.state;
+    const p = animal.group.position;
+    if (!s.grounded || s.jumpCooldown > 0) return false;
+    s.vy = JUMP_SPEED;
+    s.grounded = false;
+    s.jumpCooldown = JUMP_COOLDOWN;
+    s.tuck = 0;
+    s.jumpReason = reason || 'hop';
+    if (goatRef && goatRef.group && audioRef && audioRef.jump) {
+      const d = Math.hypot(p.x - goatRef.group.position.x, p.z - goatRef.group.position.z);
+      if (d < 17) audioRef.jump();
     }
     return true;
   }
@@ -849,6 +883,7 @@
     const p = animal.group.position;
     const x = p.x;
     const z = p.z;
+    const s = animal.state;
 
     if (moveStep(animal, x + dx, z + dz, yaw)) {
       p.x = x + dx;
@@ -865,6 +900,39 @@
       p.z = z + dz;
       moved = true;
     }
+
+    const len = Math.hypot(dx, dz);
+    if (len > 0.0001) {
+      // A blocked step is a request to hop, not an invitation to stand there
+      // and grind against the block forever. The footprint stops the body
+      // before its centre reaches the lip, so probe further ahead to find the
+      // actual ledge.
+      const probe = 1.35 + animal.def.scale * 0.45;
+      const px = x + (dx / len) * probe;
+      const pz = z + (dz / len) * probe;
+      if (s.grounded && jumpSurfaceAt(animal, px, pz, yaw)) {
+        startJump(animal, 'ledge');
+      }
+
+      // If both cardinal axes are blocked, try to slide around the corner.
+      // This is what keeps a long quarry walk from wedging on a rock or a
+      // one-block cliff.
+      if (!moved) {
+        const sideAngles = [0.7, -0.7, 1.25, -1.25, 1.75, -1.75];
+        for (let i = 0; i < sideAngles.length; i++) {
+          const ca = Math.cos(sideAngles[i]);
+          const sa = Math.sin(sideAngles[i]);
+          const sx = dx * ca - dz * sa;
+          const sz = dx * sa + dz * ca;
+          if (moveStep(animal, x + sx, z + sz, yaw)) {
+            p.x = x + sx;
+            p.z = z + sz;
+            moved = true;
+            break;
+          }
+        }
+      }
+    }
     return moved;
   }
 
@@ -874,6 +942,291 @@
 
   function nearestGround(x, z) {
     return worldRef.surfaceHeight(x, z);
+  }
+
+  // ------------------------------------------------------------------------
+  // Build projects
+  // ------------------------------------------------------------------------
+  // A project starts with a flat 3x3 turf plinth, adds a 2x2 tier, then grows
+  // a two-column stair. The plan is deliberately made of adjacent cells so an
+  // animal can place one block, hop onto it, and immediately place the next.
+  function cellCenter(bx, bz) {
+    const bs = sizeOf();
+    return { x: (bx + 0.5) * bs, z: (bz + 0.5) * bs };
+  }
+
+  function inSiteFootprint(project, bx, bz, margin) {
+    const m = margin || 0;
+    return Math.abs(bx - project.site.bx) <= 1 + m &&
+      Math.abs(bz - project.site.bz) <= 1 + m;
+  }
+
+  function entityBlocksCell(animal, x, z, radius) {
+    const r = radius || 1.4;
+    if (goatRef && goatRef.group) {
+      const g = goatRef.group.position;
+      if (Math.hypot(x - g.x, z - g.z) < r + 1.0) return true;
+    }
+    for (let i = 0; i < animals.length; i++) {
+      const other = animals[i];
+      if (other === animal) continue;
+      const q = other.group.position;
+      if (Math.hypot(x - q.x, z - q.z) < r) return true;
+    }
+    return false;
+  }
+
+  function validSiteAt(animal, bx, bz) {
+    const bs = sizeOf();
+    const c = cellCenter(bx, bz);
+    const groundY = worldRef.surfaceHeight(c.x, c.z);
+    if (groundY < 0.01) return null;
+    if (Math.abs(groundY - animal.group.position.y) > 0.1) return null;
+    const baseBy = Math.round(groundY / bs);
+
+    // A plinth needs a genuinely flat 3x3 footprint and a clear shaft for the
+    // first few courses. This prevents a tower from growing through a tree or
+    // a player's build.
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        const px = (bx + dx + 0.5) * bs;
+        const pz = (bz + dz + 0.5) * bs;
+        if (Math.abs(worldRef.surfaceHeight(px, pz) - groundY) > 0.01) return null;
+        if (!worldRef.canPlaceBlock(bx + dx, baseBy, bz + dz)) return null;
+        for (let k = 0; k < 5; k++) {
+          if (worldRef.blockInfoAt(bx + dx, baseBy + k, bz + dz)) return null;
+        }
+        if (entityBlocksCell(animal, px, pz, 1.25)) return null;
+      }
+    }
+
+    if (goatRef && goatRef.group) {
+      const g = goatRef.group.position;
+      if (Math.hypot(c.x - g.x, c.z - g.z) < 5.2) return null;
+    }
+
+    for (let i = 0; i < animals.length; i++) {
+      const other = animals[i];
+      if (other === animal || !other.state.project) continue;
+      const os = other.state.project.site;
+      if (Math.hypot(c.x - os.centerX, c.z - os.centerZ) < 7.0) return null;
+    }
+
+    return {
+      bx: bx,
+      bz: bz,
+      centerX: c.x,
+      centerZ: c.z,
+      groundY: groundY,
+      baseBy: baseBy
+    };
+  }
+
+  function chooseBuildSite(animal) {
+    const bs = sizeOf();
+    const p = animal.group.position;
+    const anchorBX = Math.floor(p.x / bs);
+    const anchorBZ = Math.floor(p.z / bs);
+
+    for (let attempt = 0; attempt < 96; attempt++) {
+      const angle = rand(0, Math.PI * 2);
+      const distance = rand(3.8, 8.0);
+      const bx = anchorBX + Math.round(Math.sin(angle) * distance / bs);
+      const bz = anchorBZ + Math.round(Math.cos(angle) * distance / bs);
+      const site = validSiteAt(animal, bx, bz);
+      if (site) return site;
+    }
+
+    // If the immediate terrace is crowded, search a wider ring at the same
+    // elevation instead of dropping down a bank to a lower shelf.
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const angle = rand(0, Math.PI * 2);
+      const distance = rand(8, 16);
+      const bx = anchorBX + Math.round(Math.sin(angle) * distance / bs);
+      const bz = anchorBZ + Math.round(Math.cos(angle) * distance / bs);
+      const site = validSiteAt(animal, bx, bz);
+      if (site) return site;
+    }
+    return null;
+  }
+
+  function makeBuildProject(animal, site) {
+    const bs = sizeOf();
+    const plan = [];
+
+    function addCell(dx, dz, by, phase) {
+      const bx = site.bx + dx;
+      const bz = site.bz + dz;
+      const c = cellCenter(bx, bz);
+      plan.push({
+        phase: phase,
+        bx: bx,
+        bz: bz,
+        by: by,
+        x: c.x,
+        z: c.z,
+        top: (by + 1) * bs
+      });
+    }
+
+    // Solid 3x3 plinth, then a 2x2 tier: a small turf ziggurat.
+    const platform = [
+      [0, -1], [1, -1], [1, 0], [1, 1],
+      [0, 1], [-1, 1], [0, 0], [-1, -1], [-1, 0]
+    ];
+    for (let i = 0; i < platform.length; i++) {
+      addCell(platform[i][0], platform[i][1], site.baseBy, 'base');
+    }
+    const tier = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    for (let i = 0; i < tier.length; i++) {
+      addCell(tier[i][0], tier[i][1], site.baseBy + 1, 'tier');
+    }
+
+    // The sky stair starts next to the last tier cell and spirals around the
+    // same 3x3 footprint, one block higher per step.
+    const ring = [
+      [-1, 1], [-1, 0], [-1, -1], [0, -1],
+      [1, -1], [1, 0], [1, 1], [0, 1]
+    ];
+    for (let i = 0; i < TOWER_STEPS; i++) {
+      const r = ring[i % ring.length];
+      addCell(r[0], r[1], site.baseBy + 2 + i, 'step');
+    }
+
+    return {
+      site: site,
+      plan: plan,
+      stepCount: 0,
+      steps: [],
+      stuck: 0,
+      invalid: 0,
+      completed: false
+    };
+  }
+
+  function nextBuildTarget(project) {
+    if (!project || project.stepCount >= project.plan.length) return null;
+    return project.plan[project.stepCount];
+  }
+
+  function commitBuildTarget(project, target) {
+    if (!project || !target) return;
+    project.steps.push({
+      bx: target.bx,
+      bz: target.bz,
+      x: target.x,
+      z: target.z,
+      by: target.by,
+      top: target.top,
+      phase: target.phase
+    });
+    project.stepCount++;
+    project.stuck = 0;
+    target.projectDone = nextBuildTarget(project) === null;
+  }
+
+  function hasBuildTarget(project) {
+    return !!nextBuildTarget(project);
+  }
+
+  // ------------------------------------------------------------------------
+  // Quarrying
+  // ------------------------------------------------------------------------
+  // Quarries are shallow, deliberate patches rather than one endless hole. An
+  // animal peels the top course across the patch, then the course below it,
+  // and finally moves on to a fresh patch.
+  // A quarry pass is intentionally local and shallow: shave the top turf
+  // course around the animal, one block at a time. This keeps NPCs on the
+  // surface instead of digging themselves into ever-deeper pits.
+  function findSurfaceQuarryTarget(animal, project) {
+    const p = animal.group.position;
+    const player = goatRef.group.position;
+    const bs = sizeOf();
+    const levelY = project.site.groundY;
+    if (Math.abs(p.y - levelY) > 0.35) return null;
+    const bx0 = Math.floor(p.x / bs);
+    const bz0 = Math.floor(p.z / bs);
+    const r = Math.ceil(9.0 / bs);
+    let best = null;
+    let bestScore = Infinity;
+
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) {
+        const bx = bx0 + dx;
+        const bz = bz0 + dz;
+        const c = cellCenter(bx, bz);
+        const dist = Math.hypot(c.x - p.x, c.z - p.z);
+        if (dist < 1.65 || dist > 9.0) continue;
+        if (inSiteFootprint(project, bx, bz, 0)) continue;
+        let nearSite = false;
+        for (let i = 0; i < animals.length; i++) {
+          const other = animals[i];
+          if (other === animal || !other.state.project) continue;
+          if (inSiteFootprint(other.state.project, bx, bz, 0)) {
+            nearSite = true;
+            break;
+          }
+        }
+        if (nearSite) continue;
+        const info = worldRef.topSoilInfo(bx, bz);
+        if (!info) continue;
+        if (Math.abs(info.top - levelY) > 0.35 &&
+            Math.abs(info.top - (levelY - BLOCK)) > 0.35) continue;
+        if (!worldRef.canPlaceBlock(info.bx, info.by + 1, info.bz)) continue;
+        if (Math.hypot(c.x - player.x, c.z - player.z) < 3.2) continue;
+        let nearAnimal = false;
+        for (let i = 0; i < animals.length; i++) {
+          if (animals[i] === animal) continue;
+          const op = animals[i].group.position;
+          if (Math.hypot(c.x - op.x, c.z - op.z) < 1.7) {
+            nearAnimal = true;
+            break;
+          }
+        }
+        if (nearAnimal) continue;
+
+        const score = dist;
+        if (score < bestScore) {
+          bestScore = score;
+          best = {
+            type: 'terrain',
+            bx: info.bx,
+            by: info.by,
+            bz: info.bz,
+            kind: info.kind,
+            x: c.x,
+            y: info.top,
+            z: c.z,
+            approach: null
+          };
+        }
+      }
+    }
+    return best;
+  }
+
+  function startQuarry(animal) {
+    const s = animal.state;
+    const project = s.project;
+    if (!project || s.carryCount >= CARRY_LIMIT || !hasBuildTarget(project)) return false;
+
+    const target = findSurfaceQuarryTarget(animal, project);
+    if (!target) return false;
+
+    s.action = {
+      kind: 'break',
+      target: target,
+      approach: null,
+      time: 0,
+      duration: 0.62,
+      hit: false,
+      quarry: true
+    };
+    s.batchGoal = s.batchGoal || CARRY_LIMIT;
+    s.gathering = true;
+    s.quarryMisses = 0;
+    beginAction(animal);
+    return true;
   }
 
   function chooseWander(animal) {
@@ -925,11 +1278,13 @@
     return true;
   }
 
-  function findApproach(animal, tx, tz, preferredDistance) {
+  function findApproach(animal, tx, tz, preferredDistance, options) {
+    const opts = options || {};
     const p = animal.group.position;
     const base = Math.atan2(p.x - tx, p.z - tz);
     const offsets = [0, 0.5, -0.5, 1.0, -1.0, 1.6, -1.6, Math.PI];
     const distances = [preferredDistance || 2.35, 2.8, 3.3];
+    const maxRise = opts.maxRise || 3.2;
     let best = null;
     let bestScore = Infinity;
 
@@ -940,7 +1295,8 @@
         const x = tx + Math.sin(angle) * distance;
         const z = tz + Math.cos(angle) * distance;
         const y = nearestGround(x, z);
-        if (Math.abs(y - p.y) > 2.6) continue;
+        if (Math.abs(y - p.y) > maxRise) continue;
+        if (opts.levelY !== undefined && Math.abs(y - opts.levelY) > 0.45) continue;
         const yaw = Math.atan2(tx - x, tz - z);
         if (!canStandAt(animal, x, z, y, yaw)) continue;
         if (!actorSpotClear(animal, x, z, 0.4)) continue;
@@ -955,138 +1311,548 @@
     return best;
   }
 
-  function startBreak(animal) {
-    const s = animal.state;
-    if (!s.grounded) return false;
+  function targetUnsafeForPlacement(animal, x, z) {
     const p = animal.group.position;
-    const player = goatRef.group.position;
-    const target = worldRef.findBreakableNear(p.x, p.z, p.y, 11, {
-      allowTerrain: true,
-      protectPlaced: true,
-      avoid: { x: player.x, z: player.z, radius: 4.0 }
-    });
-    if (!target) {
-      s.actionTimer = rand(7, 14);
-      return false;
+    if (Math.hypot(x - p.x, z - p.z) < 1.15) return true;
+    if (goatRef && goatRef.group) {
+      const g = goatRef.group.position;
+      if (Math.hypot(x - g.x, z - g.z) < 1.75) return true;
     }
-
-    const approach = findApproach(animal, target.x, target.z, 2.35);
-    if (!approach) {
-      s.actionTimer = rand(6, 12);
-      return false;
+    for (let i = 0; i < animals.length; i++) {
+      if (animals[i] === animal) continue;
+      const op = animals[i].group.position;
+      if (Math.hypot(x - op.x, z - op.z) < 1.25) return true;
     }
+    return false;
+  }
 
-    s.action = {
-      kind: 'break',
-      target: target,
-      approach: approach,
-      time: 0,
-      duration: 0.7,
-      hit: false
-    };
-    s.mode = 'seekBreak';
-    s.seekTime = 8;
+  function abandonProject(animal, reason) {
+    const s = animal.state;
+    s.lastAbandon = reason || 'unknown';
+    s.project = null;
+    s.gathering = false;
+    s.batchGoal = 0;
+    s.action = null;
+    s.pendingClimb = null;
+    s.buildTimer = rand(10, 18);
+    s.mode = 'idle';
+    s.wait = rand(0.8, 1.8);
     s.stuck = 0;
-    return true;
   }
 
-  function findPlaceCell(animal) {
+  function startBuild(animal) {
     const s = animal.state;
     const p = animal.group.position;
-    const bs = sizeOf();
-    const player = goatRef.group.position;
-    const base = s.yaw;
+    const project = s.project;
+    if (!project || s.carryCount <= 0 || !s.carry) return false;
 
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const angle = base + rand(-2.1, 2.1);
-      const distance = rand(2.7, 5.2);
-      const x = p.x + Math.sin(angle) * distance;
-      const z = p.z + Math.cos(angle) * distance;
-      const top = worldRef.landingHeight(x, z, p.y + 2.35);
-      if (top < p.y - 1.2 || top > p.y + 2.1) continue;
-
-      const bx = Math.floor(x / bs);
-      const bz = Math.floor(z / bs);
-      const by = Math.floor((top + 0.001) / bs);
-      const cx = (bx + 0.5) * bs;
-      const cz = (bz + 0.5) * bs;
-
-      if (Math.hypot(cx - p.x, cz - p.z) < 2.5) continue;
-      if (Math.hypot(cx - player.x, cz - player.z) < 2.5) continue;
-
-      let blocked = false;
-      for (let i = 0; i < animals.length; i++) {
-        const other = animals[i];
-        if (other === animal) continue;
-        const op = other.group.position;
-        if (Math.hypot(cx - op.x, cz - op.z) < 1.8) {
-          blocked = true;
-          break;
-        }
-      }
-      if (blocked) continue;
-
-      if (worldRef.canPlaceBlock && !worldRef.canPlaceBlock(bx, by, bz)) continue;
-      const approach = findApproach(animal, cx, cz, 2.35);
-      if (!approach) continue;
-
-      return {
-        type: 'place',
-        bx: bx,
-        by: by,
-        bz: bz,
-        x: cx,
-        z: cz,
-        approach: approach,
-        kind: s.carry
-      };
-    }
-    return null;
-  }
-
-  function startPlace(animal) {
-    const s = animal.state;
-    if (!s.carry || !s.grounded) return false;
-    const target = findPlaceCell(animal);
+    const target = nextBuildTarget(project);
     if (!target) {
-      s.actionTimer = rand(7, 13);
+      project.completed = true;
       return false;
+    }
+
+    if (targetUnsafeForPlacement(animal, target.x, target.z)) {
+      s.wait = rand(0.5, 1.0);
+      return false;
+    }
+
+    if (!worldRef.canPlaceBlock(target.bx, target.by, target.bz)) {
+      const existing = worldRef.blockInfoAt(target.bx, target.by, target.bz);
+      if (existing) {
+        // The cell is already filled. It may be our own retry after a failed
+        // climb, or a player's block. Either way it is safe to move on.
+        commitBuildTarget(project, target);
+        project.invalid = 0;
+        return false;
+      }
+      project.invalid++;
+      if (project.invalid > 5) abandonProject(animal, 'invalid-target');
+      return false;
+    }
+
+    const lastStep = project.steps.length > 0
+      ? project.steps[project.steps.length - 1]
+      : null;
+    if (lastStep && p.y < lastStep.top - 0.45) {
+      startTraverseTower(animal);
+      return false;
+    }
+
+    const dx = target.x - p.x;
+    const dz = target.z - p.z;
+    const reach = Math.hypot(dx, dz);
+    const levelOk = p.y >= target.top - BLOCK - 0.4 && p.y <= target.top + 0.4;
+    if (!levelOk || reach > 3.7) {
+      if (project.stepCount > 0) {
+        startTraverseTower(animal);
+        return false;
+      }
+      const approach = findApproach(animal, target.x, target.z, 2.35, {
+        levelY: project.site.groundY,
+        maxRise: BLOCK + 0.45
+      });
+      if (!approach) {
+        project.invalid++;
+        if (project.invalid > 5) abandonProject(animal, 'no-approach');
+        return false;
+      }
+      s.action = {
+        kind: 'place',
+        target: target,
+        approach: approach,
+        time: 0,
+        duration: 0.68,
+        hit: false,
+        build: true
+      };
+      s.mode = 'seekPlace';
+      s.seekTime = 9;
+      s.stuck = 0;
+      s.gathering = false;
+      return true;
     }
 
     s.action = {
       kind: 'place',
       target: target,
-      approach: target.approach,
+      approach: null,
       time: 0,
-      duration: 0.68,
-      hit: false
+      duration: 0.62,
+      hit: false,
+      build: true
     };
-    s.mode = 'seekPlace';
-    s.seekTime = 8;
-    s.stuck = 0;
+    s.gathering = false;
+    beginAction(animal);
     return true;
   }
 
-  function setCarried(animal, kind) {
+  function startClimb(animal, target) {
+    const s = animal.state;
+    if (!target) return false;
+    const bs = sizeOf();
+    s.pendingClimb = {
+      bx: target.bx,
+      bz: target.bz,
+      x: target.x,
+      z: target.z,
+      top: target.top || (target.by + 1) * bs
+    };
+    s.action = null;
+    s.mode = 'climbBuild';
+    s.seekTime = 5.0;
+    s.stuck = 0;
+    s.speed = 0;
+    s.climbTries = 0;
+    return true;
+  }
+
+  function finishClimb(animal) {
+    const s = animal.state;
+    s.pendingClimb = null;
+    s.speed = 0;
+    s.stuck = 0;
+    s.mode = s.escape ? 'escape' : 'idle';
+    s.wait = 0.12;
+    if (s.escape) {
+      s.escape.stage = 'choose';
+      s.escape.climbed = true;
+      s.escape.dug = false;
+    }
+  }
+
+  function updateClimb(animal, dt) {
+    const s = animal.state;
+    const p = animal.group.position;
+    const c = s.pendingClimb;
+    if (!c) {
+      finishClimb(animal);
+      return;
+    }
+    s.seekTime -= dt;
+    const dx = c.x - p.x;
+    const dz = c.z - p.z;
+    const dist = Math.hypot(dx, dz);
+
+    if (s.grounded && Math.abs(p.y - c.top) < 0.12 && dist < 1.28) {
+      if (dist > 0.18 && canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
+        p.x = c.x;
+        p.z = c.z;
+      }
+      finishClimb(animal);
+      return;
+    }
+
+    // Reliable hop onto the next stair block. The same jump animation plays,
+    // but the landing is constrained to the actual step instead of depending
+    // on a pixel-perfect horizontal drift.
+    if (!s.grounded && p.y >= c.top - 0.08 &&
+        s.vy <= 1.8 && dist < 3.2 &&
+        canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
+      p.x = c.x;
+      p.z = c.z;
+      p.y = c.top;
+      s.vy = 0;
+      s.grounded = true;
+      s.landPulse = 1;
+      finishClimb(animal);
+      return;
+    }
+
+    const yaw = Math.atan2(dx, dz);
+    s.yaw = turnToward(s.yaw, yaw, dt * 6);
+    if (s.grounded && c.top > p.y + 0.25 && dist < 3.2 &&
+        canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
+      startJump(animal, 'climb');
+    }
+    const speed = animal.def.walkSpeed * (s.grounded ? 1.2 : AIR_CONTROL);
+    s.speed = damp(s.speed, speed, 7, dt);
+    const moved = moveAnimal(
+      animal,
+      Math.sin(s.yaw) * s.speed * dt,
+      Math.cos(s.yaw) * s.speed * dt,
+      s.yaw
+    );
+    if (moved) {
+      s.walkPhase += s.speed * dt * 4.3;
+      s.stuck = 0;
+    } else if (s.grounded) {
+      s.stuck += dt;
+      if (s.stuck > 0.45) {
+        startJump(animal, 'climb');
+        s.stuck = 0;
+      }
+    }
+
+    // Once the body has cleared the new block, allow a little extra forward
+    // air control so a two-metre hop reliably carries it over the lip and
+    // onto the stair instead of landing back on the block below.
+    if (!s.grounded && p.y > c.top + 0.03 && dist > 0.45) {
+      const pull = Math.max(1.7, animal.def.walkSpeed * 2.0) * dt;
+      const amount = Math.min(dist, pull);
+      const nx = p.x + (dx / dist) * amount;
+      const nz = p.z + (dz / dist) * amount;
+      if (moveStep(animal, nx, nz, s.yaw)) {
+        p.x = nx;
+        p.z = nz;
+        s.stuck = 0;
+      }
+    }
+
+    if (s.seekTime <= 0) {
+      s.climbTries = (s.climbTries || 0) + 1;
+      if (s.climbTries < 4) {
+        s.seekTime = 2.2;
+        return;
+      }
+      // Last-resort mount after several failed hops. It is deliberately
+      // conservative: only when the destination is a real, standable top.
+      if (canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
+        p.x = c.x;
+        p.z = c.z;
+        p.y = c.top;
+        s.vy = 0;
+        s.grounded = true;
+        s.landPulse = 1;
+        finishClimb(animal);
+      } else {
+        s.pendingClimb = null;
+        s.mode = s.escape ? 'escape' : 'idle';
+        s.wait = 0.35;
+        s.speed = 0;
+      }
+    }
+  }
+
+  function startDescend(animal) {
+    const s = animal.state;
+    const p = animal.group.position;
+    const project = s.project;
+    if (!project) return false;
+    let angle = Math.atan2(p.x - project.site.centerX, p.z - project.site.centerZ);
+    if (!Number.isFinite(angle) || (Math.abs(p.x - project.site.centerX) < 0.01 &&
+      Math.abs(p.z - project.site.centerZ) < 0.01)) {
+      angle = rand(0, Math.PI * 2);
+    }
+    const distance = rand(7.0, 9.5);
+    s.descendTarget = {
+      x: project.site.centerX + Math.sin(angle) * distance,
+      z: project.site.centerZ + Math.cos(angle) * distance
+    };
+    s.mode = 'descend';
+    s.seekTime = 11;
+    s.stuck = 0;
+    s.speed = 0;
+    if (!s.descendTime) s.descendTime = 0;
+    s.action = null;
+    s.pendingClimb = null;
+    s.gathering = false;
+    return true;
+  }
+
+  function updateDescend(animal, dt) {
+    const s = animal.state;
+    const p = animal.group.position;
+    const project = s.project;
+    const groundY = project ? project.site.groundY : nearestGround(p.x, p.z);
+    if (s.grounded && p.y <= groundY + 0.22) {
+      s.mode = 'idle';
+      s.wait = rand(0.3, 0.8);
+      s.speed = 0;
+      s.descendTarget = null;
+      s.descendTime = 0;
+      return;
+    }
+
+    s.descendTime = (s.descendTime || 0) + dt;
+    if (s.descendTime > 6.5) {
+      // A spiral stair can close around an animal that lands on a lower
+      // course. Rescue it to open ground rather than letting it pace inside
+      // the ring forever.
+      s.descendTime = 0;
+      rescueAnimal(animal);
+      return;
+    }
+
+    s.seekTime -= dt;
+    if (!s.descendTarget) {
+      if (!startDescend(animal)) {
+        s.mode = 'idle';
+        s.wait = 0.5;
+      }
+      return;
+    }
+
+    const dx = s.descendTarget.x - p.x;
+    const dz = s.descendTarget.z - p.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.55 && s.grounded && p.y <= groundY + 0.22) {
+      s.mode = 'idle';
+      s.wait = rand(0.3, 0.8);
+      s.speed = 0;
+      s.descendTarget = null;
+      return;
+    }
+
+    const yaw = Math.atan2(dx, dz);
+    s.yaw = turnToward(s.yaw, yaw, dt * 4.5);
+    const speed = animal.def.walkSpeed * (s.grounded ? 1.15 : AIR_CONTROL);
+    s.speed = damp(s.speed, speed, 5, dt);
+    const moved = moveAnimal(
+      animal,
+      Math.sin(s.yaw) * s.speed * dt,
+      Math.cos(s.yaw) * s.speed * dt,
+      s.yaw
+    );
+    if (moved) {
+      s.walkPhase += s.speed * dt * 4.2;
+      s.stuck = 0;
+    } else if (s.grounded) {
+      s.stuck += dt;
+      if (s.stuck > 0.4) {
+        startJump(animal, 'descend');
+        s.stuck = 0;
+      }
+    }
+
+    if (s.seekTime <= 0) {
+      if (s.grounded && p.y <= groundY + 0.22) {
+        s.mode = 'idle';
+        s.wait = 0.4;
+      } else {
+        startDescend(animal);
+      }
+    }
+  }
+
+  function startTraverseTower(animal) {
+    const s = animal.state;
+    const project = s.project;
+    if (!project || project.steps.length === 0) return false;
+    const p = animal.group.position;
+    let index = 0;
+    for (let i = 0; i < project.steps.length; i++) {
+      const step = project.steps[i];
+      if (Math.abs(p.y - step.top) < 0.16 &&
+          Math.hypot(p.x - step.x, p.z - step.z) < 1.45) {
+        index = i + 1;
+      }
+    }
+    s.mode = 'traverseTower';
+    s.traverseIndex = index;
+    s.traverseBest = index;
+    s.traverseTime = 0;
+    s.seekTime = 30;
+    s.stuck = 0;
+    s.speed = 0;
+    s.action = null;
+    s.pendingClimb = null;
+    s.gathering = false;
+    return true;
+  }
+
+  function updateTraverseTower(animal, dt) {
+    const s = animal.state;
+    const project = s.project;
+    const p = animal.group.position;
+    if (!project || project.steps.length === 0) {
+      s.mode = 'idle';
+      s.wait = 0.2;
+      return;
+    }
+    let index = Math.max(0, s.traverseIndex || 0);
+    const steps = project.steps;
+    s.traverseTime = (s.traverseTime || 0) + dt;
+    if (index > (s.traverseBest || 0)) {
+      s.traverseBest = index;
+      s.traverseTime = 0;
+    }
+    if (s.traverseTime > 32) {
+      s.traverseTime = 0;
+      s.traverseRescues = (s.traverseRescues || 0) + 1;
+      if (s.traverseRescues > 2) {
+        s.traverseRescues = 0;
+        abandonProject(animal, 'traverse');
+      } else {
+        rescueAnimal(animal);
+      }
+      return;
+    }
+    if (index >= steps.length) {
+      s.mode = 'idle';
+      s.wait = 0.12;
+      s.speed = 0;
+      return;
+    }
+
+    // If a hop missed and the animal ended up back on the ground, start the
+    // climb again from the bottom step.
+    if (s.grounded && index > 0 && p.y < steps[0].top - 0.3) {
+      index = 0;
+      s.traverseIndex = 0;
+    }
+
+    const step = steps[index];
+    const dx = step.x - p.x;
+    const dz = step.z - p.z;
+    const dist = Math.hypot(dx, dz);
+
+    if (s.grounded && Math.abs(p.y - step.top) < 0.16 && dist < 1.4) {
+      s.traverseIndex = index + 1;
+      s.stuck = 0;
+      s.seekTime = Math.max(s.seekTime, 4);
+      if (s.traverseIndex >= steps.length) {
+        s.mode = 'idle';
+        s.wait = 0.1;
+        s.speed = 0;
+      }
+      return;
+    }
+
+    if (!s.grounded && p.y >= step.top - 0.08 &&
+        s.vy <= 1.8 && dist < 3.2 &&
+        canStandAt(animal, step.x, step.z, step.top, s.yaw, true)) {
+      p.x = step.x;
+      p.z = step.z;
+      p.y = step.top;
+      s.vy = 0;
+      s.grounded = true;
+      s.landPulse = 1;
+      s.traverseIndex = index + 1;
+      s.traverseBest = index + 1;
+      s.traverseTime = 0;
+      s.stuck = 0;
+      if (s.traverseIndex >= steps.length) {
+        s.mode = 'idle';
+        s.wait = 0.1;
+        s.speed = 0;
+      }
+      return;
+    }
+
+    s.seekTime -= dt;
+    const yaw = Math.atan2(dx, dz);
+    s.yaw = turnToward(s.yaw, yaw, dt * 5.5);
+    if (s.grounded && step.top > p.y + 0.25 && dist < 3.2 &&
+        canStandAt(animal, step.x, step.z, step.top, s.yaw, true)) {
+      startJump(animal, 'traverse');
+    }
+    const speed = animal.def.walkSpeed * (s.grounded ? 1.15 : AIR_CONTROL);
+    s.speed = damp(s.speed, speed, 6, dt);
+    const moved = moveAnimal(
+      animal,
+      Math.sin(s.yaw) * s.speed * dt,
+      Math.cos(s.yaw) * s.speed * dt,
+      s.yaw
+    );
+    if (moved) {
+      s.walkPhase += s.speed * dt * 4.2;
+      s.stuck = 0;
+    } else if (s.grounded) {
+      s.stuck += dt;
+      if (s.stuck > 0.5) {
+        startJump(animal, 'traverse');
+        s.stuck = 0;
+      }
+    }
+
+    if (s.seekTime <= 0) {
+      s.traverseIndex = 0;
+      s.seekTime = 12;
+      s.stuck = 0;
+      if (p.y > project.site.groundY + 0.4 &&
+          Math.abs(p.y - project.site.groundY) > 30) {
+        startDescend(animal);
+      }
+    }
+  }
+
+  function setCarried(animal, kind, count) {
     const s = animal.state;
     if (s.carriedMesh) {
       if (s.carriedMesh.parent) s.carriedMesh.parent.remove(s.carriedMesh);
       s.carriedMesh = null;
     }
-    s.carry = kind || null;
-    s.carryPop = kind ? 1 : 0;
 
-    if (!kind || !worldRef.makeBlockMesh) return;
-    const mesh = worldRef.makeBlockMesh(kind);
+    const n = Math.max(0, Math.floor(count || 0));
+    s.carry = n > 0 ? kind : null;
+    s.carryCount = n;
+    s.carryPop = n > 0 ? 1 : 0;
+    if (n <= 0 || !kind || !worldRef.makeBlockMesh) return;
+
     const carry = animal.def.carry;
-    mesh.scale.setScalar(carry.scale);
-    mesh.position.set(0, 0, 0);
-    mesh.rotation.y = carry.rot;
-    mesh.rotation.z = 0.03;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    animal.parts.carryAnchor.add(mesh);
-    s.carriedMesh = mesh;
+    const group = new THREE.Group();
+    const shown = Math.min(3, n);
+    for (let i = 0; i < shown; i++) {
+      const mesh = worldRef.makeBlockMesh(kind);
+      mesh.scale.setScalar(carry.scale);
+      const offset = i - (shown - 1) / 2;
+      mesh.position.set(offset * 0.055, offset * carry.scale * 1.08, -Math.abs(offset) * 0.025);
+      mesh.rotation.y = carry.rot + i * 0.24;
+      mesh.rotation.z = 0.03;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    group.userData.count = n;
+    animal.parts.carryAnchor.add(group);
+    s.carriedMesh = group;
+  }
+
+  function addCarry(animal, kind, amount) {
+    const s = animal.state;
+    const cap = CARRY_LIMIT + (s.escape ? 1 : 0);
+    if (s.carryCount >= cap) return false;
+    const next = Math.min(cap, s.carryCount + (amount || 1));
+    setCarried(animal, kind, next);
+    return true;
+  }
+
+  function consumeCarry(animal) {
+    const s = animal.state;
+    if (s.carryCount <= 0 || !s.carry) return false;
+    setCarried(animal, s.carry, s.carryCount - 1);
+    return true;
   }
 
   function beginAction(animal) {
@@ -1095,6 +1861,7 @@
     s.mode = action.kind === 'break' ? 'break' : 'place';
     s.action.time = 0;
     s.action.hit = false;
+    s.action.result = null;
     s.speed = 0;
     s.yaw = Math.atan2(action.target.x - animal.group.position.x, action.target.z - animal.group.position.z);
     animal.group.rotation.y = s.yaw;
@@ -1103,20 +1870,26 @@
   function finishSeek(animal, failed) {
     const s = animal.state;
     s.action = null;
-    s.mode = 'idle';
-    s.wait = rand(0.8, 2.0);
-    s.actionTimer = failed ? rand(5, 10) : rand(9, 15);
+    s.speed = 0;
     s.stuck = 0;
+    if (s.escape) {
+      s.mode = 'escape';
+      s.wait = 0.2;
+      return;
+    }
+    s.mode = 'idle';
+    s.wait = failed ? 0.45 : 0.2;
+    if (failed) {
+      s.seekFailures = (s.seekFailures || 0) + 1;
+    }
   }
 
   function applyAction(animal) {
     const s = animal.state;
     const action = s.action;
     if (!action) return;
-    const distToPlayer = Math.hypot(
-      animal.group.position.x - goatRef.group.position.x,
-      animal.group.position.z - goatRef.group.position.z
-    );
+    const p = animal.group.position;
+    const distToPlayer = Math.hypot(p.x - goatRef.group.position.x, p.z - goatRef.group.position.z);
 
     if (action.kind === 'break') {
       const target = action.target;
@@ -1125,38 +1898,43 @@
         protectPlaced: true
       });
       if (kind) {
-        setCarried(animal, kind);
-        s.actionTimer = rand(7, 13);
-        s.happy = 1;
+        addCarry(animal, kind, 1);
+        if (action.escape && s.escape) {
+          s.escape.opened = { bx: target.bx, by: target.by, bz: target.bz };
+          s.escape.dug = true;
+        }
+        s.happy = Math.max(s.happy || 0, 0.45);
+        action.result = 'broke';
         if (audioRef && audioRef.thud && distToPlayer < 22) audioRef.thud();
       } else {
-        s.actionTimer = rand(6, 12);
+        action.result = 'failed';
       }
     } else if (action.kind === 'place') {
       const target = action.target;
-      const bs = sizeOf();
-      const cx = (target.bx + 0.5) * bs;
-      const cz = (target.bz + 0.5) * bs;
-      const player = goatRef.group.position;
-      let unsafe = Math.hypot(cx - player.x, cz - player.z) < 1.7;
-      if (!unsafe) {
-        for (let i = 0; i < animals.length; i++) {
-          const other = animals[i];
-          if (other === animal) continue;
-          const op = other.group.position;
-          if (Math.hypot(cx - op.x, cz - op.z) < 1.2) {
-            unsafe = true;
-            break;
-          }
+      if (s.carryCount <= 0 || !s.carry) {
+        action.result = 'failed';
+      } else if (targetUnsafeForPlacement(animal, target.x, target.z)) {
+        action.result = 'failed';
+      } else if (!worldRef.canPlaceBlock(target.bx, target.by, target.bz)) {
+        action.result = 'failed';
+      } else if (worldRef.placeBlock(s.carry, target.bx, target.by, target.bz)) {
+        const bodyH = animal.def.bodyHeight * animal.def.scale;
+        if (worldRef.blockedAt(p.x, p.z, p.y + 0.03, p.y + bodyH)) {
+          // Safety net: never let a placement swallow the builder's own body.
+          worldRef.breakBlockAt(target.bx, target.by, target.bz, {
+            drop: false,
+            protectPlaced: false
+          });
+          action.result = 'failed';
+        } else {
+          action.result = 'placed';
+          if (action.build && s.project) commitBuildTarget(s.project, target);
+          consumeCarry(animal);
+          s.happy = Math.max(s.happy || 0, 0.6);
+          if (audioRef && audioRef.thud && distToPlayer < 22) audioRef.thud();
         }
-      }
-      if (!unsafe && worldRef.placeBlock(s.carry, target.bx, target.by, target.bz)) {
-        setCarried(animal, null);
-        s.actionTimer = rand(18, 30);
-        s.happy = 1;
-        if (audioRef && audioRef.thud && distToPlayer < 22) audioRef.thud();
       } else {
-        s.actionTimer = rand(3, 6);
+        action.result = 'failed';
       }
     }
     action.hit = true;
@@ -1177,13 +1955,17 @@
     s.seekTime -= dt;
 
     const distanceToTarget = Math.hypot(target.x - p.x, target.z - p.z);
-    const distanceToApproach = Math.hypot(approach.x - p.x, approach.z - p.z);
+    const distanceToApproach = approach
+      ? Math.hypot(approach.x - p.x, approach.z - p.z)
+      : Infinity;
 
-    if (distanceToApproach < 0.38 || distanceToTarget < 3.2) {
+    const levelOk = !action.build ||
+      (p.y >= target.top - BLOCK - 0.4 && p.y <= target.top + 0.4);
+    if ((distanceToApproach < 0.7 || distanceToTarget < 3.7) && levelOk) {
       const desiredYaw = Math.atan2(target.x - p.x, target.z - p.z);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 9);
       s.speed = damp(s.speed, 0, 8, dt);
-      if (Math.abs(angleDelta(s.yaw, desiredYaw)) < 0.2 || s.seekTime < 1.2) {
+      if (Math.abs(angleDelta(s.yaw, desiredYaw)) < 0.25 || s.seekTime < 1.3) {
         beginAction(animal);
       }
     } else {
@@ -1191,18 +1973,23 @@
       const dz = approach.z - p.z;
       const desiredYaw = Math.atan2(dx, dz);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 4.8);
-      const speed = animal.def.walkSpeed * 1.25;
+      const speed = animal.def.walkSpeed * (s.grounded ? 1.25 : AIR_CONTROL);
       s.speed = damp(s.speed, speed, 5, dt);
-      const moved = moveAnimal(animal, Math.sin(s.yaw) * s.speed * dt, Math.cos(s.yaw) * s.speed * dt, s.yaw);
+      const moved = moveAnimal(
+        animal,
+        Math.sin(s.yaw) * s.speed * dt,
+        Math.cos(s.yaw) * s.speed * dt,
+        s.yaw
+      );
       if (moved) {
         s.walkPhase += s.speed * dt * 4.2;
         s.stuck = 0;
-      } else {
+      } else if (s.grounded) {
         s.stuck += dt;
       }
     }
 
-    if (s.seekTime <= 0 || s.stuck > 1.1) finishSeek(animal, true);
+    if (s.seekTime <= 0 || s.stuck > 1.8) finishSeek(animal, true);
   }
 
   function updateAction(animal, dt) {
@@ -1216,11 +2003,36 @@
 
     action.time += dt;
     if (!action.hit && action.time >= 0.22) applyAction(animal);
-    if (action.time >= action.duration) {
-      s.action = null;
-      s.mode = 'idle';
-      s.wait = rand(1.2, 3.0);
-      s.speed = 0;
+    if (action.time < action.duration) return;
+
+    const result = action.result;
+    const wasBuild = !!action.build;
+    const wasEscape = !!action.escape;
+    const escapePlace = !!action.escapePlace;
+    const target = action.target;
+    s.action = null;
+    s.speed = 0;
+
+    if (wasBuild && result === 'placed') {
+      startClimb(animal, target);
+      return;
+    }
+    if (wasEscape && escapePlace && result === 'placed') {
+      startEscapeClimb(animal, target);
+      return;
+    }
+    if (s.escape) {
+      s.mode = 'escape';
+      s.wait = 0.18;
+      s.escape.stage = 'choose';
+      return;
+    }
+
+    s.mode = 'idle';
+    s.wait = result === 'placed' || result === 'broke' ? 0.2 : 0.55;
+    if (result === 'failed' && wasBuild && s.project) {
+      s.project.invalid++;
+      if (s.project.invalid > 5) abandonProject(animal, 'place-failed');
     }
   }
 
@@ -1241,17 +2053,425 @@
 
     if (!s.grounded) {
       const prevY = p.y;
-      s.vy -= GRAVITY * dt;
+      s.vy = Math.max(-38, s.vy - GRAVITY * dt);
       p.y += s.vy * dt;
       groundY = worldRef.supportHeight(p.x, p.z, Math.max(prevY, p.y));
       if (s.vy <= 0 && p.y <= groundY) {
         p.y = groundY;
         s.vy = 0;
         s.grounded = true;
+        s.tuck = 0;
         s.landPulse = 1;
       }
     }
     s.landPulse = Math.max(0, (s.landPulse || 0) - dt * 4);
+
+    if (p.y < -6) {
+      rescueAnimal(animal);
+      return;
+    }
+
+    // Terrain edits, a falling tree, or a very unlucky placement should never
+    // leave an animal inside a solid block. Rescue is a last-resort safety net.
+    const bodyH = animal.def.bodyHeight * animal.def.scale;
+    if (s.grounded && worldRef.blockedAt(p.x, p.z, p.y + 0.08, p.y + bodyH * 0.55)) {
+      s.buriedTime = (s.buriedTime || 0) + dt;
+      if (s.buriedTime > 0.7) {
+        rescueAnimal(animal);
+      }
+    } else {
+      s.buriedTime = 0;
+    }
+  }
+
+  function escapeDirection(animal) {
+    const p = animal.group.position;
+    let best = { x: 0, z: 1, score: -Infinity };
+    for (let i = 0; i < 8; i++) {
+      const angle = i / 8 * Math.PI * 2;
+      const sx = Math.sin(angle);
+      const sz = Math.cos(angle);
+      let score = 0;
+      for (let d = 1; d <= 3; d++) {
+        score += worldRef.surfaceHeight(p.x + sx * d * 1.2, p.z + sz * d * 1.2) / d;
+      }
+      if (score > best.score) best = { x: sx, z: sz, score: score };
+    }
+    return best;
+  }
+
+  function pitStatus(animal) {
+    const p = animal.group.position;
+    const s = animal.state;
+    if (!s.grounded) return { trapped: false, depth: 0, walls: 0, direction: escapeDirection(animal) };
+
+    let maxGround = worldRef.surfaceHeight(p.x, p.z);
+    for (let i = 0; i < 8; i++) {
+      const angle = i / 8 * Math.PI * 2;
+      for (let d = 1.5; d <= 3.4; d += 0.9) {
+        const h = worldRef.surfaceHeight(p.x + Math.sin(angle) * d, p.z + Math.cos(angle) * d);
+        if (h > maxGround) maxGround = h;
+      }
+    }
+
+    const bodyH = animal.def.bodyHeight * animal.def.scale;
+    let walls = 0;
+    for (let i = 0; i < 8; i++) {
+      const angle = i / 8 * Math.PI * 2;
+      let blocked = false;
+      for (let d = 1.35; d <= 2.55; d += 1.2) {
+        if (worldRef.blockedAt(
+          p.x + Math.sin(angle) * d,
+          p.z + Math.cos(angle) * d,
+          p.y + 0.35,
+          p.y + bodyH * 0.72
+        )) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) walls++;
+    }
+
+    const depth = maxGround - p.y;
+    // A random two-metre ledge at the edge of a plateau is not a pit: every
+    // animal can simply hop back up. Only genuine depressions and enclosed
+    // holes trigger the dig-out routine.
+    const trapped =
+      (depth > 2.2 && walls >= 4) ||
+      (depth > 3.2 && walls >= 2) ||
+      (depth > 1.2 && walls >= 7);
+    return {
+      trapped: trapped,
+      depth: depth,
+      walls: walls,
+      rim: maxGround,
+      direction: escapeDirection(animal)
+    };
+  }
+
+  function shouldEscape(animal) {
+    const s = animal.state;
+    if (!s.grounded || s.escape || s.action) return false;
+    if (s.mode === 'climbBuild' || s.mode === 'traverseTower' || s.mode === 'descend') return false;
+    return pitStatus(animal).trapped;
+  }
+
+  function findEscapeStep(animal) {
+    const p = animal.group.position;
+    const bs = sizeOf();
+    const bx0 = Math.floor(p.x / bs);
+    const bz0 = Math.floor(p.z / bs);
+    const dir = escapeDirection(animal);
+    const targetTop = p.y + BLOCK;
+    let best = null;
+    let bestScore = Infinity;
+
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const bx = bx0 + dx;
+        const bz = bz0 + dz;
+        const cx = (bx + 0.5) * bs;
+        const cz = (bz + 0.5) * bs;
+        const dist = Math.hypot(cx - p.x, cz - p.z);
+        if (dist < 1.15 || dist > 3.2) continue;
+        const top = worldRef.landingHeight(cx, cz, p.y + BLOCK * 2 + 0.08);
+        if (Math.abs(top - targetTop) > 0.12) continue;
+        if (!canStandAt(animal, cx, cz, top, p.yaw)) continue;
+        if (targetUnsafeForPlacement(animal, cx, cz)) {
+          // An animal standing on the only ledge is not a reason to give up
+          // escaping, but do not path straight through the player.
+          if (goatRef && goatRef.group) {
+            const g = goatRef.group.position;
+            if (Math.hypot(cx - g.x, cz - g.z) < 1.75) continue;
+          }
+        }
+        const dot = ((cx - p.x) / dist) * dir.x + ((cz - p.z) / dist) * dir.z;
+        const score = dist - dot * 1.1 + Math.abs(top - targetTop);
+        if (score < bestScore) {
+          bestScore = score;
+          best = { bx: bx, bz: bz, x: cx, z: cz, top: top };
+        }
+      }
+    }
+    return best;
+  }
+
+  function findEscapePlace(animal) {
+    const p = animal.group.position;
+    const bs = sizeOf();
+    const bx0 = Math.floor(p.x / bs);
+    const bz0 = Math.floor(p.z / bs);
+    const feetBy = Math.round(p.y / bs);
+    const dir = escapeDirection(animal);
+    const bodyH = animal.def.bodyHeight * animal.def.scale;
+    let best = null;
+    let bestScore = Infinity;
+
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const bx = bx0 + dx;
+        const bz = bz0 + dz;
+        const cx = (bx + 0.5) * bs;
+        const cz = (bz + 0.5) * bs;
+        const dist = Math.hypot(cx - p.x, cz - p.z);
+        if (dist < 1.2 || dist > 3.1) continue;
+        if (!worldRef.canPlaceBlock(bx, feetBy, bz)) continue;
+        if (worldRef.blockedAt(cx, cz, p.y + BLOCK + 0.08, p.y + BLOCK + bodyH + 0.1)) continue;
+        if (targetUnsafeForPlacement(animal, cx, cz)) continue;
+        const dot = ((cx - p.x) / dist) * dir.x + ((cz - p.z) / dist) * dir.z;
+        const score = dist - dot * 0.9;
+        if (score < bestScore) {
+          bestScore = score;
+          best = {
+            phase: 'escape',
+            bx: bx,
+            bz: bz,
+            by: feetBy,
+            x: cx,
+            z: cz,
+            top: p.y + BLOCK
+          };
+        }
+      }
+    }
+    return best;
+  }
+
+  function findEscapeWall(animal, status) {
+    const p = animal.group.position;
+    const bs = sizeOf();
+    const bx0 = Math.floor(p.x / bs);
+    const bz0 = Math.floor(p.z / bs);
+    const feetBy = Math.round(p.y / bs);
+    const dir = status.direction;
+    let best = null;
+    let bestScore = Infinity;
+
+    for (let dx = -2; dx <= 2; dx++) {
+      for (let dz = -2; dz <= 2; dz++) {
+        const bx = bx0 + dx;
+        const bz = bz0 + dz;
+        const cx = (bx + 0.5) * bs;
+        const cz = (bz + 0.5) * bs;
+        const dist = Math.hypot(cx - p.x, cz - p.z);
+        if (dist < 1.2 || dist > 3.1) continue;
+
+        for (let layer = 0; layer < 2; layer++) {
+          const by = feetBy + layer;
+          const info = worldRef.blockInfoAt(bx, by, bz);
+          if (!info || info.type === 'placed') continue;
+          if (info.type === 'prop') continue;
+          const below = worldRef.blockInfoAt(bx, by - 1, bz);
+          const isStepWall = layer === 1 && !!below;
+          const dot = ((cx - p.x) / dist) * dir.x + ((cz - p.z) / dist) * dir.z;
+          let score = dist - dot * 1.4 + (isStepWall ? 0 : 2.2) + layer * 0.4;
+          if (score < bestScore) {
+            bestScore = score;
+            best = {
+              type: info.type,
+              bx: bx,
+              by: by,
+              bz: bz,
+              kind: info.kind,
+              x: cx,
+              y: (by + 1) * bs,
+              z: cz,
+              isStepWall: isStepWall
+            };
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  function startEscapeClimb(animal, step) {
+    const s = animal.state;
+    s.pendingClimb = {
+      bx: step.bx,
+      bz: step.bz,
+      x: step.x,
+      z: step.z,
+      top: step.top
+    };
+    s.mode = 'climbBuild';
+    s.seekTime = 4.5;
+    s.stuck = 0;
+    s.speed = 0;
+    s.escape.stage = 'climb';
+    s.escape.attempts++;
+  }
+
+  function advanceEscape(animal) {
+    const s = animal.state;
+    const p = animal.group.position;
+    if (!s.escape) return;
+    if (s.escape.time > ESCAPE_TIMEOUT || s.escape.attempts > 12) {
+      rescueAnimal(animal);
+      return;
+    }
+    if (!s.grounded) return;
+
+    const status = pitStatus(animal);
+    const rim = s.escape.rim !== undefined ? s.escape.rim : p.y;
+    if (p.y >= rim - 0.25) {
+      endEscape(animal);
+      return;
+    }
+
+    // First open the pit wall at the current body level. This is the part the
+    // animal visibly widens before it builds a stair out of the turf chunk.
+    if (!s.escape.dug) {
+      const wall = findEscapeWall(animal, status);
+      if (wall) {
+        s.action = {
+          kind: 'break',
+          target: wall,
+          approach: null,
+          time: 0,
+          duration: 0.58,
+          hit: false,
+          escape: true
+        };
+        s.mode = 'seekBreak';
+        s.seekTime = 1;
+        s.escape.attempts++;
+        beginAction(animal);
+        return;
+      }
+      s.escape.dug = true;
+    }
+
+    const step = findEscapeStep(animal);
+    if (step) {
+      startEscapeClimb(animal, step);
+      return;
+    }
+
+    if (s.carryCount > 0) {
+      const place = findEscapePlace(animal);
+      if (place) {
+        s.action = {
+          kind: 'place',
+          target: place,
+          approach: null,
+          time: 0,
+          duration: 0.58,
+          hit: false,
+          escape: true,
+          escapePlace: true
+        };
+        s.mode = 'seekPlace';
+        s.seekTime = 1;
+        s.escape.attempts++;
+        beginAction(animal);
+        return;
+      }
+    }
+
+    // Enclosed by the player's blocks and with no spare turf: try a
+    // vertical hop, then let the timeout rescue handle pathological cases.
+    if (s.grounded) {
+      startJump(animal, 'escape');
+    }
+  }
+
+  function startEscape(animal) {
+    const s = animal.state;
+    const p = animal.group.position;
+    s.escape = {
+      time: 0,
+      attempts: 0,
+      stage: 'choose',
+      opened: null,
+      dug: false,
+      noWall: false
+    };
+    s.mode = 'escape';
+    s.action = null;
+    s.pendingClimb = null;
+    s.gathering = false;
+    s.speed = 0;
+    s.stuck = 0;
+    s.wait = 0;
+    s.escapeCooldown = 1.2;
+    const status = pitStatus(animal);
+    s.escape.rim = Math.max(status.rim || p.y, p.y + (status.walls >= 5 ? BLOCK : 0));
+  }
+
+  function endEscape(animal) {
+    const s = animal.state;
+    s.escape = null;
+    s.pendingClimb = null;
+    s.mode = 'idle';
+    s.wait = 0.25;
+    s.speed = 0;
+    s.gathering = false;
+    s.escapeCooldown = 2.0;
+    s.pitTimer = 0.8;
+    if (s.retired && !s.project) setCarried(animal, null, 0);
+  }
+
+  function updateEscape(animal, dt) {
+    const s = animal.state;
+    if (!s.escape) {
+      s.mode = 'idle';
+      s.wait = 0.3;
+      return;
+    }
+    s.escape.time += dt;
+    if (s.wait > 0) {
+      s.wait -= dt;
+      return;
+    }
+    if (!s.grounded || s.action) return;
+    advanceEscape(animal);
+  }
+
+  function rescueAnimal(animal) {
+    const s = animal.state;
+    const p = animal.group.position;
+    let spot = null;
+    for (let radius = 3.0; radius <= 12 && !spot; radius += 1.5) {
+      for (let i = 0; i < 16; i++) {
+        const angle = i / 16 * Math.PI * 2;
+        const x = p.x + Math.sin(angle) * radius;
+        const z = p.z + Math.cos(angle) * radius;
+        const y = worldRef.surfaceHeight(x, z);
+        if (y < 0.1) continue;
+        if (!canStandAt(animal, x, z, y, s.yaw)) continue;
+        if (goatRef && goatRef.group) {
+          const g = goatRef.group.position;
+          if (Math.hypot(x - g.x, z - g.z) < 2.2) continue;
+        }
+        spot = { x: x, y: y, z: z };
+        break;
+      }
+    }
+    if (!spot) {
+      spot = findSpawnNear(p.x, p.z, 3.0, 12.0, animal);
+    }
+
+    if (spot) {
+      p.x = spot.x;
+      p.y = spot.y;
+      p.z = spot.z;
+      s.grounded = true;
+      s.vy = 0;
+      s.landPulse = 1;
+      s.mode = 'idle';
+      s.wait = rand(0.5, 1.2);
+      s.speed = 0;
+      s.action = null;
+      s.pendingClimb = null;
+      s.escape = null;
+      s.descendTarget = null;
+      s.descendTime = 0;
+      s.traverseTime = 0;
+      s.gathering = false;
+      s.buriedTime = 0;
+    }
   }
 
   function updateVisual(animal, dt, t) {
@@ -1269,10 +2489,12 @@
       s.grazePose = damp(s.grazePose, 0, 8, dt);
     }
 
+    s.tuck = damp(s.tuck || 0, s.grounded ? 0 : 1, 11, dt);
+    const tuck = s.tuck;
     const bob = moving ? Math.abs(Math.sin(s.walkPhase)) * 0.024 * stride : 0;
-    parts.rig.position.y = parts.rigBaseY + bob - (s.landPulse || 0) * 0.045;
+    parts.rig.position.y = parts.rigBaseY + bob - (s.landPulse || 0) * 0.045 - tuck * 0.025;
     parts.rig.rotation.x = damp(parts.rig.rotation.x,
-      (s.landPulse || 0) * -0.05 + (moving ? Math.sin(s.walkPhase * 2) * 0.012 * stride : 0),
+      (s.landPulse || 0) * -0.05 + (moving ? Math.sin(s.walkPhase * 2) * 0.012 * stride : 0) - tuck * 0.14,
       9, dt);
 
     const walkLift = moving ? Math.sin(s.walkPhase * 2) * 0.04 * stride : 0;
@@ -1324,7 +2546,11 @@
       const phase = s.walkPhase + leg.offset;
       let hipTarget = Math.sin(phase) * 0.58 * stride;
       let kneeTarget = Math.max(0, -Math.cos(phase)) * 0.8 * stride + 0.035;
-      if (actionLunge > 0) {
+      if (tuck > 0.01) {
+        hipTarget = (leg.front ? -0.52 : 0.45) * tuck;
+        kneeTarget = 0.72 * tuck;
+      }
+      if (actionLunge > 0 && tuck < 0.4) {
         hipTarget += (leg.front ? -0.18 : 0.12) * actionLunge;
         kneeTarget += (leg.front ? 0.12 : 0.03) * actionLunge;
       }
@@ -1366,9 +2592,10 @@
 
     if (s.carriedMesh) {
       const pop = s.carryPop || 0;
-      const scale = def.carry.scale * (1 + pop * 0.16);
-      s.carriedMesh.scale.setScalar(scale);
+      s.carriedMesh.scale.setScalar(1 + pop * 0.1);
       s.carryPop = Math.max(0, pop - dt * 4);
+    } else {
+      s.carryPop = Math.max(0, (s.carryPop || 0) - dt * 4);
     }
 
     if (parts.bell) {
@@ -1382,32 +2609,131 @@
     const player = goatRef.group.position;
     const playerDistance = Math.hypot(p.x - player.x, p.z - player.z);
 
-    if (playerDistance > 92 && s.mode !== 'break' && s.mode !== 'place') {
+    s.jumpCooldown = Math.max(0, (s.jumpCooldown || 0) - dt);
+    s.escapeCooldown = Math.max(0, (s.escapeCooldown || 0) - dt);
+    s.pitTimer = (s.pitTimer || 0) - dt;
+    s.buildTimer = Math.max(0, (s.buildTimer || 0) - dt);
+    s.actionTimer = Math.max(0, (s.actionTimer || 0) - dt);
+
+    if (playerDistance > 92 && !s.action) {
       relocate(animal);
     }
 
-    if (playerDistance < 52) s.actionTimer -= dt;
+    if (s.retired && !s.project && s.escape) {
+      rescueAnimal(animal);
+    }
 
-    // A carrying animal can pause its stroll to set the block down once the
-    // carry timer is up; otherwise it would keep walking until its next idle.
-    if (s.carry && s.grounded && s.actionTimer <= 0 && s.mode === 'walk') startPlace(animal);
+    if (s.pitTimer <= 0 && s.escapeCooldown <= 0 && s.mode !== 'escape' &&
+        s.mode !== 'climbBuild' && s.mode !== 'traverseTower' &&
+        s.mode !== 'descend' && s.grounded) {
+      s.pitTimer = PIT_CHECK_INTERVAL;
+      if (shouldEscape(animal)) {
+        if (s.retired) rescueAnimal(animal);
+        else startEscape(animal);
+      }
+    }
 
     if (s.mode === 'idle') {
+      if (s.retired && !s.project && s.carryCount > 0) {
+        setCarried(animal, null, 0);
+      }
       s.speed = damp(s.speed, 0, 5, dt);
       s.wait -= dt;
       if (s.wait <= 0) {
-        if (s.carry && s.actionTimer <= 0) {
-          if (!startPlace(animal)) {
-            if (!chooseWander(animal)) s.wait = rand(1.5, 3.5);
+        if (s.pendingClimb) {
+          startClimb(animal, s.pendingClimb);
+        } else if (s.project) {
+          const project = s.project;
+          const site = project.site;
+          const onStructure = p.y > site.groundY + 0.3 &&
+            Math.hypot(p.x - site.centerX, p.z - site.centerZ) < 5.2;
+          const hasTarget = hasBuildTarget(project);
+          const atSite = Math.hypot(p.x - site.centerX, p.z - site.centerZ) < 1.35 &&
+            Math.abs(p.y - site.groundY) < 0.35;
+
+          if (!hasTarget) {
+            if (p.y > site.groundY + 0.25) {
+              startDescend(animal);
+            } else {
+              s.lastTower = {
+                site: project.site,
+                steps: project.stepCount,
+                plan: project.plan.map(function (t) {
+                  return { phase: t.phase, bx: t.bx, by: t.by, bz: t.bz };
+                })
+              };
+              s.towersBuilt = (s.towersBuilt || 0) + 1;
+              s.project = null;
+              s.gathering = false;
+              s.batchGoal = 0;
+              s.happy = 1;
+              s.retired = true;
+              s.buildTimer = Infinity;
+              setCarried(animal, null, 0);
+              s.wait = rand(1.0, 2.0);
+            }
+          } else if (s.gathering && s.carryCount < s.batchGoal && !onStructure) {
+            if (!atSite && project.stepCount === 0) {
+              s.target.set(site.centerX, site.groundY, site.centerZ);
+              s.mode = 'walk';
+              s.wait = 0;
+            } else if (!startQuarry(animal)) {
+              s.quarryMisses = (s.quarryMisses || 0) + 1;
+              if (s.quarryMisses < 4) {
+                s.wait = rand(0.25, 0.6);
+              } else {
+                s.quarryMisses = 0;
+                // No more turf around this site. Keep the load, abandon the
+                // half-built plinth and pick a fresh site rather than starting
+                // a multi-trip construction that would need stair traversal
+                // and can strand the animal inside its own spiral.
+                s.gathering = true;
+                s.batchGoal = CARRY_LIMIT;
+                const carried = s.carryCount;
+                const carriedKind = s.carry;
+                abandonProject(animal, 'quarry-exhausted');
+                s.project = null;
+                s.carryCount = carried;
+                if (carriedKind) s.carry = carriedKind;
+                if (!chooseWander(animal)) s.wait = rand(0.5, 1.0);
+              }
+            }
+          } else if (s.carryCount > 0) {
+            if (!startBuild(animal)) {
+              if (onStructure) {
+                startDescend(animal);
+              } else {
+                s.wait = rand(0.5, 1.1);
+              }
+            }
+          } else if (onStructure) {
+            startDescend(animal);
+          } else {
+            s.gathering = true;
+            s.batchGoal = CARRY_LIMIT;
+            s.wait = 0.1;
           }
-        } else if (!s.carry && s.actionTimer <= 0) {
-          if (!startBreak(animal)) {
-            if (!chooseWander(animal) && !startGraze(animal)) s.wait = rand(1.5, 3.5);
+        } else if (!s.retired && s.buildTimer <= 0) {
+          const site = chooseBuildSite(animal);
+          if (site) {
+            s.project = makeBuildProject(animal, site);
+            s.gathering = s.carryCount < CARRY_LIMIT;
+            s.batchGoal = s.gathering ? CARRY_LIMIT : 0;
+            s.quarryMisses = 0;
+            s.wait = 0.12;
+            s.happy = 1;
+          } else {
+            s.buildTimer = rand(5, 10);
+            if (!chooseWander(animal) && !startGraze(animal)) s.wait = rand(1.5, 3.0);
           }
-        } else if (!s.carry && Math.random() < 0.34) {
-          if (!startGraze(animal)) chooseWander(animal);
-        } else {
-          chooseWander(animal);
+        } else if (s.carryCount > 0 && s.buildTimer <= 0.5) {
+          // Leftover turf from a finished project can seed the next one.
+          s.buildTimer = 0;
+          s.wait = 0.05;
+        } else if (!s.carry && Math.random() < 0.38) {
+          if (!startGraze(animal) && !chooseWander(animal)) s.wait = rand(1.2, 2.5);
+        } else if (!chooseWander(animal)) {
+          s.wait = rand(1.2, 2.5);
         }
       }
     } else if (s.mode === 'walk') {
@@ -1416,21 +2742,22 @@
       const distance = Math.hypot(dx, dz);
       if (distance < 0.32) {
         s.mode = 'idle';
-        s.wait = rand(1.3, 4.2);
+        s.wait = rand(1.0, 2.6);
         s.speed = 0;
       } else {
         const yaw = Math.atan2(dx, dz);
         s.yaw = turnToward(s.yaw, yaw, dt * 4.0);
-        s.speed = damp(s.speed, defWalkSpeed(animal), 4, dt);
+        const targetSpeed = defWalkSpeed(animal) * (s.grounded ? 1 : AIR_CONTROL);
+        s.speed = damp(s.speed, targetSpeed, 4, dt);
         const moved = moveAnimal(animal, Math.sin(s.yaw) * s.speed * dt, Math.cos(s.yaw) * s.speed * dt, s.yaw);
         if (moved) {
           s.walkPhase += s.speed * dt * 4.6;
           s.stuck = 0;
-        } else {
+        } else if (s.grounded) {
           s.stuck += dt;
           if (s.stuck > 0.8) {
             s.mode = 'idle';
-            s.wait = rand(1.0, 2.5);
+            s.wait = rand(0.8, 1.8);
             s.speed = 0;
             s.stuck = 0;
           }
@@ -1446,16 +2773,62 @@
       }
       if (s.grazeTime <= 0) {
         s.mode = 'idle';
-        s.wait = rand(1.2, 3.0);
+        s.wait = rand(1.0, 2.4);
       }
     } else if (s.mode === 'seekBreak' || s.mode === 'seekPlace') {
       updateSeek(animal, dt);
     } else if (s.mode === 'break' || s.mode === 'place') {
       updateAction(animal, dt);
+    } else if (s.mode === 'climbBuild') {
+      updateClimb(animal, dt);
+    } else if (s.mode === 'traverseTower') {
+      updateTraverseTower(animal, dt);
+    } else if (s.mode === 'descend') {
+      updateDescend(animal, dt);
+    } else if (s.mode === 'escape') {
+      updateEscape(animal, dt);
     }
 
     animal.group.rotation.y = s.yaw;
     updateGravity(animal, dt);
+
+    // Landing with the nose inside a higher bank is geometrically possible
+    // even when every horizontal step is collision-checked. Nudge the animal
+    // back to the nearest standable spot instead of leaving it wedged.
+    const looseStance = s.mode === 'climbBuild' || s.mode === 'traverseTower';
+    if (s.grounded && !canStandAt(animal, p.x, p.z, p.y, s.yaw, looseStance)) {
+      s.wedgeTime = (s.wedgeTime || 0) + dt;
+      if (s.wedgeTime > 0.18) {
+        let fixed = false;
+        for (let radius = 0.35; radius <= 1.55 && !fixed; radius += 0.3) {
+          for (let i = 0; i < 16 && !fixed; i++) {
+            const angle = i / 16 * Math.PI * 2;
+            const nx = p.x + Math.sin(angle) * radius;
+            const nz = p.z + Math.cos(angle) * radius;
+            const ny = worldRef.supportHeight(nx, nz, p.y + BLOCK * 1.25);
+            if (Math.abs(ny - p.y) > BLOCK * 1.25) continue;
+            if (!canStandAt(animal, nx, nz, ny, s.yaw)) continue;
+            if (goatRef && goatRef.group) {
+              const g = goatRef.group.position;
+              if (Math.hypot(nx - g.x, nz - g.z) < 1.2) continue;
+            }
+            p.x = nx;
+            p.z = nz;
+            p.y = ny;
+            s.vy = 0;
+            s.grounded = true;
+            fixed = true;
+          }
+        }
+        s.wedgeTime = 0;
+        if (!fixed && s.mode !== 'climbBuild' && s.mode !== 'traverseTower') {
+          rescueAnimal(animal);
+        }
+      }
+    } else {
+      s.wedgeTime = 0;
+    }
+
     updateVisual(animal, dt, t);
   }
 
@@ -1528,6 +2901,14 @@
     animal.state.speed = 0;
     animal.state.action = null;
     animal.state.seekTime = 0;
+    animal.state.project = null;
+    animal.state.pendingClimb = null;
+    animal.state.descendTarget = null;
+    animal.state.escape = null;
+    animal.state.gathering = false;
+    animal.state.batchGoal = 0;
+    animal.state.buildTimer = rand(4, 10);
+    animal.state.pitTimer = 0.5;
   }
 
   function createAnimal(speciesName, spawn, options) {
@@ -1556,7 +2937,12 @@
       seekTime: 0,
       action: null,
       actionTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(9, 18),
+      buildTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(3, 9),
+      project: null,
+      gathering: false,
+      batchGoal: 0,
       carry: null,
+      carryCount: 0,
       carriedMesh: null,
       carryPop: 0,
       grazePose: 0,
@@ -1567,7 +2953,29 @@
       earTimer: rand(1.5, 5),
       earTwitch: 0,
       blinkTimer: rand(1.5, 4),
-      blink: 0
+      blink: 0,
+      pendingClimb: null,
+      traverseIndex: 0,
+      traverseBest: 0,
+      traverseTime: 0,
+      traverseRescues: 0,
+      descendTime: 0,
+      descendTarget: null,
+      escape: null,
+      escapeCooldown: 0,
+      pitTimer: rand(0.2, 0.7),
+      jumpCooldown: 0,
+      tuck: 0,
+      jumpReason: null,
+      climbTries: 0,
+      buriedTime: 0,
+      wedgeTime: 0,
+      seekFailures: 0,
+      quarryMisses: 0,
+      towersBuilt: 0,
+      lastTower: null,
+      lastAbandon: null,
+      retired: false
     };
 
     animal.group.position.set(spawn.x, spawn.y, spawn.z);
@@ -1589,8 +2997,8 @@
 
     const roster = [
       { species: 'sheep', name: 'Mallow', dx: -3.0, dz: 2.0, actionTimer: 0.8 },
-      { species: 'cow', name: 'Clover', dx: 2.6, dz: -3.0, actionTimer: 12.0 },
-      { species: 'stag', name: 'Bramble', dx: -3.8, dz: -1.2, actionTimer: 18.0 },
+      { species: 'cow', name: 'Clover', dx: 2.6, dz: -3.0, actionTimer: 3.0 },
+      { species: 'stag', name: 'Bramble', dx: -3.8, dz: -1.2, actionTimer: 5.5 },
       {
         species: 'sheep',
         name: 'Poppy',

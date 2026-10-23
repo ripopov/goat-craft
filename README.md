@@ -26,7 +26,7 @@ js/items.js         ten-slot hotbar, block drops, pickup and item stacking
 js/world.js         procedural terrain, chunk streaming, block removal, drops and debris
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/goat.js          goat rig, coat, gaits, physics, jumps, headbutt and hoof stomp
-js/animals.js       sheep, cow and stag NPCs: wandering, grazing, block carrying and placement
+js/animals.js       sheep, cow and stag NPCs: grazing, jumping, turf quarrying, stair building and pit escape
 js/controls.js      orbit camera, keyboard and pointer/touch input
 js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
@@ -52,7 +52,11 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 
 The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long.
 
-A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). They wander and graze independently. Every so often one roots up a nearby block, carries it between its horns, then finds a clear spot and sets it down. Those are real world blocks: they stay in the world, collide with the player, and can be broken again. The herd leaves player-placed blocks alone.
+A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). They wander, graze, jump up ledges, and set out to build independently.
+
+When an animal starts a project it shaves the top turf course around a flat site, one block at a time, and carries the load between its horns. It then lays a 3×3 turf plinth, a 2×2 tier, and a 20-step spiral stair that climbs toward the sky. Every step is a real world block, so the tower collides with the player and can be climbed or dismantled. The builders jump from step to step as they work, and retire to graze once their tower is finished.
+
+If an animal falls into a pit, it does not dig itself deeper: it breaks open the pit wall, builds or jumps onto a step, and keeps widening and climbing until it is back on the surface. The herd leaves player-placed blocks alone, and animal quarrying creates no competing item drops.
 
 All action sounds (hoofbeats, jump, landing, headbutt, stomp, pickup and breathing) are synthesized in-browser; there are no audio files.
 

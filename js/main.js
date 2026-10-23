@@ -36,7 +36,7 @@
   const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 400);
   camera.position.set(4.4, 4.2, 5.2);
 
-  M.environment.init(scene, M.config.coarsePointer);
+  M.environment.init(scene, M.config.coarsePointer, renderer);
   M.world.init(scene, renderer);
   M.ui.init();
   M.items.init(scene);

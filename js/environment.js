@@ -1,65 +1,164 @@
 (function (M) {
   'use strict';
 
-  const { rand } = M.utils;
+  const { clamp, rand } = M.utils;
+  const DEG = Math.PI / 180;
+
+  // A full solar day lasts one minute. The meadow is the local tangent plane
+  // of a planet at 50°N; the ground stays put while the celestial sphere turns.
+  // Sun position comes from the local hour angle, observer latitude and solar
+  // declination, so the arc is tilted like a real sky instead of being an
+  // arbitrary circle around the goat.
+  const DAY_SECONDS = 60;
+  const START_PHASE = 0.30;
+  const LATITUDE = 50 * DEG;
+  const AXIAL_TILT = 23.44 * DEG;
+  const SEASON_ANGLE = 0; // vernal equinox
+  // Declination from the planet's axial tilt. At the equinox this is zero,
+  // giving 12 hours of day and 12 hours of night at every latitude.
+  const SOLAR_DECLINATION = Math.asin(Math.sin(AXIAL_TILT) * Math.sin(SEASON_ANGLE));
+  const SKY_RADIUS = 180;
+  const BODY_RADIUS = 158;
+  const LIGHT_DISTANCE = 46;
+  const SHADOW_EXTENT = 14;
+
+  // Sky palettes sampled across the solar day. The stops are intentionally
+  // warmer on the sunrise side and deeper on the sunset side.
+  const SKY_STOPS = [
+    { t: 0.00, top: 0x030814, mid: 0x071225, low: 0x0d1a2f, horizon: 0x16263c, fog: 0x0b1422, cloud: 0x7f8fae },
+    { t: 0.18, top: 0x081226, mid: 0x101e39, low: 0x1b2a44, horizon: 0x33415a, fog: 0x1a2438, cloud: 0x6d7894 },
+    { t: 0.22, top: 0x1a2b4d, mid: 0x3b3f5d, low: 0x7d5a68, horizon: 0xc47a6d, fog: 0x5a4a55, cloud: 0x9a7f88 },
+    { t: 0.25, top: 0x2d4d78, mid: 0x6e6f93, low: 0xd08e83, horizon: 0xffb36e, fog: 0xba8f7b, cloud: 0xe2b4a4 },
+    { t: 0.30, top: 0x3f7fb2, mid: 0x75afd6, low: 0xc8dde3, horizon: 0xf3e6ce, fog: 0xe0e6d7, cloud: 0xfff0df },
+    { t: 0.40, top: 0x4f9dd2, mid: 0x7cc0e8, low: 0xbce0ec, horizon: 0xdde9d3, fog: 0xe2ecd6, cloud: 0xffffff },
+    { t: 0.60, top: 0x53a1d4, mid: 0x82c2e8, low: 0xc2e1ec, horizon: 0xe1ead7, fog: 0xe6ecd8, cloud: 0xfffdf7 },
+    { t: 0.70, top: 0x5b97c8, mid: 0x8fb6d5, low: 0xdfd8c7, horizon: 0xf4d5a0, fog: 0xe0d2b7, cloud: 0xfff0d9 },
+    { t: 0.75, top: 0x36537f, mid: 0x807090, low: 0xe89a83, horizon: 0xff8f55, fog: 0xb17c6c, cloud: 0xeaa38f },
+    { t: 0.79, top: 0x1b2d4d, mid: 0x373a58, low: 0x704d5c, horizon: 0xc06b5b, fog: 0x5b4a50, cloud: 0xa57b7e },
+    { t: 0.86, top: 0x081226, mid: 0x111f38, low: 0x1d2a42, horizon: 0x34415a, fog: 0x151f30, cloud: 0x707d9a },
+    { t: 1.00, top: 0x030814, mid: 0x071225, low: 0x0d1a2f, horizon: 0x16263c, fog: 0x0b1422, cloud: 0x7f8fae }
+  ];
+
+  const stops = SKY_STOPS.map(function (stop) {
+    return {
+      t: stop.t,
+      top: new THREE.Color(stop.top),
+      mid: new THREE.Color(stop.mid),
+      low: new THREE.Color(stop.low),
+      horizon: new THREE.Color(stop.horizon),
+      fog: new THREE.Color(stop.fog),
+      cloud: new THREE.Color(stop.cloud)
+    };
+  });
+
+  const skyTop = new THREE.Color();
+  const skyMid = new THREE.Color();
+  const skyLow = new THREE.Color();
+  const skyHorizon = new THREE.Color();
+  const skyFog = new THREE.Color();
+  const skyCloud = new THREE.Color();
+  const belowHorizon = new THREE.Color();
+  const hemiDay = new THREE.Color(0xcfe6ff);
+  const groundDay = new THREE.Color(0x6c8a4f);
+  const groundNight = new THREE.Color(0x10160f);
+  const sunGlowWarm = new THREE.Color(0xff9b58);
+  const sunGlowDay = new THREE.Color(0xfff0c4);
+  const sunGlowColor = new THREE.Color();
+  const moonGlowColor = new THREE.Color(0x8fb4ff);
+  const sunDiscWarm = new THREE.Color(0xffa45c);
+  const sunDiscDay = new THREE.Color(0xfffdf0);
+  const sunColorWarm = new THREE.Color(0xff9d5c);
+  const sunColorDay = new THREE.Color(0xfff4dc);
+  const moonColor = new THREE.Color(0xb8ccff);
+  const celestialPole = new THREE.Vector3(0, Math.sin(LATITUDE), -Math.cos(LATITUDE)).normalize();
+  const sunDir = new THREE.Vector3();
+  const moonDir = new THREE.Vector3();
+  const scratchColor = new THREE.Color();
+
   let sceneRef = null;
+  let rendererRef = null;
   let hemi = null;
+  let nightFill = null;
   let sun = null;
+  let moon = null;
   let skyDome = null;
+  let skyDirs = null;
+  let skyColorAttr = null;
+  let sunSprite = null;
+  let moonSprite = null;
+  let celestial = null;
+  let starGroup = null;
+  let stars = null;
+  let brightStars = null;
   let cloudLayer = null;
+  let cloudMat = null;
   const clouds = [];
+  let coarse = false;
+  let phase = START_PHASE;
+  let sunAltitude = 0;
+  let moonAltitude = 0;
+  let daylight = 0;
+  let nightFactor = 0;
+  let lastCamera = null;
+  let lastGoat = null;
+  let lastTime = 0;
 
-  function init(scene, coarsePointer) {
-    sceneRef = scene;
-    scene.fog = new THREE.Fog(0xe2ecd6, coarsePointer ? 40 : 60, coarsePointer ? 112 : 145);
+  function smoothstep(edge0, edge1, value) {
+    const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+    return t * t * (3 - 2 * t);
+  }
 
-    hemi = new THREE.HemisphereLight(0xcfe6ff, 0x6c8a4f, 0.55);
-    scene.add(hemi);
+  function wrapPhase(value) {
+    return ((value % 1) + 1) % 1;
+  }
 
-    sun = new THREE.DirectionalLight(0xffefca, 1.8);
-    sun.position.set(10, 18, 9);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(coarsePointer ? 1024 : 2048, coarsePointer ? 1024 : 2048);
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 60;
-    sun.shadow.camera.left = -12;
-    sun.shadow.camera.right = 12;
-    sun.shadow.camera.top = 12;
-    sun.shadow.camera.bottom = -12;
-    sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.03;
-    sun.shadow.camera.updateProjectionMatrix();
-    scene.add(sun);
-    scene.add(sun.target);
+  function sampleSky(value) {
+    let a = stops[0];
+    let b = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (value >= stops[i].t && value <= stops[i + 1].t) {
+        a = stops[i];
+        b = stops[i + 1];
+        break;
+      }
+    }
+    const span = b.t - a.t || 1;
+    const raw = clamp((value - a.t) / span, 0, 1);
+    const u = raw * raw * (3 - 2 * raw);
+    skyTop.copy(a.top).lerp(b.top, u);
+    skyMid.copy(a.mid).lerp(b.mid, u);
+    skyLow.copy(a.low).lerp(b.low, u);
+    skyHorizon.copy(a.horizon).lerp(b.horizon, u);
+    skyFog.copy(a.fog).lerp(b.fog, u);
+    skyCloud.copy(a.cloud).lerp(b.cloud, u);
+  }
 
-    makeSky();
-    makeClouds();
+  function solarDirection(value, out) {
+    const hourAngle = (value - 0.5) * Math.PI * 2;
+    const sinDec = Math.sin(SOLAR_DECLINATION);
+    const cosDec = Math.cos(SOLAR_DECLINATION);
+    const sinLat = Math.sin(LATITUDE);
+    const cosLat = Math.cos(LATITUDE);
+    const east = -cosDec * Math.sin(hourAngle);
+    const north = sinDec * cosLat - cosDec * sinLat * Math.cos(hourAngle);
+    const up = sinLat * sinDec + cosLat * cosDec * Math.cos(hourAngle);
+    out.set(east, up, -north);
+    return out.normalize();
   }
 
   function makeSky() {
-    const geo = new THREE.SphereGeometry(180, 32, 20);
+    const geo = new THREE.SphereGeometry(SKY_RADIUS, coarse ? 32 : 48, coarse ? 20 : 28);
     const pos = geo.attributes.position;
-    const colors = [];
-    const horizon = new THREE.Color(0xe2ecd6);
-    const low = new THREE.Color(0xc3e2ef);
-    const mid = new THREE.Color(0x8ac6e9);
-    const top = new THREE.Color(0x6cb1df);
-    const c = new THREE.Color();
-
+    skyDirs = new Float32Array(pos.count * 3);
     for (let i = 0; i < pos.count; i++) {
-      const h = pos.getY(i) / 180;
-      if (h <= 0.02) {
-        c.copy(horizon);
-      } else if (h < 0.12) {
-        c.copy(horizon).lerp(low, (h - 0.02) / 0.1);
-      } else if (h < 0.32) {
-        c.copy(low).lerp(mid, (h - 0.12) / 0.2);
-      } else {
-        c.copy(mid).lerp(top, Math.min(1, (h - 0.32) / 0.45));
-      }
-      colors.push(c.r, c.g, c.b);
+      skyDirs[i * 3] = pos.getX(i) / SKY_RADIUS;
+      skyDirs[i * 3 + 1] = pos.getY(i) / SKY_RADIUS;
+      skyDirs[i * 3 + 2] = pos.getZ(i) / SKY_RADIUS;
     }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const colors = new Float32Array(pos.count * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage));
+    skyColorAttr = geo.attributes.color;
 
     const mat = new THREE.MeshBasicMaterial({
       vertexColors: true,
@@ -73,11 +172,175 @@
     sceneRef.add(skyDome);
   }
 
+  function makeStarCloud(count, size, radiusBase) {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const c = new THREE.Color();
+
+    for (let i = 0; i < count; i++) {
+      const y = 0.035 + Math.random() * 0.95;
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(1 - y * y);
+      const radius = radiusBase + Math.random() * 9;
+      positions[i * 3] = Math.cos(angle) * r * radius;
+      positions[i * 3 + 1] = y * radius;
+      positions[i * 3 + 2] = Math.sin(angle) * r * radius;
+
+      const tint = Math.random();
+      if (tint < 0.16) c.setHex(0xffe2b8);
+      else if (tint < 0.46) c.setHex(0xcfe0ff);
+      else c.setHex(0xffffff);
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: size,
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      fog: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending
+    });
+
+    const points = new THREE.Points(geo, mat);
+    points.renderOrder = -9;
+    return points;
+  }
+
+  function makeSunTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const c = size / 2;
+    const g = ctx.createRadialGradient(c, c, 0, c, c, c);
+    g.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    g.addColorStop(0.11, 'rgba(255, 254, 239, 1)');
+    g.addColorStop(0.17, 'rgba(255, 244, 194, 1)');
+    g.addColorStop(0.26, 'rgba(255, 224, 148, 0.62)');
+    g.addColorStop(0.45, 'rgba(255, 190, 104, 0.2)');
+    g.addColorStop(0.72, 'rgba(255, 165, 70, 0.05)');
+    g.addColorStop(1, 'rgba(255, 150, 50, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
+  function makeMoonTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const c = size / 2;
+    const disc = size * 0.19;
+
+    const glow = ctx.createRadialGradient(c, c, disc * 0.7, c, c, c);
+    glow.addColorStop(0, 'rgba(190, 215, 255, 0.32)');
+    glow.addColorStop(0.34, 'rgba(160, 195, 255, 0.12)');
+    glow.addColorStop(0.7, 'rgba(140, 180, 255, 0.025)');
+    glow.addColorStop(1, 'rgba(130, 170, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(c, c, disc, 0, Math.PI * 2);
+    ctx.clip();
+
+    const surface = ctx.createRadialGradient(c - disc * 0.35, c - disc * 0.4, disc * 0.1, c, c, disc);
+    surface.addColorStop(0, '#ffffff');
+    surface.addColorStop(0.45, '#e9eef9');
+    surface.addColorStop(0.8, '#c8d4e9');
+    surface.addColorStop(1, '#aebdd7');
+    ctx.fillStyle = surface;
+    ctx.fillRect(c - disc, c - disc, disc * 2, disc * 2);
+
+    const craters = [
+      [-0.32, -0.08, 0.15, 0.16],
+      [0.2, -0.32, 0.12, 0.13],
+      [0.31, 0.18, 0.1, 0.12],
+      [-0.1, 0.35, 0.14, 0.13],
+      [-0.48, 0.28, 0.07, 0.08],
+      [0.02, 0.02, 0.08, 0.08]
+    ];
+    for (let i = 0; i < craters.length; i++) {
+      const cr = craters[i];
+      ctx.fillStyle = 'rgba(112, 132, 166, ' + cr[3] + ')';
+      ctx.beginPath();
+      ctx.arc(c + cr[0] * disc, c + cr[1] * disc, cr[2] * disc, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
+  function makeCelestialBodies() {
+    celestial = new THREE.Group();
+    sceneRef.add(celestial);
+
+    const sunMat = new THREE.SpriteMaterial({
+      map: makeSunTexture(),
+      color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+      toneMapped: false,
+      blending: THREE.AdditiveBlending
+    });
+    sunSprite = new THREE.Sprite(sunMat);
+    sunSprite.scale.set(11, 11, 1);
+    sunSprite.renderOrder = -8;
+    celestial.add(sunSprite);
+
+    const moonMat = new THREE.SpriteMaterial({
+      map: makeMoonTexture(),
+      color: 0xffffff,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      fog: false,
+      toneMapped: false,
+      blending: THREE.NormalBlending
+    });
+    moonSprite = new THREE.Sprite(moonMat);
+    moonSprite.scale.set(8.5, 8.5, 1);
+    moonSprite.renderOrder = -8;
+    celestial.add(moonSprite);
+
+    starGroup = new THREE.Group();
+    starGroup.renderOrder = -9;
+    celestial.add(starGroup);
+    stars = makeStarCloud(coarse ? 650 : 1200, 1.7, 166);
+    brightStars = makeStarCloud(coarse ? 90 : 170, 2.7, 170);
+    starGroup.add(stars);
+    starGroup.add(brightStars);
+  }
+
   function makeClouds() {
     const geo = new THREE.IcosahedronGeometry(1, 1);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0xffffff, roughness: 1, metalness: 0, flatShading: true,
-      emissive: 0xa8b8bd, emissiveIntensity: 0.28
+    cloudMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1,
+      metalness: 0,
+      flatShading: true,
+      emissive: 0x000000,
+      emissiveIntensity: 1
     });
 
     cloudLayer = new THREE.Group();
@@ -87,7 +350,7 @@
       const g = new THREE.Group();
       const puffs = 4 + Math.floor(Math.random() * 3);
       for (let j = 0; j < puffs; j++) {
-        const puff = new THREE.Mesh(geo, mat);
+        const puff = new THREE.Mesh(geo, cloudMat);
         puff.scale.set(rand(1.1, 2.0), rand(0.55, 1.05), rand(0.85, 1.35));
         puff.position.set((j - puffs / 2) * 1.15 + rand(-0.4, 0.4), rand(-0.2, 0.5), rand(-0.6, 0.6));
         g.add(puff);
@@ -118,24 +381,260 @@
     }
   }
 
-  function update(camera, goat, dt, t) {
-    for (let i = 0; i < clouds.length; i++) {
-      const cloud = clouds[i];
-      cloud.position.x += dt * (0.16 + (i % 3) * 0.05);
-      if (cloud.position.x > 70) cloud.position.x = -70;
-      cloud.position.y = cloud.userData.baseY + Math.sin(t * 0.25 + cloud.userData.phase) * 0.25;
+  function configureShadowLight(light, size) {
+    light.castShadow = true;
+    light.shadow.mapSize.set(size, size);
+    light.shadow.camera.near = 0.5;
+    light.shadow.camera.far = 80;
+    light.shadow.camera.left = -SHADOW_EXTENT;
+    light.shadow.camera.right = SHADOW_EXTENT;
+    light.shadow.camera.top = SHADOW_EXTENT;
+    light.shadow.camera.bottom = -SHADOW_EXTENT;
+    light.shadow.bias = -0.0006;
+    light.shadow.normalBias = 0.03;
+    light.shadow.camera.updateProjectionMatrix();
+  }
+
+  function init(scene, coarsePointer, renderer) {
+    sceneRef = scene;
+    rendererRef = renderer || null;
+    coarse = !!coarsePointer;
+    sceneRef.fog = new THREE.Fog(0xe2ecd6, coarse ? 40 : 60, coarse ? 112 : 145);
+
+    hemi = new THREE.HemisphereLight(0xcfe6ff, 0x6c8a4f, 0.55);
+    scene.add(hemi);
+
+    nightFill = new THREE.AmbientLight(0x2c3c63, 0);
+    scene.add(nightFill);
+
+    sun = new THREE.DirectionalLight(0xffefca, 1.8);
+    configureShadowLight(sun, coarse ? 1024 : 2048);
+    scene.add(sun);
+    scene.add(sun.target);
+
+    moon = new THREE.DirectionalLight(0xb8ccff, 0);
+    configureShadowLight(moon, coarse ? 512 : 1024);
+    moon.castShadow = false;
+    scene.add(moon);
+    scene.add(moon.target);
+
+    phase = START_PHASE;
+    solarDirection(phase, sunDir);
+    moonDir.copy(sunDir).multiplyScalar(-1);
+    sunAltitude = Math.asin(clamp(sunDir.y, -1, 1));
+    moonAltitude = Math.asin(clamp(moonDir.y, -1, 1));
+    daylight = smoothstep(-0.12, 0.10, sunAltitude);
+    nightFactor = 1 - smoothstep(-0.28, -0.03, sunAltitude);
+
+    makeSky();
+    makeCelestialBodies();
+    makeClouds();
+    sampleSky(phase);
+    writeSkyColors();
+  }
+
+  function writeSkyColors() {
+    if (!skyDome || !skyColorAttr) return;
+
+    const colors = skyColorAttr.array;
+    const sunUp = smoothstep(-0.14, 0.01, sunAltitude);
+    const twilight = Math.exp(-Math.pow(sunAltitude / 0.18, 2));
+    const glowStrength = sunUp * (0.35 + 0.65 * twilight);
+    const moonGlow = nightFactor * 0.22;
+
+    sunGlowColor.copy(sunGlowWarm).lerp(sunGlowDay, smoothstep(0.02, 0.55, sunAltitude));
+    belowHorizon.copy(skyHorizon).multiplyScalar(0.55);
+
+    for (let i = 0; i < skyDirs.length / 3; i++) {
+      const dx = skyDirs[i * 3];
+      const dy = skyDirs[i * 3 + 1];
+      const dz = skyDirs[i * 3 + 2];
+      const c = scratchColor;
+
+      if (dy <= 0.02) {
+        c.copy(skyHorizon).lerp(belowHorizon, clamp((0.02 - dy) * 2.2, 0, 1));
+      } else if (dy < 0.10) {
+        c.copy(skyHorizon).lerp(skyLow, (dy - 0.02) / 0.08);
+      } else if (dy < 0.26) {
+        c.copy(skyLow).lerp(skyMid, (dy - 0.10) / 0.16);
+      } else {
+        c.copy(skyMid).lerp(skyTop, Math.min(1, (dy - 0.26) / 0.35));
+      }
+
+      const sunDot = Math.max(0, dx * sunDir.x + dy * sunDir.y + dz * sunDir.z);
+      if (sunDot > 0) {
+        const glow = (Math.pow(sunDot, 3) * 0.04 + Math.pow(sunDot, 12) * 0.30) * glowStrength;
+        c.r += sunGlowColor.r * glow;
+        c.g += sunGlowColor.g * glow;
+        c.b += sunGlowColor.b * glow;
+      }
+
+      if (moonGlow > 0) {
+        const moonDot = Math.max(0, dx * moonDir.x + dy * moonDir.y + dz * moonDir.z);
+        const glow = (Math.pow(moonDot, 3) * 0.03 + Math.pow(moonDot, 12) * 0.25) * moonGlow;
+        c.r += moonGlowColor.r * glow;
+        c.g += moonGlowColor.g * glow;
+        c.b += moonGlowColor.b * glow;
+      }
+
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
     }
 
-    sun.position.set(goat.position.x + 10, goat.position.y + 18, goat.position.z + 9);
-    sun.target.position.set(goat.position.x, goat.position.y + 0.5, goat.position.z);
-    sun.target.updateMatrixWorld();
+    skyColorAttr.needsUpdate = true;
+  }
 
-    if (skyDome) skyDome.position.copy(camera.position);
-    cloudLayer.position.set(goat.position.x, goat.position.y, goat.position.z);
+  function apply(camera, goat, dt, t) {
+    const hourAngle = (phase - 0.5) * Math.PI * 2;
+    solarDirection(phase, sunDir);
+    moonDir.copy(sunDir).multiplyScalar(-1);
+    sunAltitude = Math.asin(clamp(sunDir.y, -1, 1));
+    moonAltitude = Math.asin(clamp(moonDir.y, -1, 1));
+
+    daylight = smoothstep(-0.12, 0.10, sunAltitude);
+    nightFactor = 1 - smoothstep(-0.28, -0.03, sunAltitude);
+    const twilight = Math.exp(-Math.pow(sunAltitude / 0.18, 2));
+
+    sampleSky(phase);
+    writeSkyColors();
+
+    sceneRef.fog.color.copy(skyFog);
+    sceneRef.fog.near = 42 + 18 * daylight;
+    sceneRef.fog.far = 112 + 33 * daylight;
+
+    if (rendererRef) {
+      rendererRef.toneMappingExposure = 0.86 + 0.10 * daylight + 0.03 * twilight;
+    }
+
+    const sunUp = smoothstep(-0.05, 0.08, sunAltitude);
+    const sunHeight = smoothstep(0.0, 0.62, sunAltitude);
+    sun.intensity = sunUp * (0.50 + 1.20 * sunHeight);
+    sun.color.copy(sunColorWarm).lerp(sunColorDay, smoothstep(0.02, 0.55, sunAltitude));
+    sun.visible = sun.intensity > 0.01;
+    sun.castShadow = sun.visible && sunAltitude > -0.04;
+
+    const moonUp = smoothstep(-0.05, 0.08, moonAltitude);
+    moon.intensity = moonUp * 0.45;
+    moon.color.copy(moonColor);
+    moon.visible = moon.intensity > 0.01;
+    moon.castShadow = moon.visible && !sun.castShadow;
+
+    hemi.color.copy(skyMid).lerp(hemiDay, daylight * 0.5).lerp(sunGlowWarm, twilight * 0.35);
+    hemi.groundColor.copy(groundNight).lerp(groundDay, daylight);
+    hemi.intensity = 0.21 + 0.31 * daylight + 0.26 * twilight;
+    nightFill.intensity = nightFactor * 0.15;
+
+    cloudMat.color.copy(skyCloud);
+    cloudMat.emissive.copy(skyHorizon).multiplyScalar(0.18);
+    cloudMat.emissiveIntensity = 1;
+
+    if (goat) {
+      const target = goat.position;
+      sun.position.set(
+        target.x + sunDir.x * LIGHT_DISTANCE,
+        target.y + 0.5 + sunDir.y * LIGHT_DISTANCE,
+        target.z + sunDir.z * LIGHT_DISTANCE
+      );
+      sun.target.position.set(target.x, target.y + 0.5, target.z);
+      sun.target.updateMatrixWorld();
+
+      moon.position.set(
+        target.x + moonDir.x * LIGHT_DISTANCE,
+        target.y + 0.5 + moonDir.y * LIGHT_DISTANCE,
+        target.z + moonDir.z * LIGHT_DISTANCE
+      );
+      moon.target.position.set(target.x, target.y + 0.5, target.z);
+      moon.target.updateMatrixWorld();
+    }
+
+    if (sunSprite) {
+      sunSprite.position.copy(sunDir).multiplyScalar(BODY_RADIUS);
+      sunSprite.material.color.copy(sunDiscWarm).lerp(sunDiscDay, smoothstep(0.02, 0.55, sunAltitude));
+      sunSprite.material.opacity = smoothstep(-0.02, 0.025, sunAltitude);
+      sunSprite.visible = sunSprite.material.opacity > 0.01;
+      const sunScale = 10.5 + 1.5 * (1 - smoothstep(0.05, 0.55, sunAltitude));
+      sunSprite.scale.set(sunScale, sunScale, 1);
+    }
+
+    if (moonSprite) {
+      moonSprite.position.copy(moonDir).multiplyScalar(BODY_RADIUS);
+      moonSprite.material.opacity = smoothstep(-0.02, 0.025, moonAltitude);
+      moonSprite.visible = moonSprite.material.opacity > 0.01;
+    }
+
+    if (starGroup) {
+      // The star field turns around the celestial pole at the same angular
+      // rate as the planet, so the night sky shares the solar day's rotation.
+      starGroup.quaternion.setFromAxisAngle(celestialPole, -hourAngle);
+      starGroup.visible = nightFactor > 0.01;
+      stars.material.opacity = nightFactor * 0.85;
+      brightStars.material.opacity = nightFactor;
+    }
+
+    if (camera) {
+      skyDome.position.copy(camera.position);
+      celestial.position.copy(camera.position);
+    }
+
+    if (cloudLayer && goat) {
+      for (let i = 0; i < clouds.length; i++) {
+        const cloud = clouds[i];
+        cloud.position.x += dt * (0.16 + (i % 3) * 0.05);
+        if (cloud.position.x > 70) cloud.position.x = -70;
+        cloud.position.y = cloud.userData.baseY + Math.sin(t * 0.25 + cloud.userData.phase) * 0.25;
+      }
+      cloudLayer.position.copy(goat.position);
+    }
+  }
+
+  function update(camera, goat, dt, t) {
+    lastCamera = camera;
+    lastGoat = goat;
+    lastTime = t;
+    phase = wrapPhase(phase + dt / DAY_SECONDS);
+    apply(camera, goat, dt, t);
+  }
+
+  function setPhase(value) {
+    phase = wrapPhase(value);
+    if (lastCamera && lastGoat) apply(lastCamera, lastGoat, 0, lastTime);
+  }
+
+  function phaseName(value) {
+    if (value < 0.20 || value >= 0.86) return 'night';
+    if (value < 0.28) return 'dawn';
+    if (value < 0.38) return 'morning';
+    if (value < 0.62) return 'day';
+    if (value < 0.70) return 'afternoon';
+    if (value < 0.80) return 'evening';
+    return 'dusk';
+  }
+
+  function getState() {
+    return {
+      phase: phase,
+      phaseName: phaseName(phase),
+      dayLength: DAY_SECONDS,
+      sunAltitude: sunAltitude,
+      sunAltitudeDegrees: sunAltitude * 180 / Math.PI,
+      sunDirection: { x: sunDir.x, y: sunDir.y, z: sunDir.z },
+      moonDirection: { x: moonDir.x, y: moonDir.y, z: moonDir.z },
+      daylight: daylight,
+      night: nightFactor,
+      sunLight: sun ? sun.intensity : 0,
+      moonLight: moon ? moon.intensity : 0,
+      hemiLight: hemi ? hemi.intensity : 0,
+      sunCastsShadow: !!(sun && sun.castShadow),
+      moonCastsShadow: !!(moon && moon.castShadow)
+    };
   }
 
   M.environment = {
     init: init,
-    update: update
+    update: update,
+    setPhase: setPhase,
+    getState: getState,
+    DAY_LENGTH: DAY_SECONDS
   };
 })(window.Meadow = window.Meadow || {});

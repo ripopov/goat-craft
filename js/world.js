@@ -785,8 +785,6 @@
     const hw = w / 2;
     const c = Math.cos(angle);
     const s = Math.sin(angle);
-    const nx = -s;
-    const nz = c;
     const uvs = [
       plantUV(type, 0, 0),
       plantUV(type, 1, 0),
@@ -804,7 +802,9 @@
 
     for (let i = 0; i < 4; i++) {
       data.pos.push(verts[i][0], verts[i][1], verts[i][2]);
-      data.nor.push(nx, 0, nz);
+      // Crossed billboards get a sky-facing normal so grass and flowers
+      // catch the daylight instead of staying unlit after dark.
+      data.nor.push(0, 1, 0);
       data.uv.push(uvs[i][0], uvs[i][1]);
       data.bend.push(bends[i]);
     }
@@ -868,6 +868,7 @@
     let plants = null;
     if (plantsGeo) {
       plants = new THREE.Mesh(plantsGeo, plantMat);
+      plants.receiveShadow = true;
       group.add(plants);
     }
 
@@ -1190,10 +1191,12 @@
     });
 
     plantTex = makePlantAtlas();
-    plantMat = new THREE.MeshBasicMaterial({
+    plantMat = new THREE.MeshStandardMaterial({
       map: plantTex,
       alphaTest: 0.4,
       side: THREE.DoubleSide,
+      roughness: 1,
+      metalness: 0,
       toneMapped: true,
       fog: true
     });

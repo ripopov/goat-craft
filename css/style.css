@@ -29,18 +29,6 @@
   }
   #scene.dragging { cursor: grabbing; }
 
-  #sun {
-    position: fixed;
-    top: -14vmin;
-    right: -10vmin;
-    width: 46vmin;
-    height: 46vmin;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 252, 222, .9) 0%, rgba(255, 248, 200, .32) 42%, rgba(255, 248, 200, 0) 70%);
-    filter: blur(4px);
-    pointer-events: none;
-    z-index: 2;
-  }
   #vignette {
     position: fixed;
     inset: 0;

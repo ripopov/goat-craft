@@ -315,6 +315,15 @@
       const thigh = ellipsoid(bodyFur, 0.15, 0.23, 0.19, 12, 10);
       thigh.position.set(0, -0.1, 0);
       hip.add(thigh);
+    } else {
+      // Fill the small gap where the round top of the front leg met the
+      // underside of the chest. The tapered shoulder grows into the body and
+      // narrows into the leg instead of ending in a floating ball joint.
+      const shoulder = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.085, 0.34, 8, 1), fur);
+      shoulder.position.y = 0.1;
+      shoulder.castShadow = true;
+      shoulder.receiveShadow = true;
+      hip.add(shoulder);
     }
 
     const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.082, 0.3, 4, 8), fur);

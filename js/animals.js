@@ -405,11 +405,23 @@
       hip.position.set(x, dimensions.hipY, z);
       rig.add(hip);
 
-      if (!front) {
-        const haunch = ellipsoid(mats.leg, dimensions.upperR * 2.1, dimensions.upperR * 2.5, dimensions.upperR * 2.2);
-        haunch.position.set(0, -0.08, -0.03);
-        hip.add(haunch);
-      }
+      // The upper capsule alone ended just below the curved belly, leaving a
+      // visible air gap at the top of every leg. This tapered thigh reaches up
+      // into the torso and narrows into the top of the capsule, so the leg
+      // grows out of the body instead of hanging below it.
+      const hipGeo = new THREE.CylinderGeometry(
+        dimensions.upperR * 2.15,
+        dimensions.upperR * 1.02,
+        0.35,
+        8,
+        1,
+        false
+      );
+      const hipMass = new THREE.Mesh(hipGeo, mats.leg);
+      hipMass.position.y = 0.105;
+      hipMass.castShadow = true;
+      hipMass.receiveShadow = true;
+      hip.add(hipMass);
 
       const upper = new THREE.Mesh(upperGeo, mats.leg);
       upper.position.y = -upperTotal * 0.5;

@@ -23,8 +23,8 @@
   const RENDER_RADIUS = M.config.renderRadius;
   const WORLD_SEED = 1337;
 
-  // Ponds are seeded on a 64-block lattice. A pond is a shallow, self-
-  // contained bowl with one full block of wading depth below the waterline.
+  // Ponds are seeded on a 64-block lattice, with shallow banks and a deeper
+  // swimming basin. Rivers and seas share one waterline, including estuaries.
   // The starter pond is hand-placed in the view beyond the goat so the meadow
   // always introduces water without relying on a lucky lattice roll.
   const POND_CELL = 64;
@@ -37,7 +37,7 @@
   const POND_EDGE = 1.08;
   const POND_INNER = 0.70;
   const STARTER_PONDS = [
-    { id: 'pond-starter', cx: -10, cz: -2, r: 10, phase: 0.8, rimBlock: 4 }
+    { id: 'pond-starter', cx: -10, cz: -2, r: 10, phase: 0.8, rimBlock: 7 }
   ];
 
   function hashInt(x, z, seed) {
@@ -69,7 +69,36 @@
     const n1 = valueNoise(bx * 0.045 + 11.3, bz * 0.045 - 7.1);
     const n2 = valueNoise(bx * 0.13 - 31.7, bz * 0.13 + 18.4);
     const n3 = valueNoise(bx * 0.31 + 101.2, bz * 0.31 - 73.5);
-    return Math.max(0, Math.floor(1.0 + n1 * 4.2 + n2 * 0.7 + n3 * 0.2));
+    // Leave bedrock below the sea floor so deep water has a real, editable bed.
+    return Math.max(3, Math.floor(4.0 + n1 * 4.2 + n2 * 0.7 + n3 * 0.2));
+  }
+
+  const WATER_RIM = 7;
+  const SEA_LEVEL = WATER_RIM * BLOCK - POND_WATER_GAP;
+  const SEA_PLAN = { id: 'sea', type: 'sea', waterLevel: SEA_LEVEL };
+  const RIVER_PLAN = { id: 'river', type: 'river', waterLevel: SEA_LEVEL };
+
+  // Absolute block coordinates, never chunk-local randomness: channels stay
+  // continuous across chunk seams, negative coordinates and streaming reloads.
+  function regionalWaterAt(bx, bz) {
+    const coast = 98 + Math.sin(bz * 0.016) * 19 + Math.sin(bz * 0.041 + 0.8) * 8;
+    const continentX = bx - Math.round(bx / 520) * 520;
+    const offshore = Math.abs(continentX) - coast;
+    const riverZ = 28 + Math.sin(bx * 0.028) * 10 + Math.sin(bx * 0.011) * 8;
+    const channelZ = bz - riverZ;
+    const riverDistance = Math.abs(channelZ - Math.round(channelZ / 180) * 180);
+    const width = 4.5 + Math.sin(bx * 0.037 + 1.4) * 1.2;
+    let result = null;
+    if (offshore > -9) {
+      // Broad terraces form beaches, a shallow shelf, then a 10m+ sea bed.
+      result = { plan: SEA_PLAN, height: Math.max(1, Math.round(WATER_RIM - (offshore + 9) * 0.19)) };
+    }
+    if (riverDistance < width + 4) {
+      const bank = clamp((riverDistance - width * 0.45) / (width * 0.55 + 4), 0, 1);
+      const height = Math.round(4 + bank * 3);
+      if (!result || height < result.height) result = { plan: RIVER_PLAN, height: height };
+    }
+    return result;
   }
 
   const pondPlanCache = new Map();
@@ -87,10 +116,11 @@
       const bz = Math.floor(cz + Math.sin(angle) * r * 1.02);
       rimBlock = Math.min(rimBlock, rawHeightBlocks(bx, bz));
     }
-    rimBlock = Math.max(2, rimBlock);
+    rimBlock = Math.max(5, rimBlock);
     if (rimOverride) rimBlock = Math.max(rimBlock, rimOverride);
-    const floorBlock = Math.max(0, rimBlock - 1);
+    const floorBlock = Math.max(1, rimBlock - 2);
     return {
+      type: 'pond',
       id: id,
       cx: cx,
       cz: cz,
@@ -133,7 +163,14 @@
           break;
         }
       }
-      if (clearOfSpawn && clearOfStarter) {
+      // Keep elevated pond bowls away from rivers/coasts: no mismatched
+      // water levels or raised circular islands cutting a channel in two.
+      let clearOfRegionalWater = !regionalWaterAt(cx, cz);
+      for (let i = 0; i < 12 && clearOfRegionalWater; i++) {
+        const angle = i / 12 * Math.PI * 2;
+        clearOfRegionalWater = !regionalWaterAt(cx + Math.cos(angle) * (r + 4), cz + Math.sin(angle) * (r + 4));
+      }
+      if (clearOfSpawn && clearOfStarter && clearOfRegionalWater) {
         plan = makePondPlan(cx, cz, r, 'pond-' + gx + ',' + gz, phase, seed, false);
       }
     }
@@ -209,26 +246,42 @@
     return Math.max(0, Math.round(floor + (bank - floor) * smooth));
   }
 
-  function heightBlocks(bx, bz) {
+  // Cache immutable generation only; block edits are always read live below.
+  // Bound the cache so walking through the endless world cannot grow it forever.
+  const columnCache = new Map();
+  function generatedColumn(bx, bz) {
+    const key = bx + ',' + bz;
+    if (columnCache.has(key)) return columnCache.get(key);
     const base = rawHeightBlocks(bx, bz);
-    const info = pondInfluenceAtBlock(bx, bz);
-    if (!info) return base;
-    return pondHeightAt(bx, bz, base, info);
+    const regional = regionalWaterAt(bx + 0.5, bz + 0.5);
+    const pond = regional ? null : pondInfluenceAtBlock(bx, bz);
+    const column = {
+      height: regional ? regional.height : pond ? pondHeightAt(bx, bz, base, pond) : base,
+      plan: regional ? regional.plan : pond ? pond.plan : null
+    };
+    if (columnCache.size >= 65536) columnCache.delete(columnCache.keys().next().value);
+    columnCache.set(key, column);
+    return column;
   }
 
-  // Water is a column whose carved floor sits below the pond waterline.
-  // Slopes and banks are dry even though they belong to the pond area.
+  function heightBlocks(bx, bz) {
+    return generatedColumn(bx, bz).height;
+  }
+
+  // A common water-column query drives terrain, swimming, camera and effects.
+  // Banks are dry even when they belong to a water body's shaping area.
   function waterInfoAtBlock(bx, bz) {
-    const info = pondInfluenceAtBlock(bx, bz);
-    if (!info) return null;
+    const plan = generatedColumn(bx, bz).plan;
+    if (!plan) return null;
     // Follow terrain edits as well as the procedural basin, so digging a
     // deeper hole raises the measured water depth and the water sides extend
     // down to the new floor.
     const top = (topSolidY(bx, bz) + 1) * BLOCK;
-    const level = info.plan.waterLevel;
+    const level = plan.waterLevel;
     if (top >= level - 0.02) return null;
     return {
-      plan: info.plan,
+      plan: plan,
+      type: plan.type,
       level: level,
       top: top,
       depth: level - top,
@@ -241,9 +294,17 @@
     return !!waterInfoAtBlock(bx, bz);
   }
 
+  // Also protects river banks and coasts from trees and herd construction.
   function isPondArea(bx, bz) {
-    const info = pondInfluenceAtBlock(bx, bz);
-    return !!info && info.dist <= info.limit * POND_EDGE;
+    return !!generatedColumn(bx, bz).plan;
+  }
+
+  function waterAt(x, y, z) {
+    const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+    if (!info || y < info.top || y >= info.level) return null;
+    const by = Math.floor(y / BLOCK);
+    if (solidKindAt(info.bx, by, info.bz)) return null;
+    return info;
   }
 
   function waterDepthAt(x, z) {
@@ -809,7 +870,7 @@
         const x = bx * BLOCK;
         const z = bz * BLOCK;
         const level = water.level;
-        const shade = 0.86 + hash01(worldBX, worldBZ) * 0.14;
+        const shade = 0.97 - clamp(water.depth / 12, 0, 1) * 0.2 + hash01(worldBX, worldBZ) * 0.035;
         pushWaterTop(data, x, level, z, shade);
 
         const neighbours = [
@@ -1693,15 +1754,28 @@
     });
     waterMat.onBeforeCompile = function (shader) {
       shader.uniforms.uWaterTime = waterTime;
-      shader.vertexShader = 'uniform float uWaterTime;\n' + shader.vertexShader.replace(
+      shader.vertexShader = 'uniform float uWaterTime;\nvarying vec3 vWaterWorld;\nvarying float vWaterSurface;\n' + shader.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
-         float waterWave = sin(position.x * 0.72 + uWaterTime * 1.4) * 0.018
-                         + cos(position.z * 0.63 - uWaterTime * 1.05) * 0.016;
+         vec3 waterWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+         vWaterWorld = waterWorld;
+         vWaterSurface = step(0.5, normal.y);
+         float waterWave = sin(waterWorld.x * 0.72 + uWaterTime * 1.4) * 0.018
+                         + cos(waterWorld.z * 0.63 - uWaterTime * 1.05) * 0.016;
          transformed.y += waterWave;`
       );
+      shader.fragmentShader = 'uniform float uWaterTime;\nvarying vec3 vWaterWorld;\nvarying float vWaterSurface;\n' + shader.fragmentShader.replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+         vec3 waveSlope = vec3(
+           -cos(vWaterWorld.x * 0.72 + uWaterTime * 1.4) * 0.045,
+           0.0,
+           sin(vWaterWorld.z * 0.63 - uWaterTime * 1.05) * 0.035
+         );
+         normal = normalize(normal + mat3(viewMatrix) * waveSlope * vWaterSurface * (gl_FrontFacing ? 1.0 : -1.0));`
+      );
     };
-    waterMat.customProgramCacheKey = function () { return 'meadow-water-waves'; };
+    waterMat.customProgramCacheKey = function () { return 'meadow-water-waves-v2'; };
 
     plantTex = makePlantAtlas();
     plantMat = new THREE.MeshStandardMaterial({
@@ -1757,6 +1831,7 @@
     waterDepthAt: waterDepthAt,
     waterLevelAt: waterLevelAt,
     waterInfoAtBlock: waterInfoAtBlock,
+    waterAt: waterAt,
     pondsNear: pondsNear,
     canPlaceBlock: canPlaceBlock,
     placeBlock: placeBlock,

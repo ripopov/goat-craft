@@ -28,6 +28,9 @@ jobs:
             node --check "$file"
           done
 
+      - name: Test water generation and swimming
+        run: node --test scripts/test-water.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

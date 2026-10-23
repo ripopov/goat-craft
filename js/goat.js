@@ -375,7 +375,11 @@
     [0.38, 0.55],
     [-0.38, 0.55],
     [0.46, 0],
-    [-0.46, 0]
+    [-0.46, 0],
+    [0, 0],
+    [0.35, -0.55],
+    [-0.35, -0.55],
+    [0, -0.85]
   ];
   const STOMP_LIFT_END = 0.24;
   const STOMP_IMPACT = 0.36;
@@ -409,6 +413,17 @@
       goat.position.x = x + dx;
       goat.position.z = z + dz;
       return true;
+    }
+
+    // Surface swimmers can scramble out over a one-block bank. Use a real
+    // jump, not a teleport up the river wall; submerged swimmers cannot climb.
+    if (state.swimming && state.shoreJump <= 0 &&
+        feetY > state.waterLevel - 1.65 &&
+        canStandAt(x + dx, z + dz, feetY + worldRef.blockSize + 0.1, yaw)) {
+      state.shoreJump = 0.45;
+      state.vy = JUMP_SPEED * 0.92;
+      state.grounded = false;
+      state.swimming = false;
     }
 
     // slide along the blocking edge
@@ -461,6 +476,22 @@
     const input = controlsRef.getMovement(cameraRef);
     const steering = input.lengthSq() > 0;
     let moving = false;
+    s.shoreJump = Math.max(0, s.shoreJump - dt);
+    const water = worldRef.waterInfoAtBlock(
+      Math.floor(goat.position.x / worldRef.blockSize),
+      Math.floor(goat.position.z / worldRef.blockSize)
+    );
+    s.waterLevel = water ? water.level : 0;
+    s.inWater = !!water && goat.position.y < water.level - 0.08;
+    s.swimming = s.shoreJump <= 0 && !!water && water.depth > 1.2 &&
+      goat.position.y < water.level - (s.swimming ? 0.55 : 0.9);
+    s.submerged = s.swimming && goat.position.y + 1.95 < s.waterLevel;
+    if (s.swimming) {
+      s.grounded = false;
+      s.jumps = 0;
+      s.manualHold = 3;
+      s.mode = 'manual';
+    }
 
     if (steering) {
       // Player steering overrides the autonomous wanderer.
@@ -468,7 +499,7 @@
       s.manualHold = 3.0;
       s.mode = 'manual';
       s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
-      s.speed = damp(s.speed, running ? 9.6 : 4.8, 5, dt);
+      s.speed = damp(s.speed, s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8), s.swimming ? 3.5 : 5, dt);
 
       const mx = Math.sin(s.yaw) * s.speed * dt;
       const mz = Math.cos(s.yaw) * s.speed * dt;
@@ -477,7 +508,7 @@
         if (running) s.runPhase += s.speed * dt * 2.4;
         moving = true;
       }
-      } else if (s.manualHold > 0) {
+    } else if (s.manualHold > 0) {
       // Just after steering, stand and let the player watch for a moment.
       s.manualHold = Math.max(0, s.manualHold - dt);
       s.mode = 'idle';
@@ -518,7 +549,10 @@
 
     goat.rotation.y = s.yaw;
 
-    s.runBlend = damp(s.runBlend, (controlsRef.running && steering && moving) ? 1 : 0, 10, dt);
+    s.runBlend = damp(s.runBlend, (!s.swimming && controlsRef.running && steering && moving) ? 1 : 0, 10, dt);
+    s.swimBlend = damp(s.swimBlend, s.swimming ? 1 : 0, 7, dt);
+    s.swimPhase += dt * (s.swimming ? 4.4 + s.speed * 1.3 : 2);
+    const swim = s.swimBlend;
     const run = s.runBlend;
 
     // ---- vertical physics: gravity, jumps, and block tops ----
@@ -528,35 +562,61 @@
       goat.position.y + STEP_CLEARANCE
     );
 
-    if (s.grounded) {
-      if (goat.position.y > groundY + 0.02) {
-        // The ground fell away underneath us.
-        s.grounded = false;
-        s.vy = 0;
-      } else {
-        goat.position.y = groundY;
-        s.vy = 0;
-      }
-    }
-
-    if (!s.grounded) {
+    if (s.swimming) {
+      // Drag dissipates entry momentum; a gentle buoyancy spring holds the
+      // chest at the surface without bobbing in and out of the swim state.
+      const surfaceFeet = s.waterLevel - 1.3;
+      const vertical = controlsRef.swimVertical;
+      const pitch = steering && controlsRef.getSwimPitch ? controlsRef.getSwimPitch(cameraRef) : 0;
+      let wanted = goat.position.y < surfaceFeet - 0.45 ? 0.65 : (surfaceFeet - goat.position.y) * 4;
+      if (Math.abs(pitch) > 0.15) wanted = pitch * 3.1;
+      if (vertical !== 0) wanted = vertical > 0 ? 3.6 : -2.8;
+      s.vy = damp(clamp(s.vy, -4.5, 4), wanted, 6, dt);
       const prevY = goat.position.y;
-      s.vy -= GRAVITY * dt;
-      goat.position.y += s.vy * dt;
-      groundY = worldRef.supportHeight(
-        goat.position.x,
-        goat.position.z,
-        Math.max(prevY, goat.position.y)
-      );
+      const nextY = Math.max(groundY, Math.min(surfaceFeet + 0.08, prevY + s.vy * dt));
+      if ((s.vy < 0 && nextY <= groundY) || (s.vy > 0 && nextY >= surfaceFeet + 0.08)) s.vy = 0;
+      // Small swept steps prevent fast entry/diving from tunnelling through
+      // beds, placed blocks or low ceilings, including the nose footprint.
+      const steps = Math.max(1, Math.ceil(Math.abs(nextY - prevY) / 0.12));
+      for (let i = 1; i <= steps; i++) {
+        const y = prevY + (nextY - prevY) * i / steps;
+        if (!canStandAt(goat.position.x, goat.position.z, y, s.yaw)) {
+          s.vy = 0;
+          break;
+        }
+        goat.position.y = y;
+      }
+    } else {
+      if (s.grounded) {
+        if (goat.position.y > groundY + 0.02) {
+          // The ground fell away underneath us.
+          s.grounded = false;
+          s.vy = 0;
+        } else {
+          goat.position.y = groundY;
+          s.vy = 0;
+        }
+      }
 
-      if (s.vy <= 0 && goat.position.y <= groundY) {
-        const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
-        goat.position.y = groundY;
-        s.vy = 0;
-        s.grounded = true;
-        s.jumps = 0;
-        s.footTimer = Math.max(s.footTimer, 0.14);
-        audioRef.land(impact);
+      if (!s.grounded) {
+        const prevY = goat.position.y;
+        s.vy -= GRAVITY * dt;
+        goat.position.y += s.vy * dt;
+        groundY = worldRef.supportHeight(
+          goat.position.x,
+          goat.position.z,
+          Math.max(prevY, goat.position.y)
+        );
+
+        if (s.vy <= 0 && goat.position.y <= groundY) {
+          const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
+          goat.position.y = groundY;
+          s.vy = 0;
+          s.grounded = true;
+          s.jumps = 0;
+          s.footTimer = Math.max(s.footTimer, 0.14);
+          if (!s.inWater) audioRef.land(impact);
+        }
       }
     }
 
@@ -588,7 +648,7 @@
       if (s.stomp > STOMP_END) s.stomp = -1;
     }
 
-    s.tuck = damp(s.tuck, s.grounded ? 0 : 1, 12, dt);
+    s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
     const stride = moving ? clamp(s.speed / 0.6, 0, 1) : 0;
 
@@ -609,6 +669,14 @@
         hipTarget = hipWalk + (hipRun - hipWalk) * run;
         kneeTarget = kneeWalk + (kneeRun - kneeWalk) * run;
       }
+      // Alternating diagonal dog-paddle: a long power stroke, folded knee
+      // recovery, and slightly splayed hooves. Phase never resets on entry.
+      const paddle = s.swimPhase + leg.offset + (leg.front ? 0 : 0.45);
+      const hipSwim = (leg.front ? -0.3 : 0.2) + Math.sin(paddle) * (0.42 + s.speed * 0.045);
+      const kneeSwim = 0.55 + Math.max(0, -Math.cos(paddle)) * 0.7;
+      hipTarget += (hipSwim - hipTarget) * swim;
+      kneeTarget += (kneeSwim - kneeTarget) * swim;
+      leg.hip.rotation.z = damp(leg.hip.rotation.z, Math.sign(leg.hip.position.x) * swim * 0.12, 8, dt);
       if (leg === stompLeg) {
         hipTarget -= 0.72 * stompLift;
         kneeTarget += 1.35 * stompLift;
@@ -620,14 +688,16 @@
     const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
     const bob = walkBob * (1 - run) + runBob * run;
-    rig.position.y = damp(rig.position.y, bob, 30, dt);
+    rig.position.y = damp(rig.position.y, bob * (1 - swim) + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
     rig.position.z = buttPose * 0.18;
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
     const stompTilt = -0.05 * stompLift;
-    rig.rotation.x = damp(rig.rotation.x, (jumpK > 0 ? -0.16 * jumpK : 0) + buttPose * 0.08 + Math.sin(s.runPhase + 0.7) * 0.05 * run, 9, dt);
-    rig.rotation.z = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run + stompTilt;
+    const swimPitch = clamp(-s.vy * 0.075, -0.26, 0.26) - 0.08;
+    rig.rotation.x = damp(rig.rotation.x, ((jumpK > 0 ? -0.16 * jumpK : 0) + Math.sin(s.runPhase + 0.7) * 0.05 * run) * (1 - swim) + swimPitch * swim + buttPose * 0.08, 6, dt);
+    const landRoll = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run;
+    rig.rotation.z = damp(rig.rotation.z, landRoll * (1 - swim) + Math.sin(s.swimPhase) * 0.035 * swim + stompTilt, 8, dt);
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
     if (s.headbutt >= 0 || s.stomp >= 0) lookYaw = 0;
@@ -639,10 +709,10 @@
 
     const walkHeadBob = moving ? Math.sin(s.walkPhase * 2) * 0.05 : Math.sin(t * 1.25) * 0.022;
     const runHeadBob = moving ? Math.sin(s.runPhase * 2) * 0.05 : 0;
-    const headBob = walkHeadBob * (1 - run) + runHeadBob * run;
+    const headBob = (walkHeadBob * (1 - run) + runHeadBob * run) * (1 - swim) + Math.sin(s.swimPhase * 2 + 0.4) * 0.018 * swim;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
     headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08, 10, dt);
-    neckPivot.rotation.x = 0.42 + buttPose * 0.55 + run * 0.08;
+    neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16, 8, dt);
 
     // With a block on the horns, the same lunge places it instead of smashing.
     if (headbuttPending) {
@@ -666,7 +736,7 @@
     }
 
     // Soft footfalls while moving, and a quiet breath while resting.
-    if (moving && s.grounded) {
+    if (moving && s.grounded && !s.inWater) {
       s.footTimer -= dt;
       if (s.footTimer <= 0) {
         audioRef.step(s.runBlend > 0.5, s.speed);
@@ -676,7 +746,7 @@
       s.footTimer = Math.min(s.footTimer, 0.08);
     }
 
-    if (!moving && s.grounded && s.headbutt < 0 && s.stomp < 0) {
+    if (!moving && s.grounded && !s.submerged && s.headbutt < 0 && s.stomp < 0) {
       s.breathTimer -= dt;
       if (s.breathTimer <= 0) {
         audioRef.breath();
@@ -720,6 +790,10 @@
   }
 
   function jump() {
+    if (state.swimming) {
+      controlsRef.noteActivity();
+      return;
+    }
     if (!state.grounded && state.jumps >= MAX_JUMPS) return;
     if (state.grounded) state.jumps = 0;
     state.jumps++;
@@ -777,6 +851,13 @@
       walkPhase: 0,
       runPhase: 0,
       runBlend: 0,
+      inWater: false,
+      swimming: false,
+      submerged: false,
+      waterLevel: 0,
+      swimBlend: 0,
+      swimPhase: 0,
+      shoreJump: 0,
       vy: 0,
       grounded: true,
       jumps: 0,

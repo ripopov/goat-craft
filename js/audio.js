@@ -441,6 +441,30 @@
     } catch (err) { /* audio is a bonus */ }
   }
 
+  function splash(strength) {
+    try {
+      if (!ctx || !noiseBuffer) return;
+      const now = ctx.currentTime + 0.005;
+      const src = ctx.createBufferSource();
+      src.buffer = noiseBuffer;
+      src.playbackRate.value = 0.72 + Math.random() * 0.2;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1100, now);
+      filter.frequency.exponentialRampToValueAtTime(340, now + 0.3);
+      filter.Q.value = 0.55;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.075 * clamp(strength, 0.05, 1), now + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(now, Math.random() * 0.3);
+      src.stop(now + 0.4);
+    } catch (err) { /* audio is a bonus */ }
+  }
+
   M.audio = {
     unlock: unlock,
     bleat: bleat,
@@ -451,6 +475,7 @@
     land: land,
     stomp: stomp,
     pickup: pickup,
-    breath: breath
+    breath: breath,
+    splash: splash
   };
 })(window.Meadow = window.Meadow || {});

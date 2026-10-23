@@ -8,7 +8,7 @@
   let lastInteraction = performance.now();
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const held = { w: false, a: false, s: false, d: false, shift: false };
+  const held = { w: false, a: false, s: false, d: false, shift: false, space: false, ctrl: false };
   const moveVec = new THREE.Vector2();
   const camDir = new THREE.Vector3();
 
@@ -61,19 +61,22 @@
     return moveVec;
   }
 
+  function getSwimPitch(camera) {
+    camera.getWorldDirection(camDir);
+    // Looking up/down steers forward swimming, while strafing stays level.
+    return camDir.y * ((held.w ? 1 : 0) - (held.s ? 1 : 0));
+  }
+
   // --------------------------------------------------------------- camera
   function updateCamera(dt, t, goat, state, world) {
-    if (held.w || held.a || held.s || held.d) lastInteraction = performance.now();
+    if (held.w || held.a || held.s || held.d || held.space || held.ctrl) lastInteraction = performance.now();
     const elapsed = (performance.now() - lastInteraction) / 1000;
     const steering = held.w || held.a || held.s || held.d;
     if (elapsed > 3.0 && !drag && !lookActive && !reduceMotion && !steering) azimuth += dt * 0.1;
 
-    const waterTop = world.waterLevelAt ? world.waterLevelAt(goat.position.x, goat.position.z) : 0;
-    desired.set(
-      goat.position.x,
-      Math.max(goat.position.y + 1.25, waterTop > 0 ? waterTop + 0.25 : 0),
-      goat.position.z
-    );
+    // Follow the swimmer down, rather than pinning the camera above water.
+    // Mouse look, drag and zoom all keep their normal meaning underwater.
+    desired.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
     const followY = state.grounded ? 2.4 : 12.0;
     const followXZ = 3.8 + state.runBlend * 4.2;
     camTarget.x = damp(camTarget.x, desired.x, followXZ, dt);
@@ -92,21 +95,32 @@
     // above the terrain every time the ground height changes.
     const positionPhi = Math.min(phi, Math.PI / 2);
     const sinPhi = Math.sin(positionPhi);
-    const px = camTarget.x + distance * sinPhi * Math.sin(azimuth);
-    const py = camTarget.y + distance * Math.cos(positionPhi);
-    const pz = camTarget.z + distance * sinPhi * Math.cos(azimuth);
+    let px = camTarget.x + distance * sinPhi * Math.sin(azimuth);
+    let py = camTarget.y + distance * Math.cos(positionPhi);
+    let pz = camTarget.z + distance * sinPhi * Math.cos(azimuth);
 
-    cameraRef.position.x = damp(cameraRef.position.x, px, 14, dt);
-    cameraRef.position.y = damp(cameraRef.position.y, py, 14, dt);
-    cameraRef.position.z = damp(cameraRef.position.z, pz, 14, dt);
-
-    // When the orbit camera drifts over a pond, keep it above the waterline
-    // instead of dropping to the flooded floor and ending up inside the goat.
-    const surface = Math.max(
-      world.surfaceHeight(cameraRef.position.x, cameraRef.position.z),
-      world.waterLevelAt ? world.waterLevelAt(cameraRef.position.x, cameraRef.position.z) : 0
-    );
-    const floor = surface + 1.1;
+    // Retract the camera boom before a bank, ceiling or placed block. Water
+    // itself is not an obstruction. The short sweep also works while diving.
+    let obstructed = false;
+    const samples = Math.ceil(distance / 0.25);
+    for (let i = 1; i <= samples; i++) {
+      const k = i / samples;
+      const x = camTarget.x + (px - camTarget.x) * k;
+      const y = camTarget.y + (py - camTarget.y) * k;
+      const z = camTarget.z + (pz - camTarget.z) * k;
+      if (world.blockedAt(x, z, y - 0.2, y + 0.2)) {
+        const safe = Math.max(0.08, (i - 1) / samples);
+        px = camTarget.x + (px - camTarget.x) * safe;
+        py = camTarget.y + (py - camTarget.y) * safe;
+        pz = camTarget.z + (pz - camTarget.z) * safe;
+        obstructed = true;
+        break;
+      }
+    }
+    cameraRef.position.x = obstructed ? px : damp(cameraRef.position.x, px, 14, dt);
+    cameraRef.position.y = obstructed ? py : damp(cameraRef.position.y, py, 14, dt);
+    cameraRef.position.z = obstructed ? pz : damp(cameraRef.position.z, pz, 14, dt);
+    const floor = world.surfaceHeight(cameraRef.position.x, cameraRef.position.z) + 0.3;
     if (cameraRef.position.y < floor) cameraRef.position.y = floor;
 
     if (phi > Math.PI / 2) {
@@ -255,7 +269,7 @@
     const hint = document.getElementById('hint');
     if (!hint) return;
     hint.innerHTML = active
-      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
       : defaultHint;
   }
 
@@ -326,7 +340,15 @@
   }
 
   window.addEventListener('keydown', function (e) {
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.metaKey || e.altKey) return;
+    if (e.key === 'Control') {
+      held.ctrl = true;
+      noteActivity();
+      return;
+    }
+    // Ctrl is a gameplay key: do not discard Ctrl+WASD / Space while diving.
+    // Leave unrelated browser shortcuts alone.
+    if (e.ctrlKey && !moveKey(e) && e.code !== 'Space' && e.key !== ' ' && e.key !== 'Shift' && e.key !== 'Escape') return;
 
     // Chrome usually releases pointer lock itself on Escape, but handling it
     // explicitly keeps the state in sync (and makes the test harness reliable).
@@ -352,6 +374,8 @@
 
     if (e.code === 'Space' || e.key === ' ') {
       e.preventDefault();
+      held.space = true;
+      noteActivity();
       if (!e.repeat && M.controls.onJump) M.controls.onJump();
       return;
     }
@@ -373,7 +397,7 @@
 
     const k = moveKey(e);
     if (!k) return;
-    if (e.code.indexOf('Arrow') === 0) e.preventDefault();
+    e.preventDefault();
     if (!held[k]) {
       held[k] = true;
       lastInteraction = performance.now();
@@ -381,6 +405,15 @@
   });
 
   window.addEventListener('keyup', function (e) {
+    if (e.key === 'Control') {
+      held.ctrl = false;
+      return;
+    }
+    if (e.code === 'Space' || e.key === ' ') {
+      held.space = false;
+      e.preventDefault();
+      return;
+    }
     if (e.key === 'Shift') {
       held.shift = false;
       return;
@@ -394,7 +427,7 @@
 
   function stopSteering() {
     held.w = held.a = held.s = held.d = false;
-    held.shift = false;
+    held.shift = held.space = held.ctrl = false;
   }
 
   window.addEventListener('blur', stopSteering);
@@ -441,6 +474,8 @@
     releaseLook: releaseLook,
     get lookActive() { return lookActive; },
     getMovement: getMovement,
+    getSwimPitch: getSwimPitch,
+    get swimVertical() { return (held.space ? 1 : 0) - (held.ctrl ? 1 : 0); },
     noteActivity: noteActivity,
     snapTo: snapTo,
     onJump: null,

@@ -38,6 +38,30 @@
     background: radial-gradient(125% 95% at 50% 54%, transparent 52%, rgba(47, 65, 38, .26) 100%);
   }
 
+  #water-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(ellipse at 50% 25%, rgba(57, 173, 193, .28), rgba(5, 49, 87, .9));
+  }
+  #water-status {
+    position: fixed;
+    left: 50%;
+    top: max(24px, env(safe-area-inset-top));
+    transform: translateX(-50%);
+    z-index: 3;
+    padding: 8px 16px;
+    border: 1px solid rgba(207, 242, 247, .6);
+    border-radius: 999px;
+    background: rgba(13, 68, 88, .78);
+    color: #e3f7fa;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
   .hud {
     position: fixed;
     top: clamp(20px, 4vw, 44px);

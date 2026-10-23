@@ -38,6 +38,7 @@
 
   M.environment.init(scene, M.config.coarsePointer, renderer);
   M.world.init(scene, renderer);
+  M.water.init(scene);
   M.ui.init();
   M.items.init(scene);
   M.controls.init(camera);
@@ -117,6 +118,7 @@
     M.items.update(dt, elapsed, M.goat.group);
     M.animals.update(dt, elapsed, M.goat.group);
     M.environment.update(camera, M.goat.group, dt, elapsed);
+    M.water.update(dt, elapsed, M.goat.group, M.goat.state, camera, M.world);
     M.ui.updateBubble(dt, M.goat.headPivot, camera);
 
     renderer.render(scene, camera);

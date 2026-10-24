@@ -114,7 +114,7 @@ function consoleGame() {
   return { M, document, elements, added, calls, coins, press, type, dispatch };
 }
 
-test('/ opens the console, captures keyboard input and Esc closes it', () => {
+test('/ opens the console, captures keyboard input and closes with / or Esc', () => {
   const { M, document, elements, calls, press } = consoleGame();
   press('/', 'Slash');
   assert.equal(M.devConsole.isOpen, true);
@@ -128,10 +128,17 @@ test('/ opens the console, captures keyboard input and Esc closes it', () => {
   assert.equal(typing.stopped, true);
   assert.notEqual(typing.prevented, true);
 
-  press('Escape', 'Escape');
+  // The opening key doubles as the closing key, just like Q for the upgrades
+  // menu and T for the strategic view.
+  press('/', 'Slash');
   assert.equal(M.devConsole.isOpen, false);
   assert.equal(elements.get('dev-console').hidden, true);
   assert.ok(calls.includes('resume') && calls.includes('activity'));
+
+  press('/', 'Slash');
+  assert.equal(M.devConsole.isOpen, true);
+  press('Escape', 'Escape');
+  assert.equal(M.devConsole.isOpen, false);
 });
 
 test('money grants 1000 coins and 1000 of every tower resource', () => {

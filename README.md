@@ -95,7 +95,7 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Music** (top-right button) — toggle the generated folk soundtrack; enabled by default and starts with the first click or keypress permitted by the browser
 - **Sound** (top-right button) — mute/unmute effects independently of music; enabled by default
 - **? Controls** (bottom-left) — open the compact controls guide; Esc closes it
-- **/ — Console** — open a developer console. `money` grants 1000 coins and 1000 of every tower resource; `spawn` starts the next enemy wave immediately; `spawn 10` jumps directly to wave 10 (and lower levels work too). Enter runs a command, Up / Down recalls history, and Esc closes the console.
+- **/ — Console** — open a developer console; **/** again (or Esc) closes it, mirroring how Q toggles the upgrades menu and T toggles the strategic view. `money` grants 1000 coins and 1000 of every tower resource; `spawn` starts the next enemy wave immediately; `spawn 10` jumps directly to wave 10 (and lower levels work too). Enter runs a command, and Up / Down recalls history.
 
 ### Cannon workshop
 

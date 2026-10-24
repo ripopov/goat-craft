@@ -179,7 +179,10 @@
       return;
     }
 
-    if (event.key === 'Escape') {
+    // The same key that opens the console closes it too: "/" (or the numpad
+    // root slash) drops it straight back into the game, just like the
+    // upgrades menu with Q and the strategic view with T. Escape still works.
+    if (event.key === 'Escape' || event.code === 'Slash' || event.code === 'NumpadDivide' || event.key === '/') {
       event.preventDefault();
       event.stopImmediatePropagation();
       closeConsole();

@@ -28,7 +28,7 @@ js/voxel-water.js   queued voxel fluid simulation, downward flow, spreading, con
 js/caves.js         deterministic tunnels, chambers, entrances and coal/copper/iron geology
 js/targeting.js     camera voxel ray traversal and physical reach checks
 js/highlights.js    Q character outlines, enemy range outlines and block placement/mining contours
-js/towers.js        ten voxel cannons, atomic resource purchases, collision, packing, swept projectile collisions and distinct attack animations
+js/towers.js        ten detailed voxel cannons, animated mechanisms, pooled particles, atomic purchases, packing and swept projectile collisions
 js/strategy.js      live RTS camera, command workshop, tower inspection and placement previews
 assets/towers/      ten locally stored imagegen icons and their generation prompts
 js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk streaming, exact voxel collision, block edits and debris
@@ -59,7 +59,7 @@ scripts/test-upgrades.mjs training, atomic purchases, individual NPC effects, li
 scripts/test-caves.mjs    geology, exposed ore, protected roofs and actual player descent/exit
 scripts/test-targeting.mjs camera mining in every direction, obstruction, preview/action agreement and outlines
 scripts/test-minimap.mjs  player-centered coordinates and exact range boundaries
-scripts/test-towers.mjs   blueprints, costs, packing, collection, delayed impacts, moving targets, splash, chains and piercing
+scripts/test-towers.mjs   blueprints, purchases, packing, swept combat, independent model rigs, bounded particles and effect cleanup
 scripts/test-strategy.mjs view restoration, live goat AI, command input routing and camera movement
 scripts/test-animals.mjs  herd roles, zombie combat, ten-block wall construction and repairs
 scripts/test-animal-recovery.mjs  isolated ledge, wall, pit, roof, crowd and hunter recovery scenarios
@@ -112,20 +112,24 @@ Towers occupy one grid cell and are one to three blocks tall. Build within 50 me
 Wood uses oak logs; soil uses dirt; ores use their mined block stacks. Packed tower items are consumed before fresh construction costs. Attacks prioritize enemies nearest the Hearth; slows last 2.5 seconds, fire deals 0.5 damage/second and poison 0.7 damage/second for four seconds. Reapplying a type refreshes its effect instead of stacking it indefinitely. Kills leave collectible coins. Every shot deals damage only when its projectile collides with a live enemy. Physical shots lead walking targets and can miss; elemental homing shots follow their target. Fast shots use swept collision so they cannot pass through a body between simulation ticks. Walls built during flight block attacks. Splash victims are checked at impact, lightning jumps travel and hit in sequence, and Sunspire hits up to three bodies in flight order. Fired projectiles keep flying if their tower is packed. Reduced motion keeps the same visible projectiles and combat timing while suppressing recoil, spinning and decorative bursts. Projectiles and effects have separate budgets; shared geometry and materials are reused.
 
 
-Each cannon has its own visual attack signature:
+Each cannon has its own architecture: timber bow limbs and strings, an open braced Watchman frame with a ladder and scope, armored cannon bores, a crown of ice, a vine-covered fanged idol, copper coil windings, a stone siege cradle, an orbiting arcane armillary, and a gilded sun wheel. Staggered masonry, buttresses, inset runes, rivets and distinct stone, timber and metal palettes keep them readable from the strategic camera. Model geometry and materials are baked and shared; firing mechanisms animate independently on each deployed tower.
+
+Each cannon also has its own visual attack signature:
 
 | Cannon | Firing, flight and impact |
 | --- | --- |
-| Oak Ballista | Bow kick, feathered wooden bolt, splinter sparks |
-| Iron Mortar | Barrel recoil, tumbling fused shell and smoke, explosive blast ring |
-| Frost Spire | Ice pulse, spinning three-shard spear, frost splinters and freezing ring |
-| Ember Cannon | Flame flare, rolling fireball and ember trail, fiery splash |
-| Venom Idol | Toxic drips, pulsing green glob, rising poison bubbles and pool ring |
-| Storm Coil | Electric discharge, flickering jagged bolt, sequential chain arcs and crackle |
-| Watchman | Sharp muzzle flash and recoil, fast golden dart and tracer, piercing sparks |
-| Earthshaker | Heavy kick, tumbling boulder and dust, stone fragments and broad shockwave |
-| Arcane Prism | Rotating rune pulse, orbiting violet shards, collapsing spiral burst |
-| Sunspire | Radiant flare, luminous lance with spinning halos, sun rays and a gold impact ring |
+| Oak Ballista | Bow flex, feathered iron-tipped bolt, wooden splinters and sparks |
+| Iron Mortar | Barrel recoil and smoke puff, banded fused shell, hot sparks, smoke bloom and double blast rings |
+| Frost Spire | Floating ice pulse, spinning three-shard spear and spiral frost trail, ice spikes and freezing mist |
+| Ember Cannon | Furnace vents and drifting embers, rolling fireball and spark trail, smoky fire splash and lingering flames |
+| Venom Idol | Pulsing idol and toxic drips, wobbling green glob, poison mist, rising bubbles and pool ring |
+| Storm Coil | Idle fork arcing, jagged lightning afterimages, sequential chain arcs and electric crackle |
+| Watchman | Sharp muzzle flash, smoke and sliding bolt, fast golden dart, short tracer and piercing sparks |
+| Earthshaker | Heavy kick and reloading stone cradle, tumbling fractured boulder and dust, debris and double shockwaves |
+| Arcane Prism | Floating rotating armillary, orbiting violet shards and spiral trail, collapsing crystal burst |
+| Sunspire | Turning sun wheel, radiant flare, luminous lance and spinning halos, sun rays and layered gold rings |
+
+Soft glowing sparks and expanding smoke use two fixed GPU particle batches (900 glow slots and 220 smoke slots), with reusable buffers and shared shaders. Trails sample the actual traveled segment, ballistic models follow their flight tangent, and temporary lightning geometry is released when its afterimage fades. Burn, poison and frost particles follow affected enemies. Reduced motion suppresses decorative particles and moving mechanisms while preserving combat timing and visible projectiles. Everything is generated locally with no texture downloads or extra dependencies.
 
 The meadow has **winding rivers, coastal seas and blocky ponds**. Rivers run continuously across chunk boundaries and meet the seas at a common waterline. Terraced banks and shallow coastal shelves descend into sea beds more than ten world units deep. A river lies about 56 world units along +Z from the tree; seas lie farther east and west. A nearby pond sits west of the starting clearing at **(-54, 6)**, and other ponds are seeded deterministically on a 64-block lattice, away from the clearing, channels and coasts. Ponds have raised grassy banks, muddy swimming basins, transparent animated water, lily pads, and five to nine fish. Fish swim in stable elliptical shoals, wag their tails, and produce small surface ripples. The herd prefers to stay on dry ground.
 

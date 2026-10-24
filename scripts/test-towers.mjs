@@ -260,3 +260,56 @@ test('physical arrows, darts and siege shots lead a steadily walking enemy', () 
     assert.equal(enemy.hp, 7 - tower.def.damage, id + ' intercepts walking target');
   }
 });
+
+test('animated models share baked geometry without moving previews or other tower instances', () => {
+  const { M } = defense();
+  for (const id of ['ballista', 'frost', 'storm', 'sniper', 'earth', 'arcane', 'sun']) {
+    const a = M.towers.model(id), b = M.towers.model(id);
+    const moving = a.getObjectByName('Mechanism'), still = b.getObjectByName('Mechanism');
+    assert.ok(moving && still, id + ' has an independent mechanism');
+    assert.notEqual(moving, still);
+    moving.rotation.y = 2; moving.position.y = .5; moving.scale.x = .8;
+    assert.equal(still.rotation.y, 0); assert.equal(still.position.y, 0); assert.equal(still.scale.x, 1);
+    assert.equal(moving.children[0].geometry, still.children[0].geometry, 'GPU geometry is reused');
+    assert.equal(moving.children[0].material, still.children[0].material, 'materials are reused');
+  }
+  const tower = M.towers.place('arcane', 8, 7, 8), preview = M.towers.model('arcane');
+  step(M, .5);
+  assert.notEqual(tower.group.getObjectByName('Mechanism').rotation.y, 0);
+  assert.equal(preview.getObjectByName('Mechanism').rotation.y, 0);
+});
+
+test('sustained rapid combat keeps particles bounded, reuses buffers and drains every effect after packing', () => {
+  const { M, THREE, scene } = defense();
+  const tower = M.towers.place('ember', 8, 7, 8);
+  tower.def.interval = 1 / 60;
+  const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute'); enemy.hp = 10000;
+  const pools = scene.children.filter(o => o.isPoints && o.name.startsWith('Tower '));
+  assert.equal(pools.length, 2, 'only two particle draw calls');
+  const buffers = pools.map(o => o.geometry.attributes.position.array);
+  step(M, 4);
+  assert.ok(tower.shots > 150);
+  assert.ok(pools.some(o => o.geometry.attributes.alpha.array.some(v => v > 0)), 'combat emits visible particles');
+  assert.ok(scene.children.filter(o => / (muzzle|impact)$/.test(o.name)).length <= 80, 'mesh effects are bounded');
+  for (const pool of pools) for (const attr of Object.values(pool.geometry.attributes))
+    assert.ok(attr.array.every(Number.isFinite), 'particle simulation remains finite');
+  M.towers.dismantle(tower); step(M, 7);
+  pools.forEach((pool, i) => {
+    assert.equal(pool.geometry.attributes.position.array, buffers[i], 'no buffer growth or replacement');
+    assert.ok(pool.geometry.attributes.alpha.array.every(v => v === 0), 'trails, smoke and status particles drain');
+  });
+  assert.equal(flights(scene).length, 0);
+  assert.equal(scene.children.filter(o => / (muzzle|impact)$/.test(o.name)).length, 0);
+});
+
+test('lightning afterimages release their unique GPU geometry', () => {
+  const { M, THREE, scene } = defense();
+  const tower = M.towers.place('storm', 8, 7, 8);
+  M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
+  fireOnce(M, tower); step(M, .06);
+  const arc = scene.children.find(o => o.name === 'Storm afterimage'); assert.ok(arc);
+  let disposed = false;
+  arc.children[0].geometry.addEventListener('dispose', () => { disposed = true; });
+  step(M, .2);
+  assert.equal(scene.children.includes(arc), false); assert.equal(disposed, true);
+});

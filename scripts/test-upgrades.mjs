@@ -25,7 +25,7 @@ test('starter resources are granted once, and purchases debit coins and the sele
   assert.equal(u.buy(u.player, 'move'), true);
   assert.equal(M.enemies.getState().coins, 0); assert.equal(M.items.count('log'), 0); assert.equal(M.items.count('stone'), 5);
   assert.equal(M.items.heldMesh, null, 'spending the carried stack clears the held block');
-  assert.equal(u.level(u.player, 'move'), 1); assert.equal(u.stats().move, 1.12);
+  assert.equal(u.level(u.player, 'move'), 1); assert.equal(u.stats().move, 4 / 3);
   assert.equal(u.buy(u.player, 'reach'), false); assert.equal(M.enemies.getState().coins, 0);
 });
 
@@ -48,11 +48,11 @@ test('NPC training is individual, role appropriate, and leaves shared species de
   const [builder, cow, stag, sheep] = M.animals.list;
   const base = sheep.def.walkSpeed;
   train(M, stag, 'power', 2); train(M, builder, 'craft'); train(M, builder, 'move');
-  assert.equal(u.stats(stag).damage, 1); assert.equal(u.stats(sheep).damage, 0); assert.equal(u.stats().damage, 0);
+  assert.ok(Math.abs(u.stats(stag).damage - 4 / 3) < 1e-9); assert.equal(u.stats(sheep).damage, 0); assert.equal(u.stats().damage, 0);
   assert.equal(u.stats(builder).craft, 1.75); assert.equal(u.stats(cow).craft, 1);
   assert.equal(u.buy(builder, 'power'), false); assert.equal(u.buy(stag, 'craft'), false);
   assert.equal(builder.def.walkSpeed, base, 'two sheep share definitions without sharing training');
-  assert.ok(Math.abs(u.stats(builder).move - 1.36) < 1e-9); assert.equal(u.stats(sheep).move, 1);
+  assert.equal(u.stats(builder).move, 2, 'fully trained fleet hooves double movement speed'); assert.equal(u.stats(sheep).move, 1);
 });
 
 test('nearby targeting respects talking distance, vertical distance and solid walls', () => {
@@ -73,7 +73,7 @@ test('movement and cadence upgrades change the real player controller and timed 
   advancePlayer(M, 1); const baseDistance = p.x - 15;
   p.set(15, 14, 15); M.goat.state.speed = 0;
   train(M, M.upgrades.player, 'move'); advancePlayer(M, 1);
-  assert.ok(p.x - 15 > baseDistance * 1.3, 'actual movement gains about 36%');
+  assert.ok(p.x - 15 > baseDistance * 1.3, 'actual movement gains about 33%');
   input.set(0, 0); p.set(15, 14, 15); M.goat.state.yaw = 0;
   train(M, M.upgrades.player, 'cadence');
   const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 17 });
@@ -89,7 +89,7 @@ test('reach and damage upgrades affect real attacks without hitting through wall
   M.goat.startHeadbutt(); advancePlayer(M, .6); assert.equal(zombie.hp, 2, 'out of base reach');
   train(M, M.upgrades.player, 'reach', 2); train(M, M.upgrades.player, 'power', 2);
   M.goat.startHeadbutt(); advancePlayer(M, .2);
-  assert.equal(M.enemies.zombies.includes(zombie), false, 'extended, two-damage horns kill in one strike');
+  assert.equal(M.enemies.zombies.includes(zombie), false, 'extended, two-and-a-third-damage horns kill in one strike');
   assert.equal(M.enemies.getState().coins, 1000 - 8 - 20 - 12 - 28, 'kill is only a physical pickup');
   assert.equal(M.items.drops.filter(drop => drop.userData.drop.kind === 'coin').length, 1);
 });

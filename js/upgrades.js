@@ -14,17 +14,20 @@
   function valid(target) { return target === player || !!(M.animals && M.animals.list.includes(target)); }
   function keys(target) { return target !== player && target.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']; }
   function level(target, key) { const levels = training.get(target); return levels ? levels[key] || 0 : 0; }
+  // At tier 3: movement and attack speed double, reach triples (2.8 base headbutt
+  // range) and headbutt damage triples (1 base). Per-tier factors sum to those caps.
+  const REACH_BASE = 2.8, DAMAGE_BASE = 1;
   function stats(target) {
     target = target || player;
-    return { move: 1 + level(target, 'move') * 0.12, rate: 1 + level(target, 'cadence') * 0.18,
-      reach: level(target, 'reach') * 0.4, damage: level(target, 'power') * 0.5,
+    return { move: 1 + level(target, 'move') / 3, rate: 1 + level(target, 'cadence') / 3,
+      reach: level(target, 'reach') * REACH_BASE * 2 / 3, damage: level(target, 'power') * DAMAGE_BASE * 2 / 3,
       craft: 1 + level(target, 'craft') * 0.25 };
   }
   function effect(target, key, rank) {
-    if (key === 'move') return '+' + (rank * 12) + '% movement';
-    if (key === 'cadence') return '+' + (rank * 18) + '% attack speed';
-    if (key === 'reach') return '+' + (rank * 0.4).toFixed(1) + ' reach';
-    if (key === 'power') return '+' + (rank * 0.5).toFixed(1) + ' damage';
+    if (key === 'move') return '+' + Math.round(rank * 100 / 3) + '% movement';
+    if (key === 'cadence') return '+' + Math.round(rank * 100 / 3) + '% attack speed';
+    if (key === 'reach') return '+' + (rank * REACH_BASE * 2 / 3).toFixed(1) + ' reach';
+    if (key === 'power') return '+' + (rank * DAMAGE_BASE * 2 / 3).toFixed(1) + ' damage';
     return '+' + (rank * 25) + '% work speed';
   }
   function offer(target, key) {

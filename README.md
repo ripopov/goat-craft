@@ -157,13 +157,13 @@ Press **Q** near an animal to train it, or away from the herd to train yourself.
 
 | Training | Effect per tier | Coin prices (tiers 1 / 2 / 3) | Block prices | Available to |
 | --- | --- | --- | --- | --- |
-| Fleet hooves | +12% movement | 8 / 20 / 36 | 2 / 4 / 6 wood | Player and every NPC |
-| Quick strikes | +18% attack speed, including windup/recovery | 10 / 24 / 42 | 2 / 4 / 6 stone | Player and hunters |
-| Long horns | +0.4 units of attack reach | 8 / 20 / 36 | 2 / 4 / 6 wood | Player and hunters |
-| Heavy horns | +0.5 damage per hit | 12 / 28 / 48 | 3 / 5 / 8 stone | Player and hunters |
+| Fleet hooves | +33% movement (2× at tier 3) | 8 / 20 / 36 | 2 / 4 / 6 wood | Player and every NPC |
+| Quick strikes | +33% attack speed (2× at tier 3), including windup/recovery | 10 / 24 / 42 | 2 / 4 / 6 stone | Player and hunters |
+| Long horns | +1.9 units of attack reach (3× at tier 3) | 8 / 20 / 36 | 2 / 4 / 6 wood | Player and hunters |
+| Heavy horns | +0.7 damage per hit (3× at tier 3) | 12 / 28 / 48 | 3 / 5 / 8 stone | Player and hunters |
 | Practiced builder | +25% quarry/place/job preparation speed | 8 / 18 / 32 | 2 / 4 / 6 stone | Builders |
 
-Every track has three tiers. Bonuses add within each track, with movement capped at +36%, attack speed at +54% and work speed at +75%. Damage tier 2 changes basic zombie headbutts from two hits to one, while brutes still need focused attacks. Prices rise so upgrading the player competes with investing in hunters and wall repairs.
+Every track has three tiers. Bonuses add within each track: movement and attack speed cap at +100% (2×) and attack reach and strike damage cap at 3× the base values, while work speed caps at +75%. A single tier of Heavy horns lets basic zombie headbutts drop in one hit, and tier 3 reach lands the headbutt about three times farther out; brutes still need focused attacks. Prices rise so upgrading the player competes with investing in hunters and wall repairs.
 
 | Enemy | First wave | HP | Move speed | Hearth damage | Wall break time | Dropped coins |
 | --- | --- | --- | --- | --- | --- | --- |

@@ -299,6 +299,10 @@
     return !!generatedColumn(bx, bz).plan;
   }
 
+  function isProtectedArea(bx, bz) {
+    return !!(M.hearthTree && M.hearthTree.isReserved((bx + 0.5) * BLOCK, (bz + 0.5) * BLOCK, BLOCK * 0.71));
+  }
+
   function waterAt(x, y, z) {
     const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
     if (!info || y < info.top || y >= info.level) return null;
@@ -440,6 +444,7 @@
   // it are intentionally ignored; callers can test the cell above before
   // quarrying so they do not mine underneath a tree or a build.
   function topSoilInfo(bx, bz) {
+    if (isProtectedArea(bx, bz)) return null;
     const by = topSolidY(bx, bz);
     if (by < 0) return null;
     return {
@@ -462,6 +467,7 @@
     const bz = Math.floor(z / BLOCK);
 
     if (surfaceHeight(x, z) > minY) return true;
+    if (M.hearthTree && M.hearthTree.blockedAt(x, z, minY, maxY)) return true;
 
     const ch = chunkForBlock(bx, bz);
     if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return false;
@@ -485,6 +491,7 @@
     const bz = Math.floor(z / BLOCK);
     let best = surfaceHeight(x, z);
     if (best > maxY + 0.001) return best;
+    if (M.hearthTree) best = Math.max(best, M.hearthTree.supportHeight(x, z, maxY));
 
     const ch = chunkForBlock(bx, bz);
     if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return best;
@@ -508,16 +515,17 @@
     const bz = Math.floor(z / BLOCK);
     const ch = chunkForBlock(bx, bz);
     const topBy = Math.floor(maxY / BLOCK) - 1;
+    const landmarkTop = M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
 
     for (let by = topBy; by >= 0; by--) {
       if (ch && ch.propBlocks && ch.propBlocks.has(blockKey(bx, by, bz))) {
-        return (by + 1) * BLOCK;
+        return Math.max(landmarkTop, (by + 1) * BLOCK);
       }
       if (isSolidBlock(bx, by, bz)) {
-        return (by + 1) * BLOCK;
+        return Math.max(landmarkTop, (by + 1) * BLOCK);
       }
     }
-    return 0;
+    return landmarkTop;
   }
 
   function mulberry32(a) {
@@ -1156,6 +1164,7 @@
         const wx = worldBX * BLOCK + BLOCK / 2;
         const wz = worldBZ * BLOCK + BLOCK / 2;
         if (wx * wx + wz * wz < 225) continue;
+        if (M.hearthTree && M.hearthTree.isReserved(wx, wz, 11)) continue;
         if (isPondArea(worldBX, worldBZ)) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
         ok = true;
@@ -1173,7 +1182,8 @@
       const wz = (cz * CHUNK_BLOCKS + rz) * BLOCK + BLOCK / 2;
       const stoneWorldBX = cx * CHUNK_BLOCKS + rx;
       const stoneWorldBZ = cz * CHUNK_BLOCKS + rz;
-      if (wx * wx + wz * wz > 100 && !isPondArea(stoneWorldBX, stoneWorldBZ)) {
+      if (wx * wx + wz * wz > 100 && !isPondArea(stoneWorldBX, stoneWorldBZ) &&
+          !(M.hearthTree && M.hearthTree.isReserved(wx, wz, 3))) {
         const baseY = heightBlocks(stoneWorldBX, stoneWorldBZ) * BLOCK;
         const count = 1 + Math.floor(rnd() * 3);
         for (let i = 0; i < count; i++) {
@@ -1447,6 +1457,7 @@
   function canPlaceBlock(bx, by, bz) {
     if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
     if (by < 0) return false;
+    if (M.hearthTree && M.hearthTree.intersectsBlock(bx, by, bz)) return false;
     if (!chunkForBlock(bx, bz)) return false;
     if (isSolidBlock(bx, by, bz)) return false;
     if (propKindAt(bx, by, bz)) return false;
@@ -1599,7 +1610,7 @@
       return propKind;
     }
 
-    if (!isSolidBlock(bx, by, bz)) return null;
+    if (isProtectedArea(bx, bz) || !isSolidBlock(bx, by, bz)) return null;
     const wasTop = by === heightBlocks(bx, bz) - 1;
     const kind = wasTop ? 'grass' : 'dirt';
     removedBlocks.add(key);
@@ -1627,6 +1638,7 @@
         const bx = +parts[0];
         const by = +parts[1];
         const bz = +parts[2];
+        if (isProtectedArea(bx, bz)) return;
         const cx = (bx + 0.5) * BLOCK;
         const cy = (by + 0.5) * BLOCK;
         const cz = (bz + 0.5) * BLOCK;
@@ -1655,6 +1667,7 @@
     for (let bx = bx0 - r; bx <= bx0 + r; bx++) {
       for (let bz = bz0 - r; bz <= bz0 + r; bz++) {
         const by = topSolidY(bx, bz);
+        if (isProtectedArea(bx, bz)) continue;
         if (by < 0) continue;
         const cx = (bx + 0.5) * BLOCK;
         const cz = (bz + 0.5) * BLOCK;
@@ -1715,16 +1728,7 @@
       return true;
     }
 
-    const by = terrainBy;
-    if (by < 0 || !isSolidBlock(bx, by, bz)) return false;
-
-    const wasTop = by === heightBlocks(bx, bz) - 1;
-    const kind = wasTop ? 'grass' : 'dirt';
-    removedBlocks.add(blockKey(bx, by, bz));
-    rebuildTerrainAround(bx, bz);
-    spawnBlockDebris(bx, by, bz, kind);
-    spawnBlockDrop(bx, by, bz, kind);
-    return true;
+    return !!breakBlockAt(bx, terrainBy, bz);
   }
 
 
@@ -1828,6 +1832,7 @@
     isPlacedBlock: isPlacedBlock,
     isWaterColumn: isWaterColumn,
     isPondArea: isPondArea,
+    isProtectedArea: isProtectedArea,
     waterDepthAt: waterDepthAt,
     waterLevelAt: waterLevelAt,
     waterInfoAtBlock: waterInfoAtBlock,

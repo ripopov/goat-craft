@@ -24,6 +24,7 @@ js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
 js/items.js         ten-slot hotbar, block drops, pickup and item stacking
 js/world.js         procedural terrain, rivers, seas and ponds, chunk streaming, block removal, drops and debris
+js/hearth-tree.js    detailed voxel landmark near spawn, amber heart, lanterns, embers and persistent collision
 js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
@@ -35,6 +36,7 @@ scripts/build-site.mjs  copies the playable files into _site/
 scripts/check-site.mjs  checks local asset references in the built site
 scripts/test-water.mjs  dependency-free terrain, swimming, input and camera regression tests
 scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
+scripts/test-hearth-tree.mjs  landmark geometry, root collision, placement, foundation protection and reduced-motion checks
 .github/workflows/ci.yml    syntax, asset and served-page checks
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
@@ -62,6 +64,8 @@ The meadow has **winding rivers, coastal seas and blocky ponds**. Rivers run con
 
 The goat wades in shallows and automatically **swims when its body is immersed**. Swimming uses buoyancy and water drag instead of walking on the bed, with a smoothly blended, alternating four-leg paddle, body roll, and a raised head. Hold Space to rise or Ctrl to dive; a surface swimmer can scramble over a one-block bank. Swimming resets air jumps without consuming them. Mouse look, free-pointer dragging and zoom all work underwater, and forward/backward swimming follows the camera pitch. The camera follows dives, retracts around solid banks and blocks, and gains blue distance fog underwater. Wakes, rising bubbles and synthesized splashes provide water feedback. Terrain edits change the measured water depth; water is procedural rather than a full Minecraft block-fluid simulation.
 
+An ancient **Hearth Tree** stands on the dry bank beyond the starter pond, at world coordinates **(-8, -26)**, about 28 units from spawn. Its half-unit voxels form a forked oak, a layered green-and-gold crown, and mossy roots fitted to the terrain. An inset amber heart, golden sap seams, hanging lanterns, and slowly drifting embers make it a warm landmark after dark. The trunk, roots, and canopy have persistent collision; the foundation is protected from mining and herd construction. The heart is a visual landmark for now; waves, objective health, and upgrades are not yet implemented.
+
 The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long.
 
 A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). They wander, graze, jump up ledges, and set out to build independently.
@@ -76,6 +80,6 @@ Music and effects share a filtered, compressed output with volume headroom. Ever
 
 ## CI and hosting
 
-Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
 
 Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

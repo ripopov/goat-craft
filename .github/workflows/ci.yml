@@ -34,6 +34,9 @@ jobs:
       - name: Test audio scheduling and voice cleanup
         run: node --test scripts/test-audio.mjs
 
+      - name: Test Hearth Tree collision and protection
+        run: node --test scripts/test-hearth-tree.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

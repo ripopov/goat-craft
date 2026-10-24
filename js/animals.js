@@ -1000,6 +1000,7 @@
         const px = (bx + dx + 0.5) * bs;
         const pz = (bz + dz + 0.5) * bs;
         if (worldRef.isPondArea(bx + dx, bz + dz)) return null;
+        if (worldRef.isProtectedArea && worldRef.isProtectedArea(bx + dx, bz + dz)) return null;
         if (worldRef.isWaterColumn(bx + dx, bz + dz)) return null;
         if (Math.abs(worldRef.surfaceHeight(px, pz) - groundY) > 0.01) return null;
         if (!worldRef.canPlaceBlock(bx + dx, baseBy, bz + dz)) return null;

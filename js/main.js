@@ -38,6 +38,7 @@
 
   M.environment.init(scene, M.config.coarsePointer, renderer);
   M.world.init(scene, renderer);
+  M.hearthTree.init(scene);
   M.water.init(scene);
   M.ui.init();
   M.items.init(scene);
@@ -114,6 +115,7 @@
     M.goat.update(dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.world.update(M.goat.group.position, dt, elapsed);
+    M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.items.update(dt, elapsed, M.goat.group);
     M.animals.update(dt, elapsed, M.goat.group);

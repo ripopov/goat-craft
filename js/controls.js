@@ -12,8 +12,9 @@
   const moveVec = new THREE.Vector2();
   const camDir = new THREE.Vector3();
 
-  let azimuth = 0.72;
-  let polar = 1.4;
+  // Frame the Hearth Tree above the pond while keeping the goat in view.
+  let azimuth = 0.5;
+  let polar = 1.64;
   let viewPolar = polar;
   let distance = 7.6;
   let firstPerson = false;

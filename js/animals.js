@@ -323,6 +323,11 @@
         [sign * 0.35, 0.55, -0.17],
         [sign * 0.39, 0.64, -0.22]
       ], 0.016, 0.005, 10, 5);
+      const tineC = taperTube([
+        [sign * 0.2, 0.39, -0.1],
+        [sign * 0.13, 0.49, -0.19],
+        [sign * 0.14, 0.59, -0.25]
+      ], 0.014, 0.004, 10, 5);
 
       const group = new THREE.Group();
       const beam = new THREE.Mesh(main, mats.horn);
@@ -335,6 +340,9 @@
       const b = new THREE.Mesh(tineB, mats.horn);
       b.castShadow = true;
       group.add(b);
+      const c = new THREE.Mesh(tineC, mats.horn);
+      c.castShadow = true;
+      group.add(c);
       head.add(group);
     }
   }
@@ -366,6 +374,11 @@
       glint.castShadow = false;
       glint.receiveShadow = false;
       eye.add(glint);
+
+      const lid = ellipsoid(mats.face, 0.079 * size, 0.025 * size, 0.035 * size);
+      lid.position.set(0, 0.083 * size, 0.026 * size);
+      lid.rotation.z = -sign * 0.1;
+      eye.add(lid);
 
       head.add(eye);
       eyes.push(eye);
@@ -447,12 +460,23 @@
       shadowed(lower);
       knee.add(lower);
 
-      const hoof = new THREE.Mesh(hoofGeo, mats.hoof);
-      hoof.position.y = -(lowerTotal + 0.055);
-      shadowed(hoof);
-      knee.add(hoof);
+      const ankle = new THREE.Group();
+      ankle.position.y = -(lowerTotal + 0.055);
+      knee.add(ankle);
+      [-1, 1].forEach(function (side) {
+        const hoof = new THREE.Mesh(hoofGeo, mats.hoof);
+        hoof.scale.set(0.52, 1, 1.08);
+        hoof.position.set(side * dimensions.lowerR * 0.63, 0, 0.018);
+        hoof.rotation.z = side * 0.035;
+        shadowed(hoof);
+        ankle.add(hoof);
+      });
+      const fetlock = ellipsoid(speciesName === 'sheep' ? mats.woolShade : mats.face,
+        dimensions.lowerR * 1.2, 0.095, dimensions.lowerR * 1.18);
+      fetlock.position.y = -lowerTotal + 0.055;
+      knee.add(fetlock);
 
-      legs.push({ hip: hip, knee: knee, front: front, offset: offset });
+      legs.push({ hip: hip, knee: knee, ankle: ankle, front: front, offset: offset });
     }
 
     makeLeg(-dimensions.x, dimensions.frontZ, true, 0);
@@ -531,11 +555,12 @@
       rig.add(rump);
 
       const puffs = [
-        [0, 1.57, -0.08, 0.27, 0.2, 0.31],
-        [-0.3, 1.48, -0.2, 0.2, 0.18, 0.3],
-        [0.31, 1.48, -0.12, 0.19, 0.18, 0.29],
-        [0, 1.51, 0.28, 0.25, 0.18, 0.23],
-        [0.02, 1.46, -0.48, 0.25, 0.18, 0.23]
+        [0, 1.59, -0.36, 0.24, 0.18, 0.25], [0, 1.64, -0.05, 0.26, 0.18, 0.27],
+        [0, 1.59, 0.25, 0.24, 0.17, 0.24], [-0.29, 1.5, -0.4, 0.19, 0.19, 0.22],
+        [0.3, 1.5, -0.38, 0.19, 0.18, 0.23], [-0.34, 1.48, -0.09, 0.17, 0.2, 0.24],
+        [0.34, 1.47, -0.06, 0.18, 0.19, 0.25], [-0.29, 1.45, 0.24, 0.18, 0.18, 0.21],
+        [0.29, 1.45, 0.27, 0.18, 0.17, 0.2], [-0.23, 1.15, -0.24, 0.16, 0.18, 0.24],
+        [0.24, 1.16, -0.2, 0.16, 0.17, 0.25], [0, 1.43, -0.57, 0.24, 0.2, 0.18]
       ];
       for (let i = 0; i < puffs.length; i++) {
         const p = puffs[i];
@@ -602,6 +627,10 @@
     neckPivot.add(neck);
 
     if (speciesName === 'cow') {
+      const dewlap = ellipsoid(mats.face, 0.14, 0.27, 0.1);
+      dewlap.position.set(0, 0.05, 0.18);
+      dewlap.rotation.x = -0.18;
+      neckPivot.add(dewlap);
       const collar = new THREE.Mesh(new THREE.TorusGeometry(0.235, 0.025, 5, 14), mats.collar);
       collar.rotation.x = Math.PI / 2;
       collar.position.y = neckLen * 0.25;
@@ -2274,9 +2303,14 @@
     const tuck = s.tuck;
     const bob = moving ? Math.abs(Math.sin(s.walkPhase)) * 0.024 * stride : 0;
     parts.rig.position.y = parts.rigBaseY + bob - (s.landPulse || 0) * 0.045 - tuck * 0.025;
+    const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.014 * stride;
+    parts.rig.position.x = damp(parts.rig.position.x, weightShift, 10, dt);
     parts.rig.rotation.x = damp(parts.rig.rotation.x,
       (s.landPulse || 0) * -0.05 + (moving ? Math.sin(s.walkPhase * 2) * 0.012 * stride : 0) - tuck * 0.14,
       9, dt);
+    if (parts.chest.userData.restScale === undefined) parts.chest.userData.restScale = parts.chest.scale.x;
+    const breath = 1 + Math.sin(t * 1.4 + animal.seed) * (moving ? 0.003 : 0.012);
+    parts.chest.scale.x = parts.chest.userData.restScale * breath;
 
     const walkLift = moving ? Math.sin(s.walkPhase * 2) * 0.04 * stride : 0;
     const actionLunge = (s.mode === 'break' || s.mode === 'place') && s.action
@@ -2327,8 +2361,9 @@
       const leg = parts.legs[i];
       const phase = s.walkPhase + leg.offset;
       const gait = hoofPose(phase, stride, s.mode === 'hunt' ? 0.6 : 0);
-      let hipTarget = gait.hip;
-      let kneeTarget = gait.knee;
+      const gaitShape = animal.species === 'cow' ? 0.84 : animal.species === 'stag' ? 1.08 : 0.94;
+      let hipTarget = gait.hip * gaitShape;
+      let kneeTarget = gait.knee * (animal.species === 'stag' ? 1.12 : 1);
       if (tuck > 0.01) {
         hipTarget = (leg.front ? -0.52 : 0.45) * tuck;
         kneeTarget = 0.72 * tuck;
@@ -2339,6 +2374,8 @@
       }
       leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 20, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 20, dt);
+      const ankleTarget = -kneeTarget * 0.55 + Math.max(0, Math.sin(phase)) * 0.13 * stride + tuck * 0.2;
+      leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 22, dt);
     }
 
     // Ears and tail.

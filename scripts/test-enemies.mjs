@@ -122,6 +122,37 @@ test('automatic zombie spawns use the fifty-percent-farther ring', () => {
   assert.ok(distance >= 54 - M.enemies.types.zombie.speed * .15 && distance <= 72, `spawn distance ${distance}`);
 });
 
+test('startNextWave begins the next wave on demand and refuses after defeat', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  assert.equal(M.enemies.startNextWave(), true);
+  assert.equal(M.enemies.getState().wave, 1);
+  assert.equal(M.enemies.getState().phase, 'combat');
+  assert.equal(M.enemies.getState().pending, M.enemies.waveSize(1));
+  advance(M, .1);
+  assert.equal(M.enemies.zombies.length, 1, 'the first enemy arrives without waiting for the timer');
+  tree.damage(100);
+  assert.equal(M.enemies.startNextWave(), false);
+});
+
+test('startWave jumps to an exact level and allows going backwards', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  assert.equal(M.enemies.startWave(10), true);
+  assert.equal(M.enemies.getState().wave, 10);
+  assert.equal(M.enemies.getState().pending, M.enemies.waveSize(10));
+  advance(M, .1);
+  assert.equal(M.enemies.zombies.length, 1);
+
+  assert.equal(M.enemies.startWave(2), true);
+  assert.equal(M.enemies.getState().wave, 2);
+  assert.equal(M.enemies.getState().pending, M.enemies.waveSize(2));
+  assert.equal(M.enemies.startWave(0), false);
+  assert.equal(M.enemies.startWave(1.5), false);
+  assert.equal(M.enemies.getState().wave, 2, 'invalid levels leave the current wave untouched');
+
+  tree.damage(100);
+  assert.equal(M.enemies.startWave(5), false);
+});
+
 test('each zombie eats exactly one tree HP per three seconds; defeat clamps at zero', () => {
   const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
   const zombie = M.enemies.spawnAt(M.enemies.navigation.nodeAt(3, 0, 1));
@@ -440,4 +471,27 @@ test('unrelated navigation revisions cannot extend a stalled enemy watchdog', ()
   M.actorPhysics.moveHorizontal = () => false;
   for (let i = 0; i < 20; i++) { world.place(22, i % 3, 10 + i); advance(M, 1); }
   assert.equal(M.enemies.zombies.includes(enemy), false);
+});
+
+test('all enemy species animate hierarchical joints with finite colors and aligned highlights', () => {
+  const { M, THREE, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const mesh = scene.getObjectByName('Enemy horde');
+  const outline = scene.getObjectByName('Enemies in attack range');
+  assert.ok(mesh.geometry.getAttribute('position').count > 24, 'shared enemy geometry has beveled surfaces');
+  for (const type of Object.keys(M.enemies.types)) M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type);
+  advance(M, .2);
+  const first = Array.from(mesh.instanceMatrix.array.slice(0, mesh.count * 16));
+  advance(M, .2);
+  const second = Array.from(mesh.instanceMatrix.array.slice(0, mesh.count * 16));
+  assert.notDeepEqual(first, second, 'hierarchical poses change over time');
+  assert.ok(second.every(Number.isFinite));
+  assert.ok(Array.from(mesh.instanceColor.array.slice(0, mesh.count * 3)).every(value => Number.isFinite(value) && value >= 0));
+  M.enemies.highlight(() => true);
+  assert.equal(outline.count, mesh.count);
+  const matrix = new THREE.Matrix4(), expected = new THREE.Matrix4();
+  for (let i = 0; i < mesh.count; i++) {
+    mesh.getMatrixAt(i, matrix); outline.getMatrixAt(i, expected);
+    assert.ok(Math.abs(matrix.elements[12] - expected.elements[12]) < .001);
+    assert.ok(Math.abs(matrix.elements[14] - expected.elements[14]) < .001);
+  }
 });

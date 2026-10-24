@@ -40,6 +40,9 @@ jobs:
       - name: Test audio scheduling and voice cleanup
         run: node --test scripts/test-audio.mjs
 
+      - name: Test developer console shortcuts and commands
+        run: node --test scripts/test-console.mjs
+
       - name: Test Hearth Tree collision and protection
         run: node --test scripts/test-hearth-tree.mjs
 

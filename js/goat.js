@@ -122,7 +122,8 @@
       const p = curve.getPointAt(t);
       const n = frames.normals[i];
       const b = frames.binormals[i];
-      const radius = THREE.MathUtils.lerp(0.062, 0.009, Math.pow(t, 0.72));
+      const growthRing = 1 + Math.sin(t * Math.PI * 28) * 0.075 * (1 - t);
+      const radius = THREE.MathUtils.lerp(0.062, 0.009, Math.pow(t, 0.72)) * growthRing;
       for (let j = 0; j < radial; j++) {
         const a = (j / radial) * Math.PI * 2;
         const ca = Math.cos(a);
@@ -168,6 +169,16 @@
   const rump = ellipsoid(bodyFur, 0.38, 0.41, 0.4, 20, 14);
   rump.position.set(0, 1.32, -0.45);
   rig.add(rump);
+
+  const brisket = ellipsoid(fur, 0.25, 0.28, 0.25, 16, 12);
+  brisket.position.set(0, 1.08, 0.52);
+  rig.add(brisket);
+  [-0.42, -0.17, 0.08].forEach(function (z, i) {
+    const tuft = ellipsoid(i === 1 ? earFur : fur, 0.12, 0.075, 0.19, 10, 7);
+    tuft.position.set(0, 1.7 - Math.abs(z) * 0.08, z);
+    tuft.rotation.x = -0.18;
+    rig.add(tuft);
+  });
 
   const neckPivot = new THREE.Group();
   neckPivot.position.set(0, 1.53, 0.5);
@@ -236,6 +247,14 @@
     glint.position.set(0.019, 0.03, 0.056);
     glint.castShadow = false;
     eye.add(glint);
+
+    const brow = ellipsoid(earFur, 0.09, 0.025, 0.035, 10, 6);
+    brow.position.set(0, 0.095, 0.027);
+    brow.rotation.z = -sign * 0.12;
+    eye.add(brow);
+    const cheek = ellipsoid(fur, 0.065, 0.075, 0.055, 10, 7);
+    cheek.position.set(-sign * 0.025, -0.09, -0.01);
+    eye.add(cheek);
 
     eyes.push(eye);
   });
@@ -346,13 +365,22 @@
     lower.receiveShadow = true;
     knee.add(lower);
 
-    const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.085, 0.13, 8), hoofMat);
-    hoof.position.y = -0.465;
-    hoof.castShadow = true;
-    hoof.receiveShadow = true;
-    knee.add(hoof);
+    const fetlock = ellipsoid(furLight, 0.075, 0.105, 0.08, 10, 7);
+    fetlock.position.set(0, -0.35, -0.015);
+    knee.add(fetlock);
+    const ankle = new THREE.Group();
+    ankle.position.y = -0.465;
+    knee.add(ankle);
+    [-1, 1].forEach(function (side) {
+      const hoof = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.043, 0.13, 7), hoofMat);
+      hoof.position.set(side * 0.041, 0, 0.012);
+      hoof.rotation.z = side * 0.045;
+      hoof.castShadow = true;
+      hoof.receiveShadow = true;
+      ankle.add(hoof);
+    });
 
-    legs.push({ hip: hip, knee: knee, front: front, offset: offset, runOffset: runOffset });
+    legs.push({ hip: hip, knee: knee, ankle: ankle, front: front, offset: offset, runOffset: runOffset });
   }
   makeLeg(-0.23, 0.42, true, 0, Math.PI);
   makeLeg(0.23, 0.42, true, Math.PI, Math.PI * 1.5);
@@ -623,13 +651,18 @@
       }
       leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
+      const recovery = Math.max(0, Math.sin(s.walkPhase + leg.offset));
+      const ankleTarget = -kneeTarget * 0.58 + recovery * 0.16 * stride * (1 - swim) + jumpK * 0.22;
+      leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 24, dt);
     }
 
     const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
     const bob = walkBob * (1 - run) + runBob * run;
     rig.position.y = damp(rig.position.y, bob * (1 - swim) - s.landPulse * 0.08 + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
-    rig.position.z = buttPose * 0.18;
+    rig.position.z = damp(rig.position.z, buttPose * 0.18 + run * 0.035, 16, dt);
+    const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.018 * stride * (1 - run);
+    rig.position.x = damp(rig.position.x, weightShift + Math.sign(stompLeg.hip.position.x) * stompLift * 0.025, 12, dt);
     const squash = M.config.reducedMotion ? 0 : s.landPulse;
     rig.scale.set(1 + squash * 0.025, 1 - squash * 0.055, 1 + squash * 0.025);
     const yawDelta = Math.atan2(Math.sin(s.yaw - previousYaw), Math.cos(s.yaw - previousYaw));

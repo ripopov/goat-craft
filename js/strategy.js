@@ -151,6 +151,7 @@
     });
     window.addEventListener('keydown', e => {
       if (e.metaKey || e.altKey || e.ctrlKey) return;
+      if (M.devConsole && M.devConsole.isOpen) return;
       if (e.code === 'KeyT' || e.key.toLowerCase() === 't') {
         e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) setActive(!active); return;
       }

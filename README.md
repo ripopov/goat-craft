@@ -22,6 +22,7 @@ js/core.js          shared config, math helpers, material helper
 js/audio.js         shared WebAudio mixer, smooth sound envelopes, voice cleanup, bleat, hoofbeats, jump/land, headbutt/stomp, pickup, breath and splash sounds
 js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
+js/console.js       / developer console with money and spawn shortcuts
 js/items.js         ten-slot hotbar, block drops, pickup and item stacking
 js/actor-physics.js shared upright body collision, swept movement, wall sliding, support and local overlap recovery
 js/voxel-water.js   queued voxel fluid simulation, downward flow, spreading, containment and draining
@@ -53,6 +54,7 @@ scripts/test-collision.mjs corner escapes, wall seams, corridors, all herd speci
 scripts/test-fluids.mjs source spreading, waterfalls, walls, tunnels, draining and bounded simulation work
 scripts/test-water.mjs  dependency-free terrain, bank leaks, swimming, collision, input and camera regression tests
 scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
+scripts/test-console.mjs keyboard capture, command history and resource/wave console shortcuts
 scripts/test-hearth-tree.mjs  landmark geometry, root collision, clearing terrain, player spawn, placement and reduced-motion checks
 scripts/test-enemies.mjs  routes, jumps, chewing, tree damage, mixed waves, shared cap and loot
 scripts/test-upgrades.mjs training, atomic purchases, individual NPC effects, live combat and collectible coins
@@ -91,6 +93,7 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Music** (top-right button) — toggle the generated folk soundtrack; enabled by default and starts with the first click or keypress permitted by the browser
 - **Sound** (top-right button) — mute/unmute effects independently of music; enabled by default
 - **? Controls** (bottom-left) — open the compact controls guide; Esc closes it
+- **/ / Console** — open a developer console. `money` grants 1000 coins and 1000 of every tower resource; `spawn` starts the next enemy wave immediately; `spawn 10` jumps directly to wave 10 (and lower levels work too). Enter runs a command, Up / Down recalls history, and Esc closes the console.
 
 ### Cannon workshop
 
@@ -168,7 +171,7 @@ Every track has three tiers. Bonuses add within each track, with movement capped
 | Skeleton | 5 | 3 | 1.9 | 1 / 2.6s | 10s | 2 |
 | Stone brute | 8 | 7 | 1.15 | 2 / 3.5s | 7s | 4 |
 
-Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. All types share the arena routes, one-block jumps and live wall collision, with individual body sizes. Their visuals use one bounded instanced draw; fallen bodies do not count toward the live cap.
+Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. All types share the arena routes, one-block jumps and live wall collision, with individual body sizes. Beveled voxel parts, hierarchical joints, species-specific silhouettes, layered faces, clothing, bone and rock details share one bounded instanced draw; fallen bodies do not count toward the live cap.
 
 An enemy watchdog measures meaningful progress rather than animation or tiny jitter. **After 20 simulation seconds without getting closer to the Hearth or advancing along a valid route, the enemy bursts apart and drops its normal collectible coins.** Successful wall breaks and Hearth damage count as progress, so real sieges do not trigger false alarms. The watchdog applies to every species, frees live slots immediately, and does not damage terrain, allies or the Hearth. Its debris shares the bounded death pool and respects reduced motion. Pausing the training menu pauses the watchdog too.
 
@@ -184,7 +187,7 @@ NPC recovery measures progress toward the current walk, hunt, quarry, build, cli
 
 The HUD keeps Hearth health at the upper left, the wave timer at the top center, resources at the upper right, and the hotbar along the bottom. A circular **80m minimap** at the lower left stays centered on the player and points north. A white arrow shows the player and facing, red dots show enemies, green dots show animals, gold dots show dropped coin stacks, and the gold diamond marks the Hearth. Coin dots follow the loot and disappear when collected. Ringed edge markers indicate locations beyond range. The controls guide opens only when requested. The layout adapts to narrow screens without covering the central action.
 
-Goat and herd movement blend through planted-hoof stance and lifted recovery, with turn lean, landing compression and timed attack wind-ups. Builders strike at the moment their block edit happens, and hunters wind up before dealing damage. Zombies blend from shambling to articulated chewing, recoil on hits and briefly collapse when killed; a bounded pool keeps death visuals separate from live enemy counts. Fish bank through turns and vary tail cadence with their speed. Reduced motion suppresses extra leaning, compression, death tumbles and item spins.
+Goat and herd movement blend through planted-hoof stance, ankle articulation and lifted recovery, with breathing, weight shifts, turn lean, landing compression and timed attack wind-ups. Layered fleece, expressive faces, cloven hooves and secondary ear, tail and bell motion give each species a distinct silhouette. Builders strike at the moment their block edit happens, and hunters wind up before dealing damage. Every enemy has hierarchical joints: zombies shamble and reach, skeletons loosen their bone gait, spiders step on eight two-segment legs, and brutes carry their armor with heavy sway. Chewing, recoil and brief collapses remain bounded by the death pool. Fish bank through turns and vary tail cadence with their speed. Reduced motion suppresses extra leaning, compression, death tumbles and item spins.
 
 All sounds are synthesized in-browser; there are no audio files. Zombies have original raspy, vowel-shaped moans, hurt and death cries, dry bites and scraping steps. Herd species have distinct calls, footsteps and jump/landing sounds. Breaking and placing blocks, changing hotbar slots, arriving waves, Hearth damage and defeat also have cues. World effects attenuate with distance and pan relative to the camera; distant events are culled, and crowd sounds are rate limited. Hoof and combat impacts use short, dry transients rather than exaggerated bass slides.
 

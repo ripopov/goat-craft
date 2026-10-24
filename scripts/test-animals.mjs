@@ -70,3 +70,43 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
   }
   assert.ok(M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz), 'missing wall block is rebuilt');
 });
+
+test('player and every NPC rig articulate through walk, airborne and action poses', () => {
+  const { M, input } = game();
+  function finiteRig(root) {
+    root.updateMatrixWorld(true);
+    root.traverse(node => {
+      assert.ok(Number.isFinite(node.position.x + node.position.y + node.position.z));
+      assert.ok(Array.from(node.matrixWorld.elements).every(Number.isFinite));
+    });
+  }
+  input.set(0, 1);
+  for (let i = 0; i < 8; i++) M.goat.update(.05, i * .05);
+  finiteRig(M.goat.group);
+  input.set(0, 0);
+  M.goat.startHeadbutt();
+  M.goat.update(.08, .5);
+  finiteRig(M.goat.group);
+
+  for (const animal of M.animals.list) {
+    assert.equal(animal.parts.legs.length, 4);
+    assert.equal(animal.parts.eyes.length, 2);
+    assert.equal(animal.parts.ears.length, 2);
+    assert.ok(animal.parts.legs.every(leg => leg.ankle && leg.ankle.children.length === 2), animal.species + ' has split articulated hooves');
+    Object.assign(animal.state, { mode: 'walk', speed: animal.def.walkSpeed, grounded: true, wait: 1000, buildTimer: 1000, pitTimer: 1000 });
+    animal.state.target.copy(animal.group.position).add({ x: 0, y: 0, z: 4 });
+    const before = animal.parts.legs[0].hip.rotation.x;
+    M.animals.update(.1, 1);
+    assert.notEqual(animal.parts.legs[0].hip.rotation.x, before, animal.species + ' walk pose changes');
+    animal.state.grounded = false;
+    animal.state.vy = 4;
+    M.animals.update(.1, 1.1);
+    finiteRig(animal.group);
+    animal.state.grounded = true;
+    animal.state.vy = 0;
+    animal.state.mode = 'graze';
+    animal.state.grazeTime = 2;
+    M.animals.update(.2, 1.2);
+    finiteRig(animal.group);
+  }
+});

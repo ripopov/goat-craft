@@ -395,6 +395,7 @@
   // Handle F before the strategic view consumes its gameplay keys. It also
   // lets the player opt out while capture is temporarily suspended.
   window.addEventListener('keydown', function (e) {
+    if (M.devConsole && M.devConsole.isOpen) return;
     if (e.metaKey || e.altKey || e.ctrlKey || !(e.code === 'KeyF' || e.key.toLowerCase() === 'f') || !supportsPointerLock) return;
     e.preventDefault();
     if (e.repeat) return;
@@ -427,6 +428,7 @@
 
   window.addEventListener('keydown', function (e) {
     if (e.metaKey || e.altKey) return;
+    if (M.devConsole && M.devConsole.isOpen) return;
     if (!e.ctrlKey && (e.code === 'KeyQ' || e.key.toLowerCase() === 'q')) {
       e.preventDefault();
       if (!e.repeat && M.upgradeMenu) M.upgradeMenu.toggle();

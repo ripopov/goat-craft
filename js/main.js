@@ -43,6 +43,7 @@
   M.hearthTree.init(scene);
   M.water.init(scene);
   M.ui.init();
+  M.devConsole.init();
   M.items.init(scene);
   M.controls.init(camera);
 

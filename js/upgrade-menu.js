@@ -60,7 +60,7 @@
     M.controls.resumeLook();
   }
   function open() {
-    if (!dialog || dialog.open || M.enemies.getState().defeated) return;
+    if (!dialog || dialog.open || (M.devConsole && M.devConsole.isOpen) || M.enemies.getState().defeated) return;
     previousFocus = document.activeElement;
     nearby = M.upgrades.nearest(); target = nearby || M.upgrades.player;
     M.controls.stopSteering(); M.controls.suspendLook(); M.controls.noteActivity();

@@ -108,20 +108,25 @@
   window.addEventListener('wheel', wakeAudio, { passive: true });
 
   const clock = new THREE.Clock();
-  let elapsed = 0;
+  let elapsed = 0, accumulator = 0;
+  const STEP = 1 / 60;
 
   function frame() {
-    const dt = Math.min(clock.getDelta(), 0.05);
-    elapsed += dt;
-
-    M.goat.update(dt, elapsed);
-    M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
+    const dt = Math.min(clock.getDelta(), 0.1);
+    if (document.hidden) { accumulator = 0; return; }
+    accumulator += dt;
+    while (accumulator + 0.000001 >= STEP) {
+      elapsed += STEP;
+      M.goat.update(STEP, elapsed);
+      M.enemies.update(STEP, elapsed);
+      M.items.update(STEP, elapsed, M.goat.group);
+      M.animals.update(STEP, elapsed, M.goat.group);
+      accumulator -= STEP;
+    }
     M.world.update(M.goat.group.position, dt, elapsed);
-    M.enemies.update(dt, elapsed);
+    M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
-    M.items.update(dt, elapsed, M.goat.group);
-    M.animals.update(dt, elapsed, M.goat.group);
     M.environment.update(camera, M.goat.group, dt, elapsed);
     M.water.update(dt, elapsed, M.goat.group, M.goat.state, camera, M.world);
     M.ui.updateBubble(dt, M.goat.headPivot, camera);

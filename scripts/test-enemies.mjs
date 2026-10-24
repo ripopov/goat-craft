@@ -17,7 +17,7 @@ function harness(realWorld = false) {
   M.ui = { showBubble() {}, setDefense() {} };
   const scene = new THREE.Scene();
   if (realWorld) {
-    ['js/world.js', 'js/hearth-tree.js'].forEach(load);
+    ['js/voxel-water.js', 'js/world.js', 'js/hearth-tree.js'].forEach(load);
     M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
     M.hearthTree.init(scene);
   }

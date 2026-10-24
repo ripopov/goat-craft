@@ -48,7 +48,7 @@
   // stored daylight palette and always restores correctly when resurfacing.
   function update(dt, t, goat, state, camera, world) {
     const position = goat.position;
-    const water = world.waterInfoAtBlock(Math.floor(position.x / world.blockSize), Math.floor(position.z / world.blockSize));
+    const water = world.waterInfoAtBlock(Math.floor(position.x / world.blockSize), Math.floor(position.z / world.blockSize), position.y + 0.1);
     const inWater = !!water && position.y < water.level - 0.1;
     const speed = state.speed;
     wakeTimer -= dt;

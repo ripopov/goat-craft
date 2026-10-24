@@ -365,21 +365,15 @@
   const STEP_CLEARANCE = 0.06;
   const BODY_HEIGHT = 1.9;
 
-  // Collision probes in goat-local space: [side, forward]. Checking only the
-  // centre let the muzzle and chest sink into a block before the goat stopped,
-  // so the footprint reaches out to the nose and around the shoulders.
+  // Goat-local probes: [side, forward, lowest occupied height]. The raised
+  // muzzle and belly can overhang a ledge while the hooves support the body.
   const FOOTPRINT = [
-    [0, 1.25],
-    [0.2, 1.0],
-    [-0.2, 1.0],
-    [0.38, 0.55],
-    [-0.38, 0.55],
-    [0.46, 0],
-    [-0.46, 0],
-    [0, 0],
-    [0.35, -0.55],
-    [-0.35, -0.55],
-    [0, -0.85]
+    [0, 1.25, 1.05], [0.2, 1.0, 0.9], [-0.2, 1.0, 0.9],
+    [0.38, 0.55, 0.65], [-0.38, 0.55, 0.65],
+    [0.46, 0, 0.7], [-0.46, 0, 0.7], [0, 0, 0.7],
+    [0.35, -0.55, 0.65], [-0.35, -0.55, 0.65], [0, -0.85, 0.85],
+    [-0.23, 0.42, STEP_CLEARANCE], [0.23, 0.42, STEP_CLEARANCE],
+    [-0.25, -0.45, STEP_CLEARANCE], [0.25, -0.45, STEP_CLEARANCE]
   ];
   const STOMP_LIFT_END = 0.24;
   const STOMP_IMPACT = 0.36;
@@ -391,7 +385,6 @@
   function canStandAt(x, z, feetY, yaw) {
     const sin = Math.sin(yaw);
     const cos = Math.cos(yaw);
-    const bottom = feetY + STEP_CLEARANCE;
     const top = feetY + BODY_HEIGHT;
 
     for (let i = 0; i < FOOTPRINT.length; i++) {
@@ -399,65 +392,105 @@
       const ahead = FOOTPRINT[i][1];
       const px = x + sin * ahead + cos * side;
       const pz = z + cos * ahead - sin * side;
-      if (worldRef.blockedAt(px, pz, bottom, top)) return false;
+      if (worldRef.blockedAt(px, pz, feetY + FOOTPRINT[i][2], top)) return false;
     }
     return true;
   }
 
+  const FOOT_SUPPORT = [[-0.23, 0.42], [0.23, 0.42], [-0.25, -0.45], [0.25, -0.45], [0, 0]];
+  const safePosition = new THREE.Vector3();
+  let safeYaw = 0, hasSafePosition = false;
+
+  function floorAt(maxY) {
+    const sin = Math.sin(state.yaw), cos = Math.cos(state.yaw);
+    let floor = 0;
+    for (let i = 0; i < FOOT_SUPPORT.length; i++) {
+      const side = FOOT_SUPPORT[i][0], ahead = FOOT_SUPPORT[i][1];
+      floor = Math.max(floor, worldRef.supportHeight(goat.position.x + sin * ahead + cos * side,
+        goat.position.z + cos * ahead - sin * side, maxY));
+    }
+    return floor;
+  }
+
+  function moveVertical(targetY) {
+    const startY = goat.position.y;
+    const steps = Math.max(1, Math.ceil(Math.abs(targetY - startY) / 0.1));
+    for (let i = 1; i <= steps; i++) {
+      const y = startY + (targetY - startY) * i / steps;
+      if (!canStandAt(goat.position.x, goat.position.z, y, state.yaw)) {
+        // Resolve to the contact plane instead of leaving a frame-sized gap.
+        let safe = goat.position.y, blocked = y;
+        for (let j = 0; j < 9; j++) {
+          const mid = (safe + blocked) / 2;
+          if (canStandAt(goat.position.x, goat.position.z, mid, state.yaw)) safe = mid;
+          else blocked = mid;
+        }
+        goat.position.y = safe;
+        return false;
+      }
+      goat.position.y = y;
+    }
+    return true;
+  }
+
+  function face(yaw) {
+    if (canStandAt(goat.position.x, goat.position.z, goat.position.y, yaw)) state.yaw = yaw;
+  }
+
+  function recoverOverlap() {
+    if (canStandAt(goat.position.x, goat.position.z, goat.position.y, state.yaw)) return;
+    // Recover an overlap using the last clear pose, then search nearby clear
+    // spaces. This is a fallback for teleports or externally introduced edits.
+    if (hasSafePosition && goat.position.distanceToSquared(safePosition) < 16 &&
+        canStandAt(safePosition.x, safePosition.z, safePosition.y, safeYaw)) {
+      goat.position.copy(safePosition); state.yaw = safeYaw; state.vy = 0;
+      return;
+    }
+    const x0 = goat.position.x, z0 = goat.position.z, y0 = goat.position.y;
+    for (let distance = 0.15; distance <= 4.1; distance += 0.15) {
+      for (let i = 0; i < 16; i++) {
+        const x = x0 + Math.sin(i * Math.PI / 8) * distance;
+        const z = z0 + Math.cos(i * Math.PI / 8) * distance;
+        if (canStandAt(x, z, y0, state.yaw)) {
+          goat.position.set(x, y0, z); state.vy = 0; return;
+        }
+      }
+    }
+    for (let y = y0 + 0.1; y <= y0 + 8; y += 0.1) {
+      if (canStandAt(x0, z0, y, state.yaw)) { goat.position.y = y; state.vy = 0; state.grounded = false; return; }
+    }
+  }
+
   function moveGoat(dx, dz, yaw) {
-    const feetY = goat.position.y;
-    const x = goat.position.x;
-    const z = goat.position.z;
-
-    if (canStandAt(x + dx, z + dz, feetY, yaw)) {
-      goat.position.x = x + dx;
-      goat.position.z = z + dz;
-      return true;
-    }
-
-    // Surface swimmers can scramble out over a one-block bank. Use a real
-    // jump, not a teleport up the river wall; submerged swimmers cannot climb.
-    if (state.swimming && state.shoreJump <= 0 &&
-        feetY > state.waterLevel - 1.65 &&
-        canStandAt(x + dx, z + dz, feetY + worldRef.blockSize + 0.1, yaw)) {
-      state.shoreJump = 0.45;
-      state.vy = JUMP_SPEED * 0.92;
-      state.grounded = false;
-      state.swimming = false;
-    }
-
-    // slide along the blocking edge
     let moved = false;
-    if (dx !== 0 && canStandAt(x + dx, z, feetY, yaw)) {
-      goat.position.x = x + dx;
-      moved = true;
-    }
-    if (dz !== 0 && canStandAt(goat.position.x, z + dz, feetY, yaw)) {
-      goat.position.z = z + dz;
-      moved = true;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.12));
+    dx /= steps; dz /= steps;
+    for (let i = 0; i < steps; i++) {
+      const p = goat.position;
+      if (canStandAt(p.x + dx, p.z + dz, p.y, yaw)) {
+        p.x += dx; p.z += dz; moved = true; continue;
+      }
+      if (state.swimming && state.shoreJump <= 0 && p.y > state.waterLevel - 1.65 &&
+          canStandAt(p.x + dx, p.z + dz, p.y + worldRef.blockSize + 0.1, yaw)) {
+        state.shoreJump = 0.45; state.vy = JUMP_SPEED * 0.92;
+        state.grounded = false; state.swimming = false;
+      }
+      if (dx !== 0 && canStandAt(p.x + dx, p.z, p.y, yaw)) { p.x += dx; moved = true; }
+      if (dz !== 0 && canStandAt(p.x, p.z + dz, p.y, yaw)) { p.z += dz; moved = true; }
     }
     return moved;
   }
 
-  // A freshly placed block can overlap the muzzle. Back the goat out until
-  // its real collision footprint is clear again.
-  function makeRoomAfterPlacement() {
-    const s = state;
-    const x0 = goat.position.x;
-    const z0 = goat.position.z;
-    if (canStandAt(x0, z0, goat.position.y, s.yaw)) return;
-
-    const backX = -Math.sin(s.yaw);
-    const backZ = -Math.cos(s.yaw);
-    for (let i = 1; i <= 28; i++) {
-      const x = x0 + backX * 0.08 * i;
-      const z = z0 + backZ * 0.08 * i;
-      if (canStandAt(x, z, goat.position.y, s.yaw)) {
-        goat.position.x = x;
-        goat.position.z = z;
-        return;
-      }
-    }
+  function intersectsBlock(bx, by, bz) {
+    if (!state) return false;
+    const size = worldRef.blockSize, p = goat.position;
+    if ((by + 1) * size <= p.y + 0.01 || by * size >= p.y + BODY_HEIGHT) return false;
+    const sin = Math.sin(state.yaw), cos = Math.cos(state.yaw);
+    return FOOTPRINT.some(function (v) {
+      const x = p.x + sin * v[1] + cos * v[0], z = p.z + cos * v[1] - sin * v[0];
+      return x >= bx * size - 0.03 && x <= (bx + 1) * size + 0.03 &&
+        z >= bz * size - 0.03 && z <= (bz + 1) * size + 0.03;
+    });
   }
 
   function pickTarget() {
@@ -472,20 +505,21 @@
 
   function updateGoat(dt, t) {
     const s = state;
+    recoverOverlap();
 
     const input = controlsRef.getMovement(cameraRef);
     const steering = input.lengthSq() > 0;
     if (controlsRef.firstPerson) {
       // Face the view even when strafing or backing up, and never wander
       // autonomously while the player is looking through the goat's eyes.
-      s.yaw = controlsRef.getFacingYaw();
+      face(controlsRef.getFacingYaw());
       s.manualHold = 3;
     }
     let moving = false;
     s.shoreJump = Math.max(0, s.shoreJump - dt);
     const water = worldRef.waterInfoAtBlock(
       Math.floor(goat.position.x / worldRef.blockSize),
-      Math.floor(goat.position.z / worldRef.blockSize)
+      Math.floor(goat.position.z / worldRef.blockSize), goat.position.y + 0.1
     );
     s.waterLevel = water ? water.level : 0;
     s.inWater = !!water && goat.position.y < water.level - 0.08;
@@ -504,7 +538,7 @@
       const running = controlsRef.running;
       s.manualHold = 3.0;
       s.mode = 'manual';
-      if (!controlsRef.firstPerson) s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
+      if (!controlsRef.firstPerson) face(turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7));
       s.speed = damp(s.speed, s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8), s.swimming ? 3.5 : 5, dt);
 
       const mx = (controlsRef.firstPerson ? input.x : Math.sin(s.yaw)) * s.speed * dt;
@@ -529,7 +563,7 @@
         s.mode = 'idle';
         s.wait = rand(2.5, 6.0);
       } else {
-        s.yaw = turnToward(s.yaw, Math.atan2(dx, dz), dt * 4.5);
+        face(turnToward(s.yaw, Math.atan2(dx, dz), dt * 4.5));
         s.speed = damp(s.speed, clamp(1.6 + dist * 1.3, 1.6, 3.4), 3.0, dt);
 
         const mx = Math.sin(s.yaw) * s.speed * dt;
@@ -562,11 +596,7 @@
     const run = s.runBlend;
 
     // ---- vertical physics: gravity, jumps, and block tops ----
-    let groundY = worldRef.supportHeight(
-      goat.position.x,
-      goat.position.z,
-      goat.position.y + STEP_CLEARANCE
-    );
+    let groundY = floorAt(goat.position.y + STEP_CLEARANCE);
 
     if (s.swimming) {
       // Drag dissipates entry momentum; a gentle buoyancy spring holds the
@@ -581,17 +611,7 @@
       const prevY = goat.position.y;
       const nextY = Math.max(groundY, Math.min(surfaceFeet + 0.08, prevY + s.vy * dt));
       if ((s.vy < 0 && nextY <= groundY) || (s.vy > 0 && nextY >= surfaceFeet + 0.08)) s.vy = 0;
-      // Small swept steps prevent fast entry/diving from tunnelling through
-      // beds, placed blocks or low ceilings, including the nose footprint.
-      const steps = Math.max(1, Math.ceil(Math.abs(nextY - prevY) / 0.12));
-      for (let i = 1; i <= steps; i++) {
-        const y = prevY + (nextY - prevY) * i / steps;
-        if (!canStandAt(goat.position.x, goat.position.z, y, s.yaw)) {
-          s.vy = 0;
-          break;
-        }
-        goat.position.y = y;
-      }
+      if (!moveVertical(nextY)) s.vy = 0;
     } else {
       if (s.grounded) {
         if (goat.position.y > groundY + 0.02) {
@@ -606,20 +626,15 @@
 
       if (!s.grounded) {
         const prevY = goat.position.y;
-        s.vy -= GRAVITY * dt;
-        goat.position.y += s.vy * dt;
-        groundY = worldRef.supportHeight(
-          goat.position.x,
-          goat.position.z,
-          Math.max(prevY, goat.position.y)
-        );
-
-        if (s.vy <= 0 && goat.position.y <= groundY) {
-          const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
-          goat.position.y = groundY;
-          s.vy = 0;
-          s.grounded = true;
-          s.jumps = 0;
+        s.vy = Math.max(-38, s.vy - GRAVITY * dt);
+        const nextY = prevY + s.vy * dt;
+        groundY = floorAt(Math.max(prevY, nextY) + 0.001);
+        const landing = s.vy <= 0 && nextY <= groundY;
+        const impact = clamp(Math.abs(s.vy) / 10, 0.3, 1.2);
+        const clear = moveVertical(landing ? groundY : nextY);
+        if (!clear) s.vy = 0;
+        if ((landing && clear) || (!clear && nextY < prevY)) {
+          s.vy = 0; s.grounded = true; s.jumps = 0;
           s.footTimer = Math.max(s.footTimer, 0.14);
           if (!s.inWater) audioRef.land(impact);
         }
@@ -726,7 +741,7 @@
       const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
       if (carrying) {
         if (M.items.placeSelectedBlock()) {
-          makeRoomAfterPlacement();
+          recoverOverlap();
           audioRef.thud();
         }
       } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false)) {
@@ -796,6 +811,9 @@
 
     bell.rotation.z = Math.sin(t * 2.5) * 0.12 + s.speed * Math.sin(s.walkPhase) * 0.1;
     bell.rotation.x = Math.sin(t * 2.1 + 1) * 0.1;
+    if (canStandAt(goat.position.x, goat.position.z, goat.position.y, s.yaw)) {
+      safePosition.copy(goat.position); safeYaw = s.yaw; hasSafePosition = true;
+    }
   }
 
   function jump() {
@@ -886,6 +904,7 @@
       stompCooldown: 0
     };
 
+    hasSafePosition = false;
     M.goat.group = goat;
     M.goat.headPivot = headPivot;
     M.goat.state = state;
@@ -898,6 +917,7 @@
     startHeadbutt: startHeadbutt,
     startStomp: startStomp,
     greet: greet,
+    intersectsBlock: intersectsBlock,
     group: null,
     headPivot: null,
     state: null

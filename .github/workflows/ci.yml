@@ -31,6 +31,9 @@ jobs:
       - name: Test water generation and swimming
         run: node --test scripts/test-water.mjs
 
+      - name: Test voxel water flow and containment
+        run: node --test scripts/test-fluids.mjs
+
       - name: Test audio scheduling and voice cleanup
         run: node --test scripts/test-audio.mjs
 

@@ -79,8 +79,8 @@
   }
 
   // Place the carried block in the cell the goat is facing. The block is set
-  // on top of whatever solid is already there (ground, stone, a low wall), and
-  // the goat backs out if the new block overlaps its body.
+  // on top of whatever solid is already there (ground, stone, a low wall).
+  // Occupied cells are rejected before consuming the carried block.
   function placeSelectedBlock() {
     const kind = selectedBlockKind();
     if (!kind || !M.world || !M.world.placeBlock || !M.world.landingHeight || !M.goat || !M.goat.group) {
@@ -384,7 +384,15 @@
       const horiz = Math.hypot(dx, dz);
 
       // Pull nearby drops toward the goat's chest so they are easy to collect.
-      if (horiz < PICKUP_RADIUS && Math.abs(dy) < PICKUP_HEIGHT) {
+      let reachable = horiz < PICKUP_RADIUS && Math.abs(dy) < PICKUP_HEIGHT;
+      if (reachable && M.world.blockedAt) {
+        const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.2));
+        for (let j = 1; j < steps; j++) {
+          const k = j / steps, y = mesh.position.y + dy * k;
+          if (M.world.blockedAt(mesh.position.x + dx * k, mesh.position.z + dz * k, y - 0.03, y + 0.03)) { reachable = false; break; }
+        }
+      }
+      if (reachable) {
         const dist = Math.hypot(dx, dy, dz);
         // If the goat moves away mid-pull, let the drop fall normally again.
         u.landed = false;
@@ -405,6 +413,10 @@
         continue;
       }
 
+      if (u.landed) {
+        const floor = M.world.landingHeight(mesh.position.x, mesh.position.z, u.baseY - DROP_HALF + 0.03) + DROP_HALF;
+        if (floor < u.baseY - 0.05) { u.landed = false; u.vy = 0; }
+      }
       if (!u.landed) {
         u.vy -= 22 * dt;
         const prevY = mesh.position.y;
@@ -412,7 +424,7 @@
         const floor = M.world.landingHeight(
           mesh.position.x,
           mesh.position.z,
-          Math.max(prevY, mesh.position.y)
+          Math.max(prevY, mesh.position.y) - DROP_HALF + 0.001
         ) + DROP_HALF;
 
         if (u.vy <= 0 && mesh.position.y <= floor) {

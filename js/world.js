@@ -186,6 +186,7 @@
       }
     }
 
+    if (pondPlanCache.size >= 1024) pondPlanCache.delete(pondPlanCache.keys().next().value);
     pondPlanCache.set(key, plan);
     return plan;
   }
@@ -288,26 +289,106 @@
     return generatedColumn(bx, bz).height;
   }
 
-  // A common water-column query drives terrain, swimming, camera and effects.
-  // Banks are dry even when they belong to a water body's shaping area.
-  function waterInfoAtBlock(bx, bz) {
-    const plan = generatedColumn(bx, bz).plan;
-    if (!plan) return null;
-    // Follow terrain edits as well as the procedural basin, so digging a
-    // deeper hole raises the measured water depth and the water sides extend
-    // down to the new floor.
-    const top = (topSolidY(bx, bz) + 1) * BLOCK;
-    const level = plan.waterLevel;
-    if (top >= level - 0.02) return null;
-    return {
-      plan: plan,
-      type: plan.type,
-      level: level,
-      top: top,
-      depth: level - top,
-      bx: bx,
-      bz: bz
+  const dirtyWaterChunks = new Set();
+  const dirtyTerrainChunks = new Set(), dirtyPropChunks = new Set();
+  const waterSpanCache = new Map();
+  const fluid = M.voxelWater.create({
+    source: naturalWaterCell,
+    blocked: function (bx, by, bz) {
+      return !!solidKindAt(bx, by, bz) || !!(M.hearthTree && M.hearthTree.intersectsBlock(bx, by, bz));
+    },
+    active: function (bx, bz) { return !!chunkForBlock(bx, bz); },
+    changed: function (bx, by, bz) { markWaterDirty(bx, bz); }
+  });
+
+  function naturalWaterCell(bx, by, bz) {
+    const column = generatedColumn(bx, bz);
+    if (!column.plan || by < column.height || by * BLOCK >= column.plan.waterLevel) return null;
+    if (!column.waterCells) column.waterCells = [];
+    if (!column.waterCells[by]) column.waterCells[by] = {
+      fill: Math.min(1, column.plan.waterLevel / BLOCK - by), source: true, plan: column.plan
     };
+    return column.waterCells[by];
+  }
+
+  // Separate spans allow water below bridges and in mined tunnels. Solid
+  // blocks displace water immediately; only the opened space fills on ticks.
+  function waterSpansAtBlock(bx, bz) {
+    const id = bx + ',' + bz;
+    if (waterSpanCache.has(id)) return waterSpanCache.get(id);
+    const column = generatedColumn(bx, bz);
+    let highest = column.plan ? Math.ceil(column.plan.waterLevel / BLOCK) - 1 : -1;
+    const heights = fluid.heights(bx, bz);
+    if (heights) heights.forEach(function (y) { highest = Math.max(highest, y); });
+    const spans = [];
+    let span = null;
+    for (let by = 0; by <= highest; by++) {
+      const cell = fluid.get(bx, by, bz);
+      if (!cell) { span = null; continue; }
+      const bottom = by * BLOCK, level = bottom + cell.fill * BLOCK;
+      if (span && Math.abs(span.level - bottom) < 0.002) {
+        span.level = level; span.depth = level - span.top;
+      } else {
+        const plan = cell.plan || column.plan;
+        span = { plan: plan, type: plan ? plan.type : 'flow', level: level,
+          top: bottom, depth: level - bottom, bx: bx, bz: bz, flowing: !cell.source };
+        spans.push(span);
+      }
+    }
+    if (waterSpanCache.size >= 65536) waterSpanCache.delete(waterSpanCache.keys().next().value);
+    waterSpanCache.set(id, spans);
+    return spans;
+  }
+
+  function waterInfoAtBlock(bx, bz, feetY) {
+    const spans = waterSpansAtBlock(bx, bz);
+    for (let i = spans.length - 1; i >= 0; i--) {
+      if (feetY === undefined || (feetY >= spans[i].top - 0.1 && feetY < spans[i].level)) return spans[i];
+    }
+    return null;
+  }
+
+  function markWaterDirty(bx, bz) {
+    waterSpanCache.delete(bx + ',' + bz);
+    const cx = Math.floor(bx / CHUNK_BLOCKS), cz = Math.floor(bz / CHUNK_BLOCKS);
+    dirtyWaterChunks.add(cx + ',' + cz);
+    if (bx % CHUNK_BLOCKS === 0) dirtyWaterChunks.add((cx - 1) + ',' + cz);
+    if ((bx + 1) % CHUNK_BLOCKS === 0) dirtyWaterChunks.add((cx + 1) + ',' + cz);
+    if (bz % CHUNK_BLOCKS === 0) dirtyWaterChunks.add(cx + ',' + (cz - 1));
+    if ((bz + 1) % CHUNK_BLOCKS === 0) dirtyWaterChunks.add(cx + ',' + (cz + 1));
+  }
+
+  function wakeWater(bx, by, bz) {
+    fluid.wake(bx, by, bz);
+    markWaterDirty(bx, bz);
+  }
+
+  function activateChunkWater(cx, cz) {
+    for (let z = cz * CHUNK_BLOCKS; z < (cz + 1) * CHUNK_BLOCKS; z++) {
+      for (let x = cx * CHUNK_BLOCKS; x < (cx + 1) * CHUNK_BLOCKS; x++) {
+        const column = generatedColumn(x, z);
+        const heights = fluid.heights(x, z);
+        if (heights) heights.forEach(function (y) { fluid.wake(x, y, z); });
+        // Only shorelines and chunk seams need waking, not every sea cell.
+        const max = column.plan ? Math.ceil(column.plan.waterLevel / BLOCK) - 1 : -1;
+        for (let y = column.height; y <= max; y++) {
+          if (!fluid.get(x, y, z)) continue;
+          const neighbours = [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]];
+          for (let i = 0; i < 4; i++) {
+            const n = neighbours[i];
+            if (!naturalWaterCell(n[0], y, n[1]) && !solidKindAt(n[0], y, n[1])) fluid.enqueue(n[0], y, n[1]);
+          }
+        }
+        if (x % CHUNK_BLOCKS === 0 || (x + 1) % CHUNK_BLOCKS === 0 ||
+            z % CHUNK_BLOCKS === 0 || (z + 1) % CHUNK_BLOCKS === 0) {
+          const neighbours = [[x - 1, z], [x + 1, z], [x, z - 1], [x, z + 1]];
+          for (let y = 0; y <= Math.max(max, 7); y++) {
+            if (solidKindAt(x, y, z) || fluid.get(x, y, z)) continue;
+            if (neighbours.some(function (n) { return !!fluid.get(n[0], y, n[1]); })) fluid.wake(x, y, z);
+          }
+        }
+      }
+    }
   }
 
   function isWaterColumn(bx, bz) {
@@ -324,11 +405,8 @@
   }
 
   function waterAt(x, y, z) {
-    const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
-    if (!info || y < info.top || y >= info.level) return null;
-    const by = Math.floor(y / BLOCK);
-    if (solidKindAt(info.bx, by, info.bz)) return null;
-    return info;
+    const info = waterInfoAtBlock(Math.floor(x / BLOCK), Math.floor(z / BLOCK), y);
+    return info && y >= info.top && y < info.level ? info : null;
   }
 
   function waterDepthAt(x, z) {
@@ -394,7 +472,7 @@
 
   const removedBlocks = new Set();
   const removedPropBlocks = new Set();
-  const placedBlocks = new Map();
+  const placedBlocks = new Map(), placedByChunk = new Map();
   let revision = 0;
   const navigationChanges = [];
   function recordChange(bx, bz) {
@@ -441,6 +519,8 @@
 
   function propKindAt(bx, by, bz) {
     if (by < 0) return null;
+    const placed = placedBlocks.get(blockKey(bx, by, bz));
+    if (placed) return placed;
     const ch = chunkForBlock(bx, bz);
     if (!ch || !ch.propBlocks) return null;
     return ch.propBlocks.get(blockKey(bx, by, bz)) || null;
@@ -492,76 +572,26 @@
     return placedBlocks.has(blockKey(bx, by, bz));
   }
 
-  // Does any solid terrain or prop block intersect the vertical slice from minY
-  // to maxY at this point? Props above the goat (canopies) are ignored.
+  // Collision uses actual occupied cells, including cavities below terrain.
   function blockedAt(x, z, minY, maxY) {
-    const bx = Math.floor(x / BLOCK);
-    const bz = Math.floor(z / BLOCK);
-
-    if (surfaceHeight(x, z) > minY) return true;
-    if (M.hearthTree && M.hearthTree.blockedAt(x, z, minY, maxY)) return true;
-
-    const ch = chunkForBlock(bx, bz);
-    if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return false;
-
-    const firstBy = Math.max(0, Math.floor(minY / BLOCK) - 1);
-    const lastBy = Math.floor(maxY / BLOCK);
-    for (let by = firstBy; by <= lastBy; by++) {
-      const bottom = by * BLOCK;
-      const top = bottom + BLOCK;
-      if (top <= minY) continue;
-      if (bottom >= maxY) break;
-      if (ch.propBlocks.has(blockKey(bx, by, bz))) return true;
-    }
-    return false;
+    return !!navigationBlockedAt(x, z, minY, maxY);
   }
 
-  // Highest solid top at or below maxY. Leaving the ceiling below a canopy
-  // keeps the goat on the ground while it walks under the tree.
+  // A ceiling is never a floor. Search only below the actor's swept feet.
   function supportHeight(x, z, maxY) {
-    const bx = Math.floor(x / BLOCK);
-    const bz = Math.floor(z / BLOCK);
-    let best = surfaceHeight(x, z);
-    if (best > maxY + 0.001) return best;
-    if (M.hearthTree) best = Math.max(best, M.hearthTree.supportHeight(x, z, maxY));
-
-    const ch = chunkForBlock(bx, bz);
-    if (!ch || !ch.propBlocks || ch.propBlocks.size === 0) return best;
-
-    const topBy = Math.floor(maxY / BLOCK) - 1;
-    for (let by = topBy; by >= 0; by--) {
-      if (ch.propBlocks.has(blockKey(bx, by, bz))) {
-        const top = (by + 1) * BLOCK;
-        if (top > best) best = top;
-        break;
-      }
-    }
-    return best;
+    return landingHeight(x, z, maxY);
   }
 
-  // Highest actual solid top at or below maxY, including blocks inside a
-  // cavity. Item drops use this instead of supportHeight because a drop can
-  // sit in a hole cut into a taller terrain column.
   function landingHeight(x, z, maxY) {
-    const bx = Math.floor(x / BLOCK);
-    const bz = Math.floor(z / BLOCK);
-    const ch = chunkForBlock(bx, bz);
-    const topBy = Math.floor(maxY / BLOCK) - 1;
+    const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
     const landmarkTop = M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
-
-    for (let by = topBy; by >= 0; by--) {
-      if (ch && ch.propBlocks && ch.propBlocks.has(blockKey(bx, by, bz))) {
-        return Math.max(landmarkTop, (by + 1) * BLOCK);
-      }
-      if (isSolidBlock(bx, by, bz)) {
-        return Math.max(landmarkTop, (by + 1) * BLOCK);
-      }
+    for (let by = Math.floor((maxY + 0.001) / BLOCK) - 1; by >= 0; by--) {
+      if (solidKindAt(bx, by, bz)) return Math.max(landmarkTop, (by + 1) * BLOCK);
     }
     return landmarkTop;
   }
 
-  // Exact voxel collision for zombie navigation, including mined tunnels.
-  // The goat's surface-based movement remains independent of this query.
+  // Shared exact voxel collision for actors, navigation and the camera.
   function navigationBlockedAt(x, z, minY, maxY, includeTree) {
     const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
     const first = Math.floor((minY + 0.001) / BLOCK);
@@ -926,41 +956,29 @@
 
   function buildWaterGeometry(cx, cz) {
     const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
-    const originBX = cx * CHUNK_BLOCKS;
-    const originBZ = cz * CHUNK_BLOCKS;
-
     for (let bz = 0; bz < CHUNK_BLOCKS; bz++) {
       for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
-        const worldBX = originBX + bx;
-        const worldBZ = originBZ + bz;
-        const water = waterInfoAtBlock(worldBX, worldBZ);
-        if (!water) continue;
-
-        const x = bx * BLOCK;
-        const z = bz * BLOCK;
-        const level = water.level;
-        const shade = 0.97 - clamp(water.depth / 12, 0, 1) * 0.2 + hash01(worldBX, worldBZ) * 0.035;
-        pushWaterTop(data, x, level, z, shade);
-
-        const neighbours = [
-          [worldBX - 1, worldBZ],
-          [worldBX + 1, worldBZ],
-          [worldBX, worldBZ - 1],
-          [worldBX, worldBZ + 1]
-        ];
-        const bottom = water.top + 0.015;
-        for (let dir = 0; dir < 4; dir++) {
-          const n = waterInfoAtBlock(neighbours[dir][0], neighbours[dir][1]);
-          if (n && Math.abs(n.level - level) < 0.01) continue;
-          if (level - bottom > 0.02) {
-            pushWaterSide(data, dir, x, z, bottom, level, shade * 0.78);
+        const wx = cx * CHUNK_BLOCKS + bx, wz = cz * CHUNK_BLOCKS + bz;
+        const spans = waterSpansAtBlock(wx, wz);
+        for (let i = 0; i < spans.length; i++) {
+          const water = spans[i], x = bx * BLOCK, z = bz * BLOCK;
+          const shade = 0.97 - clamp(water.depth / 12, 0, 1) * 0.2 + hash01(wx, wz) * 0.035;
+          if (!solidKindAt(wx, Math.floor((water.level + 0.001) / BLOCK), wz)) pushWaterTop(data, x, water.level, z, shade);
+          const neighbours = [[wx - 1, wz], [wx + 1, wz], [wx, wz - 1], [wx, wz + 1]];
+          for (let by = Math.floor(water.top / BLOCK); by * BLOCK < water.level; by++) {
+            const bottom = by * BLOCK, top = Math.min(water.level, bottom + BLOCK);
+            for (let dir = 0; dir < 4; dir++) {
+              const n = neighbours[dir];
+              if (solidKindAt(n[0], by, n[1])) continue;
+              const other = fluid.get(n[0], by, n[1]);
+              const low = other ? Math.max(bottom, bottom + other.fill * BLOCK) : bottom;
+              if (top > low + 0.002) pushWaterSide(data, dir, x, z, low, top, shade * 0.78);
+            }
           }
         }
       }
     }
-
-    if (data.idx.length === 0) return null;
-    return dataToGeometry(data, false);
+    return data.idx.length ? dataToGeometry(data, false) : null;
   }
 
   function dataToGeometry(data, withBend) {
@@ -1196,7 +1214,7 @@
 
   function buildPropsGeometry(cx, cz) {
     const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
-    const blocks = new Map();
+    const blocks = new Map(), faces = new Map();
     const rnd = mulberry32(hashInt(cx, cz, 0x51ed270b));
     const trees = [];
 
@@ -1207,7 +1225,8 @@
       const key = blockKey(bx, by, bz);
       if (!force && (removedPropBlocks.has(key) || isStartingClearing(bx, bz))) return;
       blocks.set(key, kind);
-      pushBlock(data, x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide);
+      faces.set(key, { bx: bx, by: by, bz: bz, x: x, y: y, z: z,
+        top: topTile, side: sideTile, bottom: bottomTile, shadeTop: shadeTop, shadeSide: shadeSide });
     }
 
     let treeCount = rnd() < 0.72 ? 1 : 0;
@@ -1271,7 +1290,8 @@
 
     // Player-placed blocks are kept separately from procedural props, but they
     // render and collide through the same per-chunk prop map.
-    placedBlocks.forEach(function (kind, key) {
+    const localPlaced = placedByChunk.get(cx + ',' + cz);
+    if (localPlaced) localPlaced.forEach(function (kind, key) {
       const parts = key.split(',');
       const bx = +parts[0];
       const by = +parts[1];
@@ -1290,7 +1310,18 @@
       );
     });
 
-    if (data.idx.length === 0) return null;
+    faces.forEach(function (b) {
+      function occupied(dx, dy, dz) {
+        return blocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || isSolidBlock(b.bx + dx, b.by + dy, b.bz + dz);
+      }
+      if (!occupied(0, 1, 0)) pushTop(data, b.x, b.y + BLOCK, b.z, b.top, b.shadeTop);
+      if (!occupied(0, -1, 0)) pushBottom(data, b.x, b.y, b.z, b.bottom, b.shadeSide);
+      if (!occupied(-1, 0, 0)) pushSide(data, 0, b.x, b.z, b.y, b.y + BLOCK, b.side, b.shadeSide);
+      if (!occupied(1, 0, 0)) pushSide(data, 1, b.x, b.z, b.y, b.y + BLOCK, b.side, b.shadeSide);
+      if (!occupied(0, 0, -1)) pushSide(data, 2, b.x, b.z, b.y, b.y + BLOCK, b.side, b.shadeSide);
+      if (!occupied(0, 0, 1)) pushSide(data, 3, b.x, b.z, b.y, b.y + BLOCK, b.side, b.shadeSide);
+    });
+    if (!blocks.size) return null;
     return { geometry: dataToGeometry(data, false), blocks: blocks };
   }
 
@@ -1335,7 +1366,6 @@
       const bz = Math.floor(rnd() * CHUNK_BLOCKS);
       const worldBX = cx * CHUNK_BLOCKS + bx;
       const worldBZ = cz * CHUNK_BLOCKS + bz;
-      if (waterInfoAtBlock(worldBX, worldBZ)) continue;
       const y = heightBlocks(worldBX, worldBZ) * BLOCK + 0.02;
       const x = bx * BLOCK + BLOCK * 0.5 + (rnd() - 0.5) * BLOCK * 0.7;
       const z = bz * BLOCK + BLOCK * 0.5 + (rnd() - 0.5) * BLOCK * 0.7;
@@ -1345,6 +1375,8 @@
       const h = type === P_GRASS ? 0.9 + rnd() * 0.3 : 0.9 + rnd() * 0.3;
       const angle = rnd() * Math.PI;
 
+      if (waterInfoAtBlock(worldBX, worldBZ) || topSolidY(worldBX, worldBZ) !== heightBlocks(worldBX, worldBZ) - 1 ||
+          propKindAt(worldBX, heightBlocks(worldBX, worldBZ), worldBZ)) continue;
       pushPlant(data, x, z, y, w, h, angle, type);
       pushPlant(data, x, z, y, w, h, angle + Math.PI / 2, type);
     }
@@ -1407,6 +1439,7 @@
       cx: cx,
       cz: cz
     });
+    activateChunkWater(cx, cz);
   }
 
   const chunkOffsets = [];
@@ -1420,34 +1453,35 @@
   });
 
 
+  let streamX = NaN, streamZ = NaN, streamQueue = [], streamHead = 0;
   function updateChunks(player) {
-    const pcx = Math.floor(player.x / CHUNK_SIZE);
-    const pcz = Math.floor(player.z / CHUNK_SIZE);
-    let built = 0;
-
-    for (let i = 0; i < chunkOffsets.length && built < 2; i++) {
-      const cx = pcx + chunkOffsets[i][0];
-      const cz = pcz + chunkOffsets[i][1];
-      if (!chunks.has(cx + ',' + cz)) {
-        buildChunk(cx, cz);
-        built++;
-      }
+    const pcx = Math.floor(player.x / CHUNK_SIZE), pcz = Math.floor(player.z / CHUNK_SIZE);
+    if (pcx !== streamX || pcz !== streamZ) {
+      streamX = pcx; streamZ = pcz; streamHead = 0;
+      streamQueue = chunkOffsets.map(function (offset) { return [pcx + offset[0], pcz + offset[1]]; });
+      chunks.forEach(function (ch, key) {
+        const home = M.hearthTree && M.hearthTree.position;
+        const retained = home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
+          Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
+        if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
+          worldGroup.remove(ch.group);
+          ch.terrain.geometry.dispose();
+          if (ch.props) ch.props.geometry.dispose();
+          if (ch.plants) ch.plants.geometry.dispose();
+          if (ch.water) ch.water.geometry.dispose();
+          chunks.delete(key);
+          for (let x = ch.cx * CHUNK_BLOCKS; x < (ch.cx + 1) * CHUNK_BLOCKS; x++) {
+            for (let z = ch.cz * CHUNK_BLOCKS; z < (ch.cz + 1) * CHUNK_BLOCKS; z++) fluid.forgetColumn(x, z);
+          }
+        }
+      });
     }
-
-    chunks.forEach(function (ch, key) {
-      // Keep the defense arena simulated even when the goat explores away.
-      const home = M.hearthTree && M.hearthTree.position;
-      const retained = home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
-        Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
-      if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
-        worldGroup.remove(ch.group);
-        ch.terrain.geometry.dispose();
-        if (ch.props) ch.props.geometry.dispose();
-        if (ch.plants) ch.plants.geometry.dispose();
-        if (ch.water) ch.water.geometry.dispose();
-        chunks.delete(key);
-      }
-    });
+    while (streamHead < streamQueue.length) {
+      const next = streamQueue[streamHead++];
+      if (chunks.has(next[0] + ',' + next[1])) continue;
+      buildChunk(next[0], next[1]);
+      break;
+    }
   }
 
   function rebuildChunkWater(cx, cz) {
@@ -1459,6 +1493,7 @@
       ch.water = null;
     }
     const geo = buildWaterGeometry(cx, cz);
+    rebuildChunkPlants(ch);
     if (!geo) return;
     ch.water = new THREE.Mesh(geo, waterMat);
     ch.water.receiveShadow = true;
@@ -1466,12 +1501,21 @@
     ch.group.add(ch.water);
   }
 
+  function rebuildChunkPlants(ch) {
+    if (ch.plants) { ch.group.remove(ch.plants); ch.plants.geometry.dispose(); ch.plants = null; }
+    const geometry = buildPlantsGeometry(ch.cx, ch.cz);
+    if (geometry) { ch.plants = new THREE.Mesh(geometry, plantMat); ch.plants.receiveShadow = true; ch.group.add(ch.plants); }
+  }
+
   function rebuildChunkTerrain(cx, cz) {
     const ch = chunks.get(cx + ',' + cz);
     if (!ch) return;
     ch.terrain.geometry.dispose();
     ch.terrain.geometry = buildTerrainGeometry(cx, cz);
-    rebuildChunkWater(cx, cz);
+    // Removing terrain can expose a previously hidden placed-block face.
+    if (!dirtyPropChunks.has(cx + ',' + cz)) rebuildChunkProps(cx, cz);
+    rebuildChunkPlants(ch);
+    dirtyWaterChunks.add(cx + ',' + cz);
   }
 
   function rebuildChunkProps(cx, cz) {
@@ -1487,6 +1531,7 @@
     const info = buildPropsGeometry(cx, cz);
     if (!info) {
       ch.propBlocks = new Map();
+      rebuildChunkPlants(ch);
       return;
     }
 
@@ -1495,6 +1540,7 @@
     ch.props.receiveShadow = true;
     ch.group.add(ch.props);
     ch.propBlocks = info.blocks;
+    rebuildChunkPlants(ch);
   }
 
   function rebuildTerrainAround(bx, bz) {
@@ -1512,16 +1558,22 @@
 
     for (let i = 0; i < xs.length; i++) {
       for (let j = 0; j < zs.length; j++) {
-        rebuildChunkTerrain(xs[i], zs[j]);
+        dirtyTerrainChunks.add(xs[i] + ',' + zs[j]);
       }
     }
   }
 
   function removePropBlock(bx, by, bz) {
     const key = blockKey(bx, by, bz);
+    const ch = chunkForBlock(bx, bz);
+    if (ch) ch.propBlocks.delete(key);
+    wakeWater(bx, by, bz);
     recordChange(bx, bz);
     if (placedBlocks.has(key)) {
       placedBlocks.delete(key);
+      const id = Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS);
+      const local = placedByChunk.get(id);
+      if (local) { local.delete(key); if (!local.size) placedByChunk.delete(id); }
     } else {
       removedPropBlocks.add(key);
     }
@@ -1529,7 +1581,15 @@
 
   function canPlaceBlock(bx, by, bz) {
     if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
-    if (by < 0) return false;
+    if (by < 0 || by > 127) return false;
+    if (M.goat && M.goat.intersectsBlock && M.goat.intersectsBlock(bx, by, bz)) return false;
+    if (M.animals && M.animals.intersectsBlock && M.animals.intersectsBlock(bx, by, bz)) return false;
+    if (M.enemies && M.enemies.zombies.some(function (zombie) {
+      const p = zombie.position;
+      return p.x + 0.45 > bx * BLOCK && p.x - 0.45 < (bx + 1) * BLOCK &&
+        p.z + 0.45 > bz * BLOCK && p.z - 0.45 < (bz + 1) * BLOCK &&
+        p.y + 2.8 > by * BLOCK && p.y < (by + 1) * BLOCK;
+    })) return false;
     if (M.hearthTree && M.hearthTree.intersectsBlock(bx, by, bz)) return false;
     if (!chunkForBlock(bx, bz)) return false;
     if (isSolidBlock(bx, by, bz)) return false;
@@ -1542,11 +1602,13 @@
 
     const key = blockKey(bx, by, bz);
     placedBlocks.set(key, kind);
+    const id = Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS);
+    if (!placedByChunk.has(id)) placedByChunk.set(id, new Map());
+    placedByChunk.get(id).set(key, kind);
+    chunkForBlock(bx, bz).propBlocks.set(key, kind);
     recordChange(bx, bz);
-    rebuildChunkProps(
-      Math.floor(bx / CHUNK_BLOCKS),
-      Math.floor(bz / CHUNK_BLOCKS)
-    );
+    wakeWater(bx, by, bz);
+    dirtyPropChunks.add(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS));
     return true;
   }
 
@@ -1593,6 +1655,7 @@
         vel: new THREE.Vector3(rand(-2.2, 2.2), rand(1.8, 4.8), rand(-2.2, 2.2)),
         spin: new THREE.Vector3(rand(-8, 8), rand(-8, 8), rand(-8, 8))
       };
+      if (debris.length >= 128) sceneRef.remove(debris.shift());
       sceneRef.add(mesh);
       debris.push(mesh);
     }
@@ -1676,10 +1739,7 @@
     if (propKind) {
       if (opts.protectPlaced && placedBlocks.has(key)) return null;
       removePropBlock(bx, by, bz);
-      rebuildChunkProps(
-        Math.floor(bx / CHUNK_BLOCKS),
-        Math.floor(bz / CHUNK_BLOCKS)
-      );
+      dirtyPropChunks.add(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS));
       spawnBlockDebris(bx, by, bz, propKind);
       if (opts.drop !== false) spawnBlockDrop(bx, by, bz, propKind, opts.persistentDrop);
       return propKind;
@@ -1690,6 +1750,7 @@
     const kind = wasTop ? 'grass' : 'dirt';
     removedBlocks.add(key);
     recordChange(bx, bz);
+    wakeWater(bx, by, bz);
     rebuildTerrainAround(bx, bz);
     spawnBlockDebris(bx, by, bz, kind);
     if (opts.drop !== false) spawnBlockDrop(bx, by, bz, kind, opts.persistentDrop);
@@ -1706,6 +1767,8 @@
     let bestScore = Infinity;
 
     chunks.forEach(function (ch) {
+      if (x + radius < ch.cx * CHUNK_SIZE || x - radius > (ch.cx + 1) * CHUNK_SIZE ||
+          z + radius < ch.cz * CHUNK_SIZE || z - radius > (ch.cz + 1) * CHUNK_SIZE) return;
       if (!ch.propBlocks || ch.propBlocks.size === 0) return;
       ch.propBlocks.forEach(function (kind, key) {
         if (kind === 'leaves') return;
@@ -1772,39 +1835,10 @@
   }
 
   function breakBlockBelow(x, z, feetY) {
-    const bx = Math.floor(x / BLOCK);
-    const bz = Math.floor(z / BLOCK);
-    const ch = chunkForBlock(bx, bz);
-
-    let propBy = -1;
-    let propKind = null;
-    if (ch && ch.propBlocks && ch.propBlocks.size > 0) {
-      const topBy = Math.floor((feetY + 0.02) / BLOCK) - 1;
-      for (let by = topBy; by >= 0; by--) {
-        propKind = ch.propBlocks.get(blockKey(bx, by, bz));
-        if (propKind) {
-          propBy = by;
-          break;
-        }
-      }
-    }
-
-    const terrainBy = topSolidY(bx, bz);
-    const terrainTop = (terrainBy + 1) * BLOCK;
-    const propTop = propBy >= 0 ? (propBy + 1) * BLOCK : -1;
-
-    if (propBy >= 0 && propTop >= terrainTop - 0.001) {
-      removePropBlock(bx, propBy, bz);
-      rebuildChunkProps(
-        Math.floor(bx / CHUNK_BLOCKS),
-        Math.floor(bz / CHUNK_BLOCKS)
-      );
-      spawnBlockDebris(bx, propBy, bz, propKind);
-      spawnBlockDrop(bx, propBy, bz, propKind);
-      return true;
-    }
-
-    return !!breakBlockAt(bx, terrainBy, bz);
+    const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
+    const by = Math.floor((feetY + 0.02) / BLOCK) - 1;
+    if (Math.abs(feetY - (by + 1) * BLOCK) > 0.12) return false;
+    return !!breakBlockAt(bx, by, bz);
   }
 
 
@@ -1887,6 +1921,21 @@
 
   function update(player, dt, t) {
     updateChunks(player);
+    fluid.update(dt);
+    let solidRebuilt = 0;
+    for (const id of new Set([...dirtyTerrainChunks, ...dirtyPropChunks])) {
+      const parts = id.split(','), ch = chunks.get(id);
+      if (dirtyPropChunks.delete(id)) rebuildChunkProps(+parts[0], +parts[1]);
+      if (dirtyTerrainChunks.delete(id)) rebuildChunkTerrain(+parts[0], +parts[1]);
+      if (ch && ++solidRebuilt >= 2) break;
+    }
+    let waterRebuilt = 0;
+    for (const id of dirtyWaterChunks) {
+      dirtyWaterChunks.delete(id);
+      const parts = id.split(',');
+      rebuildChunkWater(+parts[0], +parts[1]);
+      if (++waterRebuilt >= 2) break;
+    }
     updateDebris(dt);
     wind.value = t;
     waterTime.value = t;
@@ -1914,6 +1963,8 @@
     waterLevelAt: waterLevelAt,
     waterInfoAtBlock: waterInfoAtBlock,
     waterAt: waterAt,
+    waterSpansAtBlock: waterSpansAtBlock,
+    fluid: fluid,
     pondsNear: pondsNear,
     canPlaceBlock: canPlaceBlock,
     placeBlock: placeBlock,

@@ -2053,31 +2053,39 @@
   }
 
   function updateGravity(animal, dt) {
-    const s = animal.state;
-    const p = animal.group.position;
-    let groundY = worldRef.supportHeight(p.x, p.z, p.y + BODY_CLEARANCE);
-
-    if (s.grounded) {
-      if (p.y > groundY + 0.02) {
-        s.grounded = false;
-        s.vy = 0;
-      } else {
-        p.y = groundY;
-        s.vy = 0;
+    const s = animal.state, p = animal.group.position;
+    const loose = s.mode === 'climbBuild' || s.mode === 'traverseTower';
+    const footprint = loose ? STEP_FOOTPRINT : animal.def.footprint;
+    function floorAt(maxY) {
+      let floor = worldRef.supportHeight(p.x, p.z, maxY);
+      const sin = Math.sin(s.yaw), cos = Math.cos(s.yaw), scale = animal.def.scale;
+      for (let i = 0; i < footprint.length; i++) {
+        const v = footprint[i];
+        floor = Math.max(floor, worldRef.supportHeight(p.x + (sin * v[1] + cos * v[0]) * scale,
+          p.z + (cos * v[1] - sin * v[0]) * scale, maxY));
       }
+      return floor;
     }
-
+    let groundY = floorAt(p.y + BODY_CLEARANCE);
+    if (s.grounded) {
+      if (p.y > groundY + 0.02) { s.grounded = false; s.vy = 0; }
+      else { p.y = groundY; s.vy = 0; }
+    }
     if (!s.grounded) {
-      const prevY = p.y;
+      const previous = p.y;
       s.vy = Math.max(-38, s.vy - GRAVITY * dt);
-      p.y += s.vy * dt;
-      groundY = worldRef.supportHeight(p.x, p.z, Math.max(prevY, p.y));
-      if (s.vy <= 0 && p.y <= groundY) {
-        p.y = groundY;
-        s.vy = 0;
-        s.grounded = true;
-        s.tuck = 0;
-        s.landPulse = 1;
+      const next = p.y + s.vy * dt;
+      groundY = floorAt(Math.max(previous, next) + 0.001);
+      const landing = s.vy <= 0 && next <= groundY;
+      const target = landing ? groundY : next;
+      const steps = Math.max(1, Math.ceil(Math.abs(target - previous) / 0.1));
+      for (let i = 1; i <= steps; i++) {
+        const y = previous + (target - previous) * i / steps;
+        if (!canStandAt(animal, p.x, p.z, y, s.yaw, loose)) { s.vy = 0; break; }
+        p.y = y;
+      }
+      if (landing && Math.abs(p.y - groundY) < 0.001) {
+        p.y = groundY; s.vy = 0; s.grounded = true; s.tuck = 0; s.landPulse = 1;
       }
     }
     s.landPulse = Math.max(0, (s.landPulse || 0) - dt * 4);
@@ -3089,7 +3097,22 @@
     updateGrassBits(dt);
   }
 
+  function intersectsBlock(bx, by, bz) {
+    const size = sizeOf();
+    return animals.some(function (animal) {
+      const p = animal.group.position, scale = animal.def.scale;
+      if ((by + 1) * size <= p.y + 0.01 || by * size >= p.y + animal.def.bodyHeight * scale) return false;
+      const sin = Math.sin(animal.state.yaw), cos = Math.cos(animal.state.yaw);
+      return animal.def.footprint.some(function (v) {
+        const x = p.x + (sin * v[1] + cos * v[0]) * scale;
+        const z = p.z + (cos * v[1] - sin * v[0]) * scale;
+        return x >= bx * size && x < (bx + 1) * size && z >= bz * size && z < (bz + 1) * size;
+      });
+    });
+  }
+
   M.animals = {
+    intersectsBlock: intersectsBlock,
     init: init,
     update: update,
     list: animals,

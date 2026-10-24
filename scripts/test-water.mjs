@@ -37,6 +37,7 @@ function harness({ pointerLock = false } = {}) {
   const M = window.Meadow;
   const THREE = context.THREE;
   M.config.renderRadius = 1;
+  load('js/voxel-water.js');
   load('js/world.js');
   function dispatch(target, type, values = {}) {
     const event = { type, key: '', code: '', ctrlKey: false, preventDefault() { this.prevented = true; }, ...values };
@@ -104,8 +105,11 @@ test('water columns remain deterministic after cache eviction and terrain edits'
   for (let x = 0; x < 66000; x++) world.surfaceHeight(x * 2, 460);
   assert.equal(JSON.stringify(world.waterInfoAtBlock(-27, 3)), before);
   world.init(new THREE.Scene(), { capabilities: { getMaxAnisotropy: () => 1 } });
+  world.update(new THREE.Vector3(-54, 10, 6), 0, 0);
   const pond = world.waterInfoAtBlock(-27, 3);
   assert.ok(world.breakBlockAt(-27, pond.top / 2 - 1, 3, { drop: false }));
+  assert.equal(world.waterInfoAtBlock(-27, 3).depth, pond.depth, 'newly mined space fills on a fluid tick');
+  for (let i = 0; i < 12; i++) world.fluid.tick();
   assert.equal(world.waterInfoAtBlock(-27, 3).depth, pond.depth + 2);
 });
 
@@ -369,4 +373,124 @@ test('underwater feedback uses a fixed particle pool and restores daylight fog',
   for (let i = 0; i < 180; i++) frame(20 + i / 60);
   assert.ok(scene.fog.far > 144.9);
   assert.ok(scene.fog.color.r > 0.99);
+});
+
+test('a real pond leaks through a mined bank and a rebuilt wall drains the channel', () => {
+  const { M, THREE } = harness();
+  const w = M.world, player = new THREE.Vector3(-54, 14, 6);
+  w.init(new THREE.Scene(), { capabilities: { getMaxAnisotropy: () => 1 } });
+  w.update(player, 0, 0);
+  for (let x = -27; x <= -14; x++) for (let y = 5; y <= 6; y++) w.breakBlockAt(x, y, 3, { drop: false });
+  for (let i = 0; i < 150 && w.fluid.pending; i++) w.fluid.tick();
+  assert.ok(w.waterAt(-29, 10.1, 7), 'pond water must reach the channel outside its generated basin');
+  for (let y = 5; y <= 6; y++) assert.ok(w.placeBlock('stone', -18, y, 3));
+  assert.equal(w.waterAt(-35, 10.1, 7), null, 'placed walls immediately displace water');
+  for (let i = 0; i < 150 && w.fluid.pending; i++) w.fluid.tick();
+  assert.equal(w.waterAt(-29, 10.1, 7), null, 'a sealed channel drains');
+  assert.ok(w.waterDepthAt(-54, 6) > 3, 'the natural pond remains a renewable source');
+});
+
+test('mined tunnels have exact floors and ceilings, and stomping breaks the floor underfoot', () => {
+  const { M, THREE } = harness();
+  const w = M.world;
+  w.init(new THREE.Scene(), { capabilities: { getMaxAnisotropy: () => 1 } });
+  assert.ok(w.breakBlockAt(9, 4, 0, { drop: false }));
+  assert.ok(w.breakBlockAt(9, 5, 0, { drop: false }));
+  assert.equal(w.blockedAt(19, 1, 8.06, 11.99), false);
+  assert.equal(w.blockedAt(19, 1, 11, 12.1), true);
+  assert.equal(w.supportHeight(19, 1, 10), 8, 'a roof above the feet is never a floor');
+  assert.ok(w.breakBlockBelow(19, 1, 8));
+  assert.ok(w.blockInfoAt(9, 6, 0), 'the roof must survive the stomp');
+  assert.equal(w.supportHeight(19, 1, 8), 6);
+});
+
+test('dry jumps hit ceilings, fast falls land on block edges, and wall slides stay clear', () => {
+  const s = swimmer({ level: 0, depth: 0, blocked: (x, z, low, high) => high > 3 && low < 5 });
+  s.goat.jump(); s.advance(0.2, 20);
+  assert.ok(s.goat.group.position.y + 1.9 <= 3.001, 'jump must stop below the ceiling');
+  s.advance(1); assert.equal(s.goat.state.grounded, true);
+  const edge = swimmer({ level: 0, depth: 0 });
+  edge.world.supportHeight = x => x > .1 ? 2 : 0;
+  edge.world.blockedAt = (x, z, low) => x > .1 && low < 2;
+  edge.goat.group.position.y = 10; edge.goat.state.grounded = false; edge.goat.state.vy = -35;
+  edge.advance(1, 20);
+  assert.ok(Math.abs(edge.goat.group.position.y - 2) < .001, 'a trailing hoof must catch the edge');
+  const slide = swimmer({ level: 0, depth: 0, blocked: x => x > 1 });
+  slide.controls.firstPerson = true; slide.controls.getFacingYaw = () => 0;
+  slide.input.set(1, 1).normalize(); slide.advance(2, 20);
+  assert.ok(slide.goat.group.position.z > 3);
+  assert.ok(slide.goat.group.position.x + .46 <= 1.001);
+});
+
+test('turning against a wall cannot bury the muzzle or lock movement', () => {
+  const s = swimmer({ level: 0, depth: 0, blocked: x => x > .7 });
+  s.controls.firstPerson = true; s.controls.getFacingYaw = () => Math.PI / 2;
+  s.advance(.1);
+  assert.equal(s.goat.state.yaw, .15, 'a colliding turn must preserve the clear body pose');
+  s.input.set(-1, 0); s.advance(1);
+  assert.ok(s.goat.group.position.x < -1);
+  assert.equal(s.goat.state.yaw, Math.PI / 2, 'the view-facing pose resumes once there is room');
+});
+
+test('player movement and camera can remain inside a mined tunnel', () => {
+  const s = swimmer({ level: 0, depth: 0 });
+  Object.assign(s.world, s.M.world);
+  s.world.init(new s.THREE.Scene(), { capabilities: { getMaxAnisotropy: () => 1 } });
+  for (let x = 8; x <= 13; x++) for (let y = 4; y <= 5; y++) s.world.breakBlockAt(x, y, 0, { drop: false });
+  s.goat.group.position.set(19, 8, 1); s.goat.state.yaw = Math.PI / 2;
+  s.controls.firstPerson = true; s.controls.getFacingYaw = () => Math.PI / 2;
+  s.input.set(1, 0); s.advance(1);
+  assert.ok(s.goat.group.position.x > 22);
+  assert.equal(s.goat.group.position.y, 8);
+  assert.equal(s.world.canPlaceBlock(Math.floor(s.goat.group.position.x / 2), 4, 0), false, 'placement cannot overlap the player');
+  s.load('js/controls.js'); s.M.controls.init(s.camera); s.M.controls.snapTo(s.goat.group.position);
+  for (let i = 0; i < 90; i++) s.M.controls.update(1 / 60, i / 60, s.goat.group, s.goat.state, s.world);
+  assert.ok(s.camera.position.y < 12, 'the underground camera must not snap to the surface');
+});
+
+test('landed block drops fall again when their supporting block is mined', () => {
+  const { M, THREE, load } = harness();
+  const scene = new THREE.Scene();
+  M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
+  load('js/items.js'); M.items.init(scene);
+  assert.ok(M.world.placeBlock('stone', 10, 7, 0));
+  M.items.dropBlock('dirt', 21, 17, 1);
+  const distantGoat = new THREE.Group(); distantGoat.position.set(100, 14, 100);
+  for (let i = 0; i < 120; i++) M.items.update(1 / 60, i / 60, distantGoat);
+  assert.ok(Math.abs(M.items.drops[0].userData.drop.baseY - 16.24) < .001);
+  M.world.breakBlockAt(10, 7, 0, { drop: false });
+  for (let i = 0; i < 120; i++) M.items.update(1 / 60, 2 + i / 60, distantGoat);
+  assert.ok(Math.abs(M.items.drops[0].userData.drop.baseY - 14.24) < .001);
+});
+
+test('a wall corner blocks pickup attraction until the wall is removed', () => {
+  const { M, THREE, load } = harness();
+  const scene = new THREE.Scene();
+  M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
+  load('js/items.js'); M.items.init(scene);
+  M.world.placeBlock('stone', 10, 7, 0);
+  M.items.dropBlock('dirt', 19.8, 15, 1.5);
+  M.items.drops[0].position.set(19.8, 15, 1.5);
+  M.items.drops[0].userData.drop.vy = 0;
+  const goat = new THREE.Group(); goat.position.set(20.5, 14.1, 2.2);
+  for (let i = 0; i < 30; i++) M.items.update(1 / 60, i / 60, goat);
+  assert.equal(M.items.slots[1], null, 'items cannot be pulled through a solid corner');
+  assert.equal(M.items.drops.length, 1);
+  M.world.breakBlockAt(10, 7, 0, { drop: false });
+  for (let i = 0; i < 60; i++) M.items.update(1 / 60, 1 + i / 60, goat);
+  assert.equal(M.items.slots[1].kind, 'dirt');
+});
+
+test('adjacent placed blocks mesh only exposed faces while collision updates immediately', () => {
+  const { M, THREE } = harness();
+  const scene = new THREE.Scene(), w = M.world;
+  w.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
+  const worldGroup = scene.children.find(group => group.children.some(chunk => chunk.position.x === 0 && chunk.position.z === -32));
+  const chunk = worldGroup.children.find(chunk => chunk.position.x === 0 && chunk.position.z === -32);
+  const vertices = () => chunk.children.filter(mesh => mesh.castShadow).reduce((sum, mesh) => sum + mesh.geometry.attributes.position.count, 0);
+  const before = vertices();
+  for (let x = 8; x < 11; x++) for (let z = -3; z < 0; z++) for (let y = 7; y < 10; y++) assert.ok(w.placeBlock('stone', x, y, z));
+  assert.equal(w.blockedAt(19, -3, 14.1, 19.9), true, 'physics must not wait for the next mesh batch');
+  w.update(new THREE.Vector3(8, 14, 24), 0, 0);
+  assert.equal(vertices() - before, 180, 'a grounded 3×3×3 cube needs 45 exposed quads');
 });

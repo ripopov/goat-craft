@@ -14,7 +14,7 @@ function meadow({ coarse = false, reducedMotion = false } = {}) {
   for (const file of ['vendor/three.min.js', 'js/core.js']) load(file);
   const M = window.Meadow;
   M.config.renderRadius = 1;
-  for (const file of ['js/world.js', 'js/hearth-tree.js']) load(file);
+  for (const file of ['js/voxel-water.js', 'js/world.js', 'js/hearth-tree.js']) load(file);
   const scene = new context.THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);

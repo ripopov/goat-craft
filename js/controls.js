@@ -141,7 +141,9 @@
     cameraRef.position.y = obstructed || snapCamera ? py : damp(cameraRef.position.y, py, 14, dt);
     cameraRef.position.z = obstructed || snapCamera ? pz : damp(cameraRef.position.z, pz, 14, dt);
     snapCamera = false;
-    const floor = world.surfaceHeight(cameraRef.position.x, cameraRef.position.z) + 0.3;
+    const floor = (world.landingHeight
+      ? world.landingHeight(cameraRef.position.x, cameraRef.position.z, cameraRef.position.y)
+      : world.surfaceHeight(cameraRef.position.x, cameraRef.position.z)) + 0.3;
     if (cameraRef.position.y < floor) cameraRef.position.y = floor;
 
     if (phi > Math.PI / 2) {

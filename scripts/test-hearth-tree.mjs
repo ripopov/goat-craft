@@ -14,7 +14,7 @@ function meadow({ coarse = false, reducedMotion = false } = {}) {
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js']) load(file);
   const M = window.Meadow;
   M.config.renderRadius = 1;
-  for (const file of ['js/voxel-water.js', 'js/world.js', 'js/hearth-tree.js']) load(file);
+  for (const file of ['js/voxel-water.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js']) load(file);
   const scene = new context.THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);
@@ -158,6 +158,7 @@ test('the clearing blends into forest, hills, nearby water and an endless seeded
 
 test('the player initializes at the configured open-meadow spawn', () => {
   const { M, THREE, scene, load } = meadow();
+  load('js/targeting.js');
   load('js/goat.js');
   M.goat.init({ scene, camera: new THREE.PerspectiveCamera(), world: M.world,
     controls: {}, audio: {}, ui: {} });

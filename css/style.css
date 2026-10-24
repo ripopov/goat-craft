@@ -382,3 +382,62 @@
   .speaker { flex: none; }
   .sound-slash, #effects.muted .sound-waves { display: none; }
   #effects.muted .sound-slash { display: block; }
+
+  #upgrade-open { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: calc(var(--bar-bottom) + 60px); z-index: 6; display: flex; align-items: center; gap: 9px; padding: 10px 16px; border: 1px solid #e4c97e; border-radius: 10px; background: #253b2eed; color: #fff0c1; box-shadow: 0 6px 20px #14211940; font: 600 12px system-ui, sans-serif; cursor: pointer; touch-action: manipulation; }
+  #upgrade-open > span { font-size: 19px; color: #e8c36e; }
+  kbd { font: 10px system-ui, sans-serif; padding: 2px 5px; border: 1px solid currentColor; border-radius: 4px; opacity: .65; }
+  #upgrade-open:hover { background: #3b553d; }
+  #upgrade-open:focus-visible, #upgrade-menu button:focus-visible { outline: 2px solid #f2cf7a; outline-offset: 3px; }
+  #upgrade-menu { width: min(730px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); overflow: auto; padding: 0; border: 1px solid #bda86c; border-radius: 18px; background: #1d2d25; color: #f4ecd7; box-shadow: 0 30px 100px #06180dbb; }
+  #upgrade-menu::backdrop { background: #071c1399; backdrop-filter: blur(5px); }
+  #upgrade-menu[open] { animation: training-in .16s ease-out; }
+  @keyframes training-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .upgrade-shell { padding: 25px; background: radial-gradient(ellipse at 100% 0, #53603b33, transparent 60%); }
+  .upgrade-topline { position: sticky; top: 0; z-index: 1; min-height: 38px; background: #1d2d25; display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: 10px; letter-spacing: .16em; color: #cdbc87; }
+  #upgrade-close { border: 0; border-radius: 6px; background: #ffffff0a; color: #d6dccb; padding: 8px 10px; cursor: pointer; font: 12px system-ui, sans-serif; letter-spacing: 0; }
+  #upgrade-close kbd { margin-left: 5px; }
+  .upgrade-tabs { display: flex; gap: 5px; margin: 16px 0 21px; padding: 4px; background: #12241b; border-radius: 9px; width: fit-content; }
+  .upgrade-tabs button { background: transparent; border: 1px solid transparent; padding: 8px 17px; border-radius: 6px; color: #afc0a5; font: 600 12px system-ui, sans-serif; cursor: pointer; }
+  .upgrade-tabs button[aria-pressed="true"] { background: #3d533a; border-color: #c1bc6e66; color: #fff1c9; }
+  .upgrade-tabs button[hidden] { display: none; }
+  .upgrade-character { display: flex; gap: 14px; align-items: center; }
+  #upgrade-emblem { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border: 1px solid #d5bb6e; border-radius: 12px; background: linear-gradient(145deg, #5b7049, #314835); color: #f3d58e; font: 600 13px Georgia, serif; box-shadow: inset 0 0 0 4px #213a2a; }
+  #upgrade-role { margin: 0 0 3px; text-transform: capitalize; font-size: 11px; color: #b4c3a6; letter-spacing: .04em; }
+  #upgrade-title { margin: 0; font: 29px Georgia, serif; color: #fff2ce; }
+  #upgrade-note { font-size: 12px; line-height: 1.6; color: #b5c4ad; margin: 14px 0; }
+  #upgrade-resources { font-size: 12px; font-variant-numeric: tabular-nums; color: #f2d58e; padding: 11px 14px; border: 1px solid #b6b97d33; background: #102318; border-radius: 8px; }
+  #upgrade-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 17px; }
+  .upgrade-card { min-width: 0; padding: 16px; background: #2a3d30; border: 1px solid #bfca9a26; border-radius: 11px; display: flex; flex-direction: column; }
+  .upgrade-card h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; margin: 0; }
+  .upgrade-rank { color: #c7ceaa; font-size: 10px; font-weight: 400; white-space: nowrap; }
+  .upgrade-pips { display: flex; gap: 4px; margin-top: 10px; }
+  .upgrade-pips i { width: 22px; height: 4px; background: #14291c; border-radius: 1px; }
+  .upgrade-pips i.trained { background: #dfc375; }
+  .upgrade-card p { color: #bdcbb4; font-size: 11px; line-height: 1.6; min-height: 36px; margin: 10px 0; }
+  .upgrade-effect { color: #f4e5bb; font-size: 12px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+  .upgrade-cost { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; color: #b8c3a9; font-size: 10px; }
+  .upgrade-cost span { background: #152b1e; border: 1px solid #72916755; padding: 4px 8px; border-radius: 5px; color: #c8dbad; }
+  .upgrade-cost span.short { color: #edbc99; border-color: #c18b6655; }
+  .upgrade-card button { margin-top: auto; padding: 10px; background: #dec37a; color: #203a28; border: 1px solid #f0d99d; border-radius: 6px; font: 600 12px system-ui, sans-serif; cursor: pointer; }
+  .upgrade-card button:hover:not(:disabled) { background: #f0d99d; }
+  .upgrade-card button:disabled { background: #ffffff06; color: #a6b49c; border-color: #a4b29033; cursor: default; }
+  #upgrade-message { min-height: 17px; color: #f2d58e; margin: 12px 0 0; font-size: 12px; }
+  #upgrade-menu footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #bac69526; margin-top: 10px; padding-top: 14px; font-size: 10px; line-height: 1.6; color: #a1b499; }
+  @media (max-width: 760px) {
+    #upgrade-open { right: 12px; bottom: calc(var(--bar-bottom) + 134px); padding: 8px 11px; }
+  }
+  @media (max-width: 520px) {
+    .upgrade-shell { padding: 18px; }
+    #upgrade-cards { grid-template-columns: 1fr; gap: 10px; }
+    .upgrade-card { padding: 14px; }
+    .upgrade-card p { min-height: 0; }
+    #upgrade-title { font-size: 25px; }
+    #upgrade-menu footer { flex-direction: column; gap: 3px; }
+  }
+
+  #minimap { position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: calc(var(--bar-bottom) + 90px); z-index: 4; width: 164px; height: 164px; border-radius: 50%; pointer-events: none; filter: drop-shadow(0 5px 12px #0c241766); }
+  @media (max-width: 760px) { #minimap { left: 10px; bottom: calc(var(--bar-bottom) + 140px); width: 122px; height: 122px; } }
+  @media (max-height: 500px) and (min-width: 761px) { #minimap { width: 120px; height: 120px; } }
+
+  #aim-reticle { position: fixed; left: 50%; top: 50%; z-index: 3; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border: 1px solid #16291eb3; border-radius: 50%; background: #f8f1dbb3; box-shadow: 0 0 0 2px #ffffff1a; pointer-events: none; }
+  #aim-reticle.has-target { background: #ffe3a0; box-shadow: 0 0 0 3px #f1d18a44; }

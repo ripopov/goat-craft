@@ -39,6 +39,7 @@ function harness({ pointerLock = false } = {}) {
   const THREE = context.THREE;
   M.config.renderRadius = 1;
   load('js/voxel-water.js');
+  load('js/caves.js');
   load('js/world.js');
   function dispatch(target, type, values = {}) {
     const event = { type, key: '', code: '', ctrlKey: false, preventDefault() { this.prevented = true; }, ...values };
@@ -55,6 +56,7 @@ function harness({ pointerLock = false } = {}) {
 function swimmer({ floor = 0, level = 10, depth = 10, blocked = () => false } = {}) {
   const h = harness();
   const { M, THREE } = h;
+  h.load('js/targeting.js');
   h.load('js/goat.js');
   const input = new THREE.Vector2();
   const controls = { running: false, swimVertical: 0, getMovement: () => input, getSwimPitch: () => 0, noteActivity() {} };

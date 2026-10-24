@@ -33,6 +33,8 @@
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
+  const caveLight = new THREE.PointLight(0xffdfae, 0, 16, 2);
+  scene.add(caveLight);
   const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 400);
   camera.position.set(4.4, 4.2, 5.2);
 
@@ -67,6 +69,11 @@
 
   M.enemies.init({ scene: scene, world: M.world, tree: M.hearthTree });
 
+  M.upgrades.init();
+  M.upgradeMenu.init();
+  M.minimap.init();
+  M.highlights.init(scene);
+
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
 
@@ -94,13 +101,18 @@
     M.goat.greet();
   };
 
+  let musicEnabled = true;
+  M.ui.setMusic(true);
   M.ui.onMusicToggle = function () {
-    const on = M.music.toggle();
-    M.ui.setMusic(on);
+    musicEnabled = !musicEnabled;
+    if (musicEnabled) M.music.start();
+    else M.music.stop();
+    M.ui.setMusic(musicEnabled);
   };
 
   function wakeAudio() {
     M.audio.unlock();
+    if (musicEnabled && !M.music.isPlaying()) M.music.start();
   }
 
   window.addEventListener('pointerdown', wakeAudio);
@@ -113,7 +125,7 @@
 
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.1);
-    if (document.hidden) { accumulator = 0; return; }
+    if (document.hidden || M.upgradeMenu.isOpen) { accumulator = 0; return; }
     accumulator += dt;
     while (accumulator + 0.000001 >= STEP) {
       elapsed += STEP;
@@ -128,8 +140,13 @@
     M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.environment.update(camera, M.goat.group, dt, elapsed);
+    const underground = M.goat.group.position.y + 2 < M.world.surfaceHeight(M.goat.group.position.x, M.goat.group.position.z);
+    caveLight.position.copy(M.goat.group.position); caveLight.position.y += 1.4;
+    caveLight.intensity = M.utils.damp(caveLight.intensity, underground ? 5 : 0, 6, dt);
     M.water.update(dt, elapsed, M.goat.group, M.goat.state, camera, M.world);
     M.audio.setListener(camera);
+    M.minimap.update(dt);
+    M.highlights.update();
     M.ui.updateBubble(dt, M.goat.headPivot, camera);
 
     renderer.render(scene, camera);

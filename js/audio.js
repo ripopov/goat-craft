@@ -345,6 +345,13 @@
     });
   }
 
+  function enemyBurst(point) {
+    nearby(point, 40, 'enemy-burst', 0.12, function (voice, when, level) {
+      noise(voice, when, { frequency: 1250, endFrequency: 700, duration: 0.28, level: level * 0.14, attack: 0.008 });
+      noise(voice, when + 0.04, { frequency: 2500, endFrequency: 1700, duration: 0.32, level: level * 0.065, attack: 0.012 });
+    });
+  }
+
   function cue(kind) {
     nearby(null, 1, 'cue-' + kind, kind === 'damage' ? 1 : 0.5, function (voice, when) {
       const notes = kind === 'wave' ? [196, 246.94, 293.66] : kind === 'defeat' ? [196, 164.81, 130.81] : [220, 164.81];
@@ -394,6 +401,7 @@
     setListener: setListener,
     setEffectsEnabled: setEffectsEnabled,
     zombie: zombie,
+    enemyBurst: enemyBurst,
     actorStep: actorStep,
     actorJump: actorJump,
     select: select,

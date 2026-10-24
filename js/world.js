@@ -280,6 +280,7 @@
         plan: regional ? regional.plan : pond ? pond.plan : null
       };
     }
+    column.cave = M.caves.profile(bx, bz, column.height, !!column.plan, isStartingClearing(bx, bz));
     if (columnCache.size >= 65536) columnCache.delete(columnCache.keys().next().value);
     columnCache.set(key, column);
     return column;
@@ -496,9 +497,7 @@
 
   function topSolidY(bx, bz) {
     let y = heightBlocks(bx, bz) - 1;
-    if (removedBlocks.size > 0) {
-      while (y >= 0 && removedBlocks.has(blockKey(bx, y, bz))) y--;
-    }
+    while (y >= 0 && !isSolidBlock(bx, y, bz)) y--;
     return y;
   }
 
@@ -509,8 +508,10 @@
 
   function isSolidBlock(bx, by, bz) {
     if (by < 0) return true;
-    if (by >= heightBlocks(bx, bz)) return false;
-    return !isRemoved(bx, by, bz);
+    const column = generatedColumn(bx, bz);
+    if (by >= column.height) return false;
+    const cave = column.cave;
+    return !(cave && by >= cave.floor && by < cave.roof) && !isRemoved(bx, by, bz);
   }
 
   function chunkForBlock(bx, bz) {
@@ -546,7 +547,7 @@
       bx: bx,
       by: by,
       bz: bz,
-      kind: by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt',
+      kind: M.caves.material(bx, by, bz, heightBlocks(bx, bz)),
       type: 'terrain',
       placed: false
     };
@@ -563,7 +564,7 @@
       bx: bx,
       by: by,
       bz: bz,
-      kind: by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt',
+      kind: M.caves.material(bx, by, bz, heightBlocks(bx, bz)),
       top: (by + 1) * BLOCK
     };
   }
@@ -668,6 +669,7 @@
   const T_LOG = 4;
   const T_LOG_TOP = 5;
   const T_LEAVES = 6;
+  const T_COAL = 7, T_COPPER = 8, T_IRON = 9;
 
   function makeBlockAtlas() {
     const canvas = document.createElement('canvas');
@@ -756,8 +758,17 @@
       ctx.fillRect(leaves.x + ((Math.random() * 15) | 0), leaves.y + ((Math.random() * 15) | 0), 1, 2);
     }
 
+    [[T_COAL, '#303735', '#4b514c'], [T_COPPER, '#c07c45', '#68a393'], [T_IRON, '#d5b59a', '#a68066']].forEach(function (ore) {
+      const tile = begin(ore[0], '#858882');
+      speckle(tile.x, tile.y, ['#747b75', '#9ba095', '#6f766e'], 65);
+      [[3, 4], [10, 3], [7, 10], [12, 12]].forEach(function (p, i) {
+        ctx.fillStyle = ore[1]; ctx.fillRect(tile.x + p[0], tile.y + p[1], 3, 3);
+        ctx.fillStyle = ore[2]; ctx.fillRect(tile.x + p[0], tile.y + p[1], 2, 1 + i % 2);
+      });
+    });
+
     // copy tile edges into the padding so distant mipmaps stay clean
-    for (let i = 0; i <= 6; i++) {
+    for (let i = 0; i <= 9; i++) {
       const c = cellAt(i);
       const x = c.x + TILE_PAD;
       const y = c.y + TILE_PAD;
@@ -1029,6 +1040,9 @@
     grass: { top: T_GRASS, side: T_GRASS_SIDE, bottom: T_DIRT },
     dirt: { top: T_DIRT, side: T_DIRT, bottom: T_DIRT },
     stone: { top: T_STONE, side: T_STONE, bottom: T_STONE },
+    coal: { top: T_COAL, side: T_COAL, bottom: T_COAL },
+    copper: { top: T_COPPER, side: T_COPPER, bottom: T_COPPER },
+    iron: { top: T_IRON, side: T_IRON, bottom: T_IRON },
     log: { top: T_LOG_TOP, side: T_LOG, bottom: T_LOG_TOP },
     leaves: { top: T_LEAVES, side: T_LEAVES, bottom: T_LEAVES }
   };
@@ -1121,73 +1135,26 @@
   // ---- terrain mesh ----
   function buildTerrainGeometry(cx, cz) {
     const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
-    const HS = CHUNK_BLOCKS + 2;
-    const heights = new Int16Array(HS * HS);
-    const originBX = cx * CHUNK_BLOCKS;
-    const originBZ = cz * CHUNK_BLOCKS;
-
-    for (let z = -1; z <= CHUNK_BLOCKS; z++) {
-      for (let x = -1; x <= CHUNK_BLOCKS; x++) {
-        heights[(z + 1) * HS + (x + 1)] = heightBlocks(originBX + x, originBZ + z);
+    const originBX = cx * CHUNK_BLOCKS, originBZ = cz * CHUNK_BLOCKS;
+    for (let bz = 0; bz < CHUNK_BLOCKS; bz++) for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
+      const wx = originBX + bx, wz = originBZ + bz, h = heightBlocks(wx, wz);
+      const water = waterInfoAtBlock(wx, wz), level = water ? water.level : -1;
+      for (let by = 0; by < h; by++) {
+        if (!isSolidBlock(wx, by, wz)) continue;
+        const x = bx * BLOCK, y = by * BLOCK, z = bz * BLOCK;
+        const kind = M.caves.material(wx, by, wz, h), tiles = ITEM_TILES[kind];
+        const grassy = kind === 'grass' && level <= y + .02;
+        const top = kind === 'grass' ? grassy ? T_GRASS : T_DIRT : tiles.top;
+        const side = kind === 'grass' ? grassy ? T_GRASS_SIDE : T_DIRT : tiles.side;
+        const shade = (grassy ? .95 : .86) + hash01(wx, wz) * .05;
+        if (!isSolidBlock(wx, by + 1, wz)) pushTop(data, x, y + BLOCK, z, top, shade);
+        if (by > 0 && !isSolidBlock(wx, by - 1, wz)) pushBottom(data, x, y, z, tiles.bottom, shade * .7);
+        if (!isSolidBlock(wx - 1, by, wz)) pushSide(data, 0, x, z, y, y + BLOCK, side, shade * .72);
+        if (!isSolidBlock(wx + 1, by, wz)) pushSide(data, 1, x, z, y, y + BLOCK, side, shade * .72);
+        if (!isSolidBlock(wx, by, wz - 1)) pushSide(data, 2, x, z, y, y + BLOCK, side, shade * .7);
+        if (!isSolidBlock(wx, by, wz + 1)) pushSide(data, 3, x, z, y, y + BLOCK, side, shade * .7);
       }
     }
-
-    const hAt = function (lx, lz) {
-      return heights[(lz + 1) * HS + (lx + 1)];
-    };
-
-    for (let bz = 0; bz < CHUNK_BLOCKS; bz++) {
-      for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
-        const h = hAt(bx, bz);
-        const x = bx * BLOCK;
-        const z = bz * BLOCK;
-        const worldBX = originBX + bx;
-        const worldBZ = originBZ + bz;
-        const water = waterInfoAtBlock(worldBX, worldBZ);
-        const waterLevel = water ? water.level : -1;
-        const nhW = hAt(bx - 1, bz);
-        const nhE = hAt(bx + 1, bz);
-        const nhN = hAt(bx, bz - 1);
-        const nhS = hAt(bx, bz + 1);
-
-        for (let by = 0; by < h; by++) {
-          if (isRemoved(worldBX, by, worldBZ)) continue;
-
-          const y = by * BLOCK;
-          const isTop = by === h - 1;
-          const shade = (isTop ? 0.95 : 0.86) + hash01(worldBX, worldBZ) * 0.05;
-          const solidAbove = by + 1 < h && !isRemoved(worldBX, by + 1, worldBZ);
-          // The pond floor and submerged sides use mud-coloured dirt instead
-          // of bright meadow grass. The surrounding bank stays grassy at the
-          // waterline.
-          const submerged = waterLevel > y + 0.02;
-          const topTile = isTop && !submerged ? T_GRASS : T_DIRT;
-          const sideTile = isTop && !submerged ? T_GRASS_SIDE : T_DIRT;
-
-          if (!solidAbove) {
-            pushTop(data, x, y + BLOCK, z, topTile, shade);
-          }
-
-          if (by > 0 && isRemoved(worldBX, by - 1, worldBZ)) {
-            pushBottom(data, x, y, z, T_DIRT, shade * 0.7);
-          }
-
-          if (!(by < nhW && !isRemoved(worldBX - 1, by, worldBZ))) {
-            pushSide(data, 0, x, z, y, y + BLOCK, sideTile, shade * 0.72);
-          }
-          if (!(by < nhE && !isRemoved(worldBX + 1, by, worldBZ))) {
-            pushSide(data, 1, x, z, y, y + BLOCK, sideTile, shade * 0.72);
-          }
-          if (!(by < nhN && !isRemoved(worldBX, by, worldBZ - 1))) {
-            pushSide(data, 2, x, z, y, y + BLOCK, sideTile, shade * 0.7);
-          }
-          if (!(by < nhS && !isRemoved(worldBX, by, worldBZ + 1))) {
-            pushSide(data, 3, x, z, y, y + BLOCK, sideTile, shade * 0.7);
-          }
-        }
-      }
-    }
-
     return dataToGeometry(data, false);
   }
 
@@ -1248,7 +1215,7 @@
       const bz = cz * CHUNK_BLOCKS + Math.round(z / BLOCK);
       const by = Math.round(y / BLOCK);
       const key = blockKey(bx, by, bz);
-      if (!force && (removedPropBlocks.has(key) || isStartingClearing(bx, bz))) return;
+      if (!force && (removedPropBlocks.has(key) || isStartingClearing(bx, bz) || M.caves.entranceClearance(bx, bz))) return;
       blocks.set(key, kind);
       faces.set(key, { bx: bx, by: by, bz: bz, x: x, y: y, z: z,
         top: topTile, side: sideTile, bottom: bottomTile, shadeTop: shadeTop, shadeSide: shadeSide });
@@ -1277,7 +1244,7 @@
         // Leave room for the whole canopy outside the 15-block lawn.
         if (Math.hypot(wx - START.x, wz - START.z) < (START.radiusBlocks + 3) * BLOCK) continue;
         if (M.hearthTree && M.hearthTree.isReserved(wx, wz, 11)) continue;
-        if (isPondArea(worldBX, worldBZ)) continue;
+        if (M.caves.entranceClearance(worldBX, worldBZ) || isPondArea(worldBX, worldBZ) || topSolidY(worldBX, worldBZ) !== heightBlocks(worldBX, worldBZ) - 1) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
         ok = true;
         break;
@@ -1610,7 +1577,7 @@
     if (M.goat && M.goat.intersectsBlock && M.goat.intersectsBlock(bx, by, bz)) return false;
     if (M.animals && M.animals.intersectsBlock && M.animals.intersectsBlock(bx, by, bz)) return false;
     if (M.enemies && M.enemies.zombies.some(function (zombie) {
-      return M.actorPhysics.intersectsBlock(zombie.position, M.enemies.body, bx, by, bz, BLOCK);
+      return M.actorPhysics.intersectsBlock(zombie.position, zombie.body || M.enemies.body, bx, by, bz, BLOCK);
     })) return false;
     if (M.hearthTree && M.hearthTree.intersectsBlock(bx, by, bz)) return false;
     if (!chunkForBlock(bx, bz)) return false;
@@ -1664,7 +1631,7 @@
 
     for (let i = 0; i < 8; i++) {
       let mat = debrisDirtMat;
-      if (kind === 'stone') mat = debrisStoneMat;
+      if (kind === 'stone' || kind === 'coal' || kind === 'copper' || kind === 'iron') mat = debrisStoneMat;
       else if (kind === 'log') mat = debrisLogMat;
       else if (kind === 'leaves') mat = debrisLeafMat;
       else if (kind === 'grass' && i < 5) mat = debrisGrassMat;
@@ -1770,8 +1737,7 @@
     }
 
     if (isProtectedArea(bx, bz) || !isSolidBlock(bx, by, bz)) return null;
-    const wasTop = by === heightBlocks(bx, bz) - 1;
-    const kind = wasTop ? 'grass' : 'dirt';
+    const kind = M.caves.material(bx, by, bz, heightBlocks(bx, bz));
     removedBlocks.add(key);
     recordChange(bx, bz);
     wakeWater(bx, by, bz);
@@ -1841,7 +1807,7 @@
         const dz = cz - z;
         const dist2 = dx * dx + dz * dz;
         if (dist2 > maxDist2 || dist2 < 1.8) continue;
-        const kind = by === heightBlocks(bx, bz) - 1 ? 'grass' : 'dirt';
+        const kind = M.caves.material(bx, by, bz, heightBlocks(bx, bz));
         if (dist2 < bestScore) {
           bestScore = dist2;
           best = { type: 'terrain', bx: bx, by: by, bz: bz, kind: kind, x: cx, y: top, z: cz };

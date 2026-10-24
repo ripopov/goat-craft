@@ -12,20 +12,20 @@ function harness(realWorld = false) {
   ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js'].forEach(load);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = 1;
-  const drops = [];
-  M.items = { dropBlock: (...args) => drops.push(args) };
+  const drops = [], coinDrops = [];
+  M.items = { dropBlock: (...args) => drops.push(args), dropCoins: (position, count) => coinDrops.push({ position: position.clone(), count }) };
   M.ui = { showBubble() {}, setDefense() {} };
   const scene = new THREE.Scene();
   if (realWorld) {
-    ['js/voxel-water.js', 'js/world.js', 'js/hearth-tree.js'].forEach(load);
+    ['js/voxel-water.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js'].forEach(load);
     M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
     M.hearthTree.init(scene);
   }
   ['js/zombie-navigation.js', 'js/enemies.js'].forEach(load);
-  return { M, THREE, scene, drops, load, context };
+  return { M, THREE, scene, drops, coinDrops, load, context };
 }
 function fixture() {
-  const { M, THREE, scene } = harness();
+  const { M, THREE, scene, coinDrops } = harness();
   const blocks = new Map(), drops = [];
   let revision = 0, hp = 100;
   const key = (x, y, z) => [x, y, z].join(',');
@@ -63,7 +63,7 @@ function fixture() {
   const tree = { position: { x: 1, z: 1 }, get health() { return hp; },
     damage(n) { hp = Math.max(0, hp - n); },
     blockedAt(x, z, min, max) { return x >= 0 && x < 2 && z >= 0 && z < 2 && min < 8 && max > 0; } };
-  return { M, THREE, scene, world, tree, drops };
+  return { M, THREE, scene, world, tree, drops, coinDrops };
 }
 const advance = (M, seconds, dt = .05) => { for (let i = 0; i < Math.round(seconds / dt); i++) M.enemies.update(dt); };
 
@@ -108,7 +108,7 @@ test('zombies arrive gradually, increase with waves, and never exceed fifty', ()
   assert.equal(M.enemies.zombies.length, 50);
   advance(M, 40);
   assert.ok(M.enemies.zombies.length <= 50);
-  assert.equal(M.enemies.getState().wave, 2);
+  assert.equal(M.enemies.getState().wave, 1, 'a crowded wave cannot silently queue another wave');
 });
 
 test('automatic zombie spawns use the fifty-percent-farther ring', () => {
@@ -118,7 +118,8 @@ test('automatic zombie spawns use the fifty-percent-farther ring', () => {
   assert.equal(M.enemies.zombies.length, 1);
   const p = M.enemies.zombies[0].position;
   const distance = Math.hypot(p.x - tree.position.x, p.z - tree.position.z);
-  assert.ok(distance >= 54 && distance <= 72, `spawn distance ${distance}`);
+  // The walker has already had up to three 50ms movement ticks since spawn.
+  assert.ok(distance >= 54 - M.enemies.types.zombie.speed * .15 && distance <= 72, `spawn distance ${distance}`);
 });
 
 test('each zombie eats exactly one tree HP per three seconds; defeat clamps at zero', () => {
@@ -133,18 +134,19 @@ test('each zombie eats exactly one tree HP per three seconds; defeat clamps at z
   assert.equal(M.enemies.getState().defeated, true);
 });
 
-test('headbutts and stomps kill zombies, award one coin each, and cannot hit through walls', () => {
-  const { M, THREE, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+test('headbutts and stomps kill zombies, drop one coin each, and cannot hit through walls', () => {
+  const { M, THREE, scene, world, tree, coinDrops } = fixture(); M.enemies.init({ scene, world, tree });
   const node = M.enemies.navigation.nodeAt(9, 0, 1), origin = new THREE.Vector3(9, 0, 3);
   const zombie = M.enemies.spawnAt(node);
   assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(zombie.hp, 1);
-  assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(M.enemies.getState().coins, 1);
-  M.enemies.attack(origin, Math.PI, false); assert.equal(M.enemies.getState().coins, 1);
+  assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(M.enemies.getState().coins, 0);
+  M.enemies.attack(origin, Math.PI, false); assert.equal(M.enemies.getState().coins, 0);
   M.enemies.spawnAt(node); M.enemies.attack(origin, 0, true);
-  assert.equal(M.enemies.getState().coins, 2);
+  assert.equal(M.enemies.getState().coins, 0);
+  assert.deepEqual(coinDrops.map(drop => drop.count), [1, 1], 'each kill leaves physical loot once');
   M.enemies.spawnAt(M.enemies.navigation.nodeAt(9, 0, -1)); world.place(4, 0, 0);
   assert.equal(M.enemies.attack(new THREE.Vector3(9, 0, 1.5), Math.PI, false), false);
-  assert.equal(M.enemies.getState().coins, 2);
+  assert.equal(M.enemies.getState().coins, 0);
 });
 
 test('a zombie jumps onto a single block but never climbs a double wall', () => {
@@ -185,8 +187,8 @@ test('real terrain, roots and tree health support navigation and recoverable blo
   advance(M, 35);
   assert.ok(M.hearthTree.health < 100, JSON.stringify({start: [node.x,node.y,node.z,node.distance], p:zombie.position, target:zombie.target && [zombie.target.x,zombie.target.y,zombie.target.z], grounded:zombie.grounded, mode:zombie.mode, vy:zombie.vy}));
   assert.equal(zombie.mode, 'tree');
-  assert.ok(scene.getObjectByName('Zombie horde').count <= 50 * 40);
-  for (const value of scene.getObjectByName('Zombie horde').instanceMatrix.array) assert.ok(Number.isFinite(value));
+  assert.ok(scene.getObjectByName('Enemy horde').count <= 50 * 40);
+  for (const value of scene.getObjectByName('Enemy horde').instanceMatrix.array) assert.ok(Number.isFinite(value));
   const x = 2, z = -13, y = Math.floor(M.world.surfaceHeight(5, -25) / 2);
   assert.ok(M.world.placeBlock('stone', x, y, z));
   assert.equal(M.world.breakBlockAt(x, y, z, { persistentDrop: true }), 'stone');
@@ -229,7 +231,9 @@ test('later waves send larger groups, still staggered rather than all at once', 
   M.enemies.init({ scene, world, tree });
   advance(M, 25); assert.equal(M.enemies.zombies.length, 4);
   while (M.enemies.zombies.length) M.enemies.attack(M.enemies.zombies[0].position, 0, true);
-  advance(M, 20.1); assert.equal(M.enemies.getState().wave, 2); assert.equal(M.enemies.zombies.length, 1);
+  advance(M, .1); assert.equal(M.enemies.getState().coins, 6, 'wave clear bonus is paid once');
+  assert.equal(M.enemies.getState().phase, 'intermission');
+  advance(M, 12.1); assert.equal(M.enemies.getState().wave, 2); assert.equal(M.enemies.zombies.length, 1);
   advance(M, 20); assert.equal(M.enemies.zombies.length, 7);
 });
 
@@ -261,10 +265,11 @@ test('death animation stays bounded and expires without changing immediate kills
   M.enemies.init({ scene, world, tree });
   const origin = new THREE.Vector3(9, 0, 1);
   for (let i = 0; i < 50; i++) M.enemies.spawnAt(origin);
-  const mesh = scene.children.find(node => node.name === 'Zombie horde');
+  const mesh = scene.children.find(node => node.name === 'Enemy horde');
+  assert.ok(mesh.instanceColor, 'instance colors exist before an empty first draw compiles the shader');
   M.enemies.attack(origin, 0, true);
   assert.equal(M.enemies.getState().count, 0, 'fallen bodies stop being enemies immediately');
-  assert.equal(M.enemies.getState().coins, 50, 'each kill still awards exactly one coin');
+  assert.equal(M.enemies.getState().coins, 0, 'kills never credit the wallet automatically');
   assert.ok(mesh.count > 0 && mesh.count <= mesh.instanceMatrix.count, 'only a bounded visual death pool remains');
   for (let i = 0; i < 50; i++) M.enemies.spawnAt(origin);
   advance(M, 0.2);
@@ -273,4 +278,166 @@ test('death animation stays bounded and expires without changing immediate kills
   M.enemies.attack(origin, 0, true);
   advance(M, 0.8);
   assert.equal(mesh.count, 0, 'no corpse instances leak after their animation');
+});
+
+test('new enemy species unlock gradually with bounded durable-unit proportions', () => {
+  const { M } = harness();
+  for (let wave = 1; wave <= 30; wave++) {
+    const roster = Array.from({ length: M.enemies.waveSize(wave) }, (_, i) => M.enemies.typeForWave(wave, i));
+    assert.ok(roster.length <= 50);
+    for (const type of roster) assert.ok(M.enemies.types[type].unlock <= wave);
+    if (wave < 3) assert.ok(roster.every(type => type === 'zombie'));
+    if (wave >= 3) assert.ok(roster.includes('spider'));
+    if (wave >= 5) assert.ok(roster.includes('skeleton'));
+    if (wave >= 8) assert.ok(roster.includes('brute'));
+    assert.ok(roster.filter(type => type === 'brute').length <= Math.floor(roster.length / 6));
+  }
+});
+
+test('all enemy species walk toward the Hearth and deal their distinct contact damage', () => {
+  for (const type of ['zombie', 'spider', 'skeleton', 'brute']) {
+    const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+    const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type);
+    const def = M.enemies.types[type];
+    advance(M, 3);
+    assert.ok(enemy.position.x < 8, type + ' follows the shared route');
+    // Isolate contact timing from travel and other automatic spawns.
+    enemy.position.set(3, 0, 1); enemy.bite = 0;
+    const health = tree.health;
+    advance(M, def.bite - .1); assert.equal(tree.health, health);
+    advance(M, .15); assert.equal(tree.health, health - def.damage, type + ' bites once at its interval');
+    assert.equal(enemy.hp, def.hp);
+  }
+});
+
+test('a mixed horde shares the fifty-enemy cap, finite render pool and physical rewards', () => {
+  const { M, scene, world, tree, coinDrops } = fixture(); M.enemies.init({ scene, world, tree });
+  const types = Object.keys(M.enemies.types);
+  for (let i = 0; i < 100; i++) M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, types[i % 4]);
+  assert.equal(M.enemies.getState().count, 50);
+  const expected = M.enemies.zombies.reduce((sum, enemy) => sum + M.enemies.types[enemy.type].reward, 0);
+  advance(M, .1);
+  const mesh = scene.getObjectByName('Enemy horde');
+  assert.ok(mesh.count <= mesh.instanceMatrix.count); assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite));
+  M.enemies.attack({ x: 9, y: 0, z: 1 }, 0, true, { damage: 10, range: 5 });
+  assert.equal(M.enemies.getState().count, 0); assert.equal(M.enemies.getState().coins, 0);
+  assert.equal(coinDrops.reduce((sum, drop) => sum + drop.count, 0), expected);
+  advance(M, 1); assert.equal(mesh.count, 0);
+});
+
+test('clearing actual waves introduces each species, pays one bonus, and gives a training break', () => {
+  const { M, scene, world, tree } = fixture(); tree.damage = () => {};
+  M.enemies.init({ scene, world, tree });
+  const rosters = new Map();
+  let lastId = -1, bonus = 0;
+  for (let i = 0; i < 12000 && M.enemies.getState().wave < 9; i++) {
+    M.enemies.update(.05);
+    const state = M.enemies.getState();
+    for (const enemy of M.enemies.zombies.slice()) {
+      if (enemy.id > lastId) {
+        if (!rosters.has(state.wave)) rosters.set(state.wave, []);
+        rosters.get(state.wave).push(enemy.type); lastId = enemy.id;
+      }
+      M.enemies.attack(enemy.position, 0, true, { damage: 20, range: 1 });
+    }
+    if (state.phase === 'intermission') {
+      assert.ok(state.nextWave <= 12); assert.ok(!state.count && !state.pending);
+      if (state.coins > bonus) bonus = state.coins;
+    }
+  }
+  assert.equal(M.enemies.getState().wave, 9);
+  assert.equal(rosters.get(1).length, 4); assert.equal(rosters.get(2).length, 7);
+  assert.ok(rosters.get(3).includes('spider')); assert.ok(rosters.get(5).includes('skeleton')); assert.ok(rosters.get(8).includes('brute'));
+  assert.equal(M.enemies.getState().coins, Array.from({ length: 8 }, (_, i) => Math.min(24, 6 + i * 2)).reduce((a, b) => a + b), 'bonuses pay once per completed wave');
+});
+
+test('automatic waves skip isolated canopy surfaces that would stall wave completion', () => {
+  const { M, scene, context } = harness(true);
+  M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
+  const nodes = M.enemies.navigation.nodes;
+  const stranded = nodes.find(node => !Number.isFinite(node.distance) && Math.hypot(node.x, node.z) >= 54 &&
+    Math.hypot(node.x, node.z) <= 72 && M.world.waterDepthAt(node.x, node.z) < .9);
+  assert.ok(stranded, 'real woodland has isolated canopy spawn candidates');
+  // Force the exact formerly failing choice, independently of random sampling.
+  nodes.splice(nodes.indexOf(stranded), 1); nodes.unshift(stranded);
+  vm.runInContext('Math.random = () => 0;', context);
+  advance(M, 10.05);
+  assert.equal(M.enemies.zombies.length, 1);
+  const enemy = M.enemies.zombies[0], node = M.enemies.navigation.nodeAt(enemy.position.x, enemy.position.y, enemy.position.z);
+  assert.ok(node && Number.isFinite(node.distance), 'the chosen spawn has a proven walking route');
+  assert.notEqual(node, stranded);
+});
+
+test('twenty seconds without real progress explodes stalled enemies, drops loot once and frees the cap', () => {
+  for (const type of Object.keys(harness().M.enemies.types)) {
+    const { M, scene, world, tree, coinDrops } = fixture();
+    const blasts = []; M.audio = { enemyBurst: point => blasts.push(point.clone()) };
+    M.enemies.init({ scene, world, tree });
+    const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type);
+    M.actorPhysics.moveHorizontal = () => false;
+    advance(M, 19.95); assert.ok(M.enemies.zombies.includes(enemy), type + ' survives until the full deadline');
+    advance(M, .05); assert.equal(M.enemies.zombies.includes(enemy), false, type + ' explodes at 20 seconds');
+    assert.equal(enemy.hp, 0); assert.equal(enemy.exploded, true);
+    assert.equal(blasts.length, 1); assert.equal(coinDrops.length, 1);
+    assert.equal(coinDrops[0].count, M.enemies.types[type].reward);
+    assert.equal(M.enemies.getState().coins, 0, 'watchdog loot must still be collected');
+    assert.equal(tree.health, 100, 'a recovery explosion does not damage the Hearth');
+    const mesh = scene.getObjectByName('Enemy horde');
+    assert.ok(mesh.count <= mesh.instanceMatrix.count); assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite));
+    advance(M, 1); assert.equal(blasts.length, 1); assert.equal(coinDrops.length, 1);
+  }
+});
+
+test('watchdog ignores jitter and replans, but resets after meaningful movement', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
+  M.actorPhysics.moveHorizontal = () => false;
+  for (let i = 0; i < 300; i++) {
+    enemy.position.x = 15 + Math.sin(i) * .03;
+    enemy.target = null; enemy.path = null;
+    M.enemies.update(.05);
+  }
+  assert.ok(M.enemies.zombies.includes(enemy));
+  enemy.position.x = 13; M.enemies.update(.05);
+  const progressAt = enemy.progressAt;
+  advance(M, 19.9); assert.ok(M.enemies.zombies.includes(enemy));
+  advance(M, .1); assert.equal(M.enemies.zombies.includes(enemy), false);
+  assert.ok(progressAt > 15, 'real movement earns another 20-second window');
+});
+
+test('productive wall breaches and Hearth bites remain alive beyond twenty seconds', () => {
+  const { M, scene, world, tree } = fixture();
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
+    if (Math.max(Math.abs(x), Math.abs(z)) !== 3) continue;
+    for (let y = 0; y < 3; y++) world.place(x, y, z);
+  }
+  M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 });
+  advance(M, 25);
+  assert.ok(M.enemies.zombies.includes(enemy), 'successful block breaks are progress');
+  assert.ok(enemy.progressAt > 10);
+  enemy.position.set(3, 0, 1); enemy.target = null; enemy.path = null;
+  advance(M, 21);
+  assert.ok(M.enemies.zombies.includes(enemy), 'attacking the objective is progress');
+  assert.equal(enemy.exploded, undefined); assert.ok(tree.health < 100);
+});
+
+test('watchdog accepts progress along a longer detour after construction changes the route', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
+  advance(M, .05);
+  // Closing the short western route requires walking away from the Hearth
+  // for more than twenty seconds before reaching the other side of this wall.
+  for (let z = -10; z <= 10; z++) for (let y = 0; y < 3; y++) world.place(5, y, z);
+  advance(M, 23);
+  assert.ok(M.enemies.zombies.includes(enemy), 'a moving enemy must not expire against its old shorter route');
+  assert.ok(enemy.progressAt > 20, 'advancing along the new route resets the watchdog');
+});
+
+test('unrelated navigation revisions cannot extend a stalled enemy watchdog', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
+  M.actorPhysics.moveHorizontal = () => false;
+  for (let i = 0; i < 20; i++) { world.place(22, i % 3, 10 + i); advance(M, 1); }
+  assert.equal(M.enemies.zombies.includes(enemy), false);
 });

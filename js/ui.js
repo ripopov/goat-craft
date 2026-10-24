@@ -80,7 +80,7 @@
 
     if (M.config.coarsePointer) {
       const hint = document.getElementById('hint');
-      if (hint) hint.innerHTML = '<strong>Defend the Hearth</strong><p><b>Drag</b> Orbit<br><b>Pinch</b> Zoom<br><b>Tap</b> Headbutt / place</p><small>Horns: 2 hits · Stomp: 1 hit<br>Each zombie earns 1 coin.</small>';
+      if (hint) hint.innerHTML = '<strong>Defend the Hearth</strong><p><b>Drag</b> Orbit<br><b>Pinch</b> Zoom<br><b>Tap</b> Headbutt / place</p><small>Tap Upgrades to train yourself or a nearby animal.<br>Clear waves for bonus coins.</small>';
     }
   }
 
@@ -109,7 +109,8 @@
     text('defense-enemies', state.count + ' / 50');
     text('defense-wave', state.wave ? 'Wave ' + state.wave : 'Prepare your defenses');
     text('defense-status', state.defeated ? 'The Hearth has fallen' :
-      state.wave ? 'Next wave in ' + state.nextWave + 's' : 'First zombies in ' + state.nextWave + 's');
+      state.phase === 'combat' ? (state.pending ? state.pending + ' reinforcements incoming' : 'Clear the remaining enemies') :
+      state.wave ? 'Next wave in ' + state.nextWave + 's · Q to train' : 'First wave in ' + state.nextWave + 's');
     const bar = defenseEls['tree-health'];
     if (bar) {
       bar.setAttribute('aria-valuenow', state.health);

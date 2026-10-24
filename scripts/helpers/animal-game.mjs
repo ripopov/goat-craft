@@ -11,7 +11,7 @@ export function game() {
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = 1;
-  for (const file of ['js/world.js', 'js/hearth-tree.js', 'js/goat.js', 'js/animal-recovery.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/enemies.js']) load(file);
+  for (const file of ['js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-recovery.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/enemies.js']) load(file);
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);
@@ -23,7 +23,7 @@ export function game() {
   M.goat.state.manualHold = 1000;
   M.animals.init({ scene, world: M.world, audio, goat: M.goat });
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  return { M, THREE };
+  return { M, THREE, scene, controls, input, load };
 }
 
 export function isolatedAnimal(name = 'Mallow') {

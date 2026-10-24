@@ -364,6 +364,15 @@
 
   window.addEventListener('keydown', function (e) {
     if (e.metaKey || e.altKey) return;
+    if (!e.ctrlKey && (e.code === 'KeyQ' || e.key.toLowerCase() === 'q')) {
+      e.preventDefault();
+      if (!e.repeat && M.upgradeMenu) M.upgradeMenu.toggle();
+      return;
+    }
+    if (M.upgradeMenu && M.upgradeMenu.isOpen) {
+      if (e.key === 'Escape') { e.preventDefault(); M.upgradeMenu.close(); }
+      return;
+    }
     if (e.key === 'Control') {
       held.ctrl = true;
       noteActivity();
@@ -517,6 +526,7 @@
     get swimVertical() { return (held.space ? 1 : 0) - (held.ctrl ? 1 : 0); },
     noteActivity: noteActivity,
     snapTo: snapTo,
+    stopSteering: stopSteering,
     onJump: null,
     onHeadbutt: null,
     onStomp: null,

@@ -28,7 +28,7 @@ test('hunters chase and headbutt zombies while builders stay on their tasks', ()
   assert.equal(hunter.state.project, null);
   advanceAnimals(M, 2);
   assert.equal(M.enemies.zombies.includes(zombie), false);
-  assert.equal(M.enemies.getState().coins, 1);
+  assert.equal(M.enemies.getState().coins, 0, 'hunter kills leave loot for the player to collect');
 });
 
 test('builders complete ten-block walls outside the tree exclusion and repair missing blocks', () => {

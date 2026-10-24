@@ -7,7 +7,7 @@
     const size = world.blockSize;
     const radius = (options && options.radius) || 28;
     const cx = Math.floor(tree.position.x / size), cz = Math.floor(tree.position.z / size);
-    const height = 2.8, bodyRadius = 0.34;
+    const height = 2.8, bodyRadius = (options && options.bodyRadius) || 0.34;
     const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     const samples = [[0, 0], [-bodyRadius, -bodyRadius], [bodyRadius, -bodyRadius], [-bodyRadius, bodyRadius], [bodyRadius, bodyRadius]];
     let columns = new Map(), nodes = [], revision = -1;

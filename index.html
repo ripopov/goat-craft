@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to headbutt zombies or blocks (or place the carried block), right click to stomp nearby zombies or the block beneath the goat, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to headbutt zombies or blocks (or place the carried block), right click to stomp nearby zombies or the block beneath the goat, Q to upgrade yourself or a nearby animal, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
+  <div id="aim-reticle" aria-hidden="true"></div>
   <div id="vignette"></div>
   <div id="water-overlay" aria-hidden="true"></div>
   <div id="water-status" role="status" hidden></div>
@@ -17,8 +18,8 @@
       <div class="defense-heading"><span class="hearth-symbol" aria-hidden="true">♥</span><strong>Hearth Tree</strong><span id="tree-hp">100 / 100 HP</span></div>
       <div id="tree-health" role="progressbar" aria-label="Hearth Tree health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="tree-health-fill"></div></div>
     </div>
-    <div class="defense-stats"><span><i class="coin-symbol" aria-hidden="true"></i><b id="defense-coins">0</b> coins</span><span>Zombies <b id="defense-enemies">0 / 50</b></span></div>
-    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First zombies in 10s</span></div>
+    <div class="defense-stats"><span><i class="coin-symbol" aria-hidden="true"></i><b id="defense-coins">0</b> coins</span><span>Enemies <b id="defense-enemies">0 / 50</b></span></div>
+    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First wave in 10s</span></div>
   </aside>
   <div id="defeat" role="dialog" aria-modal="false" aria-labelledby="defeat-title" hidden>
     <span class="defeat-ember" aria-hidden="true">♥</span>
@@ -31,6 +32,7 @@
     <div id="item-name" aria-live="polite">Horns &amp; Hooves</div>
     <div id="hotbar" role="toolbar" aria-label="Item bar"></div>
   </div>
+  <canvas id="minimap" role="img" aria-label="Player-centered minimap" title="North up · You: white arrow · Enemies: red · Animals: green · Hearth: gold · Cave: cyan · Range: 80m"></canvas>
   <details id="controls-help">
     <summary aria-label="Show game controls">? <span>Controls</span></summary>
     <div id="hint">
@@ -38,14 +40,30 @@
       <p><b>WASD</b> Move <b>Shift</b> Gallop<br><b>Space</b> Jump / swim up <b>Ctrl</b> Dive</p>
       <p><b>E / click</b> Headbutt / place<br><b>Right click</b> Stomp <b>1–0</b> Items</p>
       <p><b>F</b> Mouse look <b>Esc</b> Release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
-      <small>Horns: 2 hits · Stomp: 1 hit<br>Each zombie earns 1 coin.</small>
+      <p><b>Q</b> Train yourself / nearby animal</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
     </div>
   </details>
+  <button id="upgrade-open" type="button" aria-haspopup="dialog" aria-controls="upgrade-menu"><span aria-hidden="true">↑</span> Upgrades <kbd>Q</kbd></button>
+  <dialog id="upgrade-menu" aria-labelledby="upgrade-title" aria-describedby="upgrade-pause">
+    <div class="upgrade-shell">
+      <div class="upgrade-topline"><span>HEARTH TRAINING</span><button id="upgrade-close" type="button" aria-label="Close upgrades">Close <kbd>Esc</kbd></button></div>
+      <nav class="upgrade-tabs" aria-label="Train a character">
+        <button id="upgrade-player-tab" type="button" aria-pressed="true">Your goat</button>
+        <button id="upgrade-animal-tab" type="button" aria-pressed="false" hidden>Nearby animal</button>
+      </nav>
+      <header class="upgrade-character"><div id="upgrade-emblem" aria-hidden="true">YOU</div><div><p id="upgrade-role">Hearth defender</p><h2 id="upgrade-title">Your goat</h2></div></header>
+      <p id="upgrade-note"></p>
+      <div id="upgrade-resources" aria-label="Available resources"></div>
+      <div id="upgrade-cards"></div>
+      <p id="upgrade-message" role="status" aria-live="polite"></p>
+      <footer><span id="upgrade-pause">Game paused · Q or Esc to return</span><span>Stone: dig two blocks down or visit the cyan cave marker.</span></footer>
+    </div>
+  </dialog>
   <button id="hi" type="button"><span></span>Say hi</button>
   <div class="top-actions">
     <button id="look" type="button" aria-pressed="false" aria-label="Capture mouse for free look" title="Capture the pointer for mouse look (Esc releases)"><span class="mouse" aria-hidden="true">⌖</span><span class="label">Mouse look</span></button>
     <button id="effects" type="button" aria-pressed="true" aria-label="Mute sound effects" title="Sound effects"><svg class="speaker" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7h4l4-4v14l-4-4H3z"/><path class="sound-waves" d="M14 6c3 2 3 6 0 8m2-11c5 4 5 10 0 14"/><path class="sound-slash" d="m14 7 5 6m0-6-5 6"/></svg><span class="label">Sound</span></button>
-    <button id="music" type="button" aria-pressed="false" aria-label="Turn music on"><span class="note">♪</span><span class="label">Music</span></button>
+    <button id="music" class="on" type="button" aria-pressed="true" aria-label="Turn music off"><span class="note">♪</span><span class="label">Music on</span></button>
   </div>
 
   <div id="error" role="alert"></div>
@@ -58,6 +76,7 @@
 <script src="js/items.js"></script>
 <script src="js/actor-physics.js"></script>
 <script src="js/voxel-water.js"></script>
+<script src="js/caves.js"></script>
 <script src="js/world.js"></script>
 <script src="js/hearth-tree.js"></script>
 <script src="js/zombie-navigation.js"></script>
@@ -65,10 +84,15 @@
 <script src="js/fish.js"></script>
 <script src="js/water.js"></script>
 <script src="js/environment.js"></script>
+<script src="js/targeting.js"></script>
 <script src="js/goat.js"></script>
 <script src="js/animal-recovery.js"></script>
 <script src="js/animals.js"></script>
 <script src="js/controls.js"></script>
+<script src="js/upgrades.js"></script>
+<script src="js/upgrade-menu.js"></script>
+<script src="js/minimap.js"></script>
+<script src="js/highlights.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

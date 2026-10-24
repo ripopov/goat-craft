@@ -93,6 +93,7 @@ function harness({ suspended = false } = {}) {
 }
 
 const effects = [
+  ['enemyBurst', { x: 0, y: 0, z: 0 }],
   ['bleat'], ['thud'], ['step', false, 4.8], ['step', true, 9.6], ['jump'], ['whoosh'],
   ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1],
   ['zombie', 'groan'], ['zombie', 'hurt'], ['zombie', 'death'], ['zombie', 'bite'],

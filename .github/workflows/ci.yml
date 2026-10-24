@@ -46,6 +46,15 @@ jobs:
       - name: Test zombie defense gameplay
         run: node --test scripts/test-enemies.mjs
 
+      - name: Test training, purchases and collectible coins
+        run: node --test scripts/test-upgrades.mjs
+
+      - name: Test cave geology, traversal and camera targeting
+        run: node --test scripts/test-caves.mjs scripts/test-targeting.mjs
+
+      - name: Test player-centered minimap coordinates
+        run: node --test scripts/test-minimap.mjs
+
       - name: Test herd combat and wall maintenance
         run: node --test scripts/test-animals.mjs
 

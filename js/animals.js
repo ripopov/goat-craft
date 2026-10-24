@@ -1487,7 +1487,7 @@
         canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
       startJump(animal, 'climb');
     }
-    const speed = animal.def.walkSpeed * (s.grounded ? 1.2 : AIR_CONTROL);
+    const speed = defWalkSpeed(animal) * (s.grounded ? 1.2 : AIR_CONTROL);
     s.speed = damp(s.speed, speed, 7, dt);
     const moved = moveAnimal(
       animal,
@@ -1510,7 +1510,7 @@
     // air control so a two-metre hop reliably carries it over the lip and
     // onto the stair instead of landing back on the block below.
     if (!s.grounded && p.y > c.top + 0.03 && dist > 0.45) {
-      const pull = Math.max(1.7, animal.def.walkSpeed * 2.0) * dt;
+      const pull = Math.max(1.7, defWalkSpeed(animal) * 2.0) * dt;
       const amount = Math.min(dist, pull);
       const nx = p.x + (dx / dist) * amount;
       const nz = p.z + (dz / dist) * amount;
@@ -1617,7 +1617,7 @@
 
     const yaw = Math.atan2(dx, dz);
     s.yaw = turnToward(s.yaw, yaw, dt * 4.5);
-    const speed = animal.def.walkSpeed * (s.grounded ? 1.15 : AIR_CONTROL);
+    const speed = defWalkSpeed(animal) * (s.grounded ? 1.15 : AIR_CONTROL);
     s.speed = damp(s.speed, speed, 5, dt);
     const moved = moveAnimal(
       animal,
@@ -1809,7 +1809,7 @@
       const dz = approach.z - p.z;
       const desiredYaw = Math.atan2(dx, dz);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 4.8);
-      const speed = animal.def.walkSpeed * (s.grounded ? 1.25 : AIR_CONTROL);
+      const speed = defWalkSpeed(animal) * (s.grounded ? 1.25 : AIR_CONTROL);
       s.speed = damp(s.speed, speed, 5, dt);
       const moved = moveAnimal(
         animal,
@@ -1837,7 +1837,7 @@
       return;
     }
 
-    action.time += dt;
+    action.time += dt * (M.upgrades ? M.upgrades.stats(animal).craft : 1);
     if (!action.hit && action.time >= 0.22) applyAction(animal);
     if (action.time < action.duration) return;
 
@@ -2405,6 +2405,7 @@
   function updateHunt(animal, dt) {
     const s = animal.state;
     const p = animal.group.position;
+    const upgrades = M.upgrades ? M.upgrades.stats(animal) : { rate: 1, reach: 0, damage: 0 };
     const zombie = s.huntTarget;
     if (!zombie || zombie.hp <= 0 || M.enemies.zombies.indexOf(zombie) < 0) {
       s.huntTarget = null;
@@ -2421,17 +2422,17 @@
     const distance = Math.hypot(dx, dz);
     const yaw = Math.atan2(dx, dz);
     s.yaw = turnToward(s.yaw, yaw, dt * 7);
-    s.attackCooldown = Math.max(0, (s.attackCooldown || 0) - dt);
+    s.attackCooldown = Math.max(0, (s.attackCooldown || 0) - dt * upgrades.rate);
     if (s.strikeTime >= 0) {
       const before = s.strikeTime;
-      s.strikeTime += dt;
-      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 2.65 && Math.abs(q.y - p.y) <= 2.8) {
-        if (M.enemies.attack(p, s.yaw, false)) s.happy = 1;
+      s.strikeTime += dt * upgrades.rate;
+      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 2.65 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
+        if (M.enemies.attack(p, s.yaw, false, { range: 2.8 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 1 })) s.happy = 1;
       }
       if (s.strikeTime >= 0.45) s.strikeTime = -1;
     }
 
-    if (distance <= 2.45 && Math.abs(q.y - p.y) <= 2.8) {
+    if (distance <= 2.45 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
       s.speed = damp(s.speed, 0, 10, dt);
       s.stuck = 0;
       if (s.attackCooldown <= 0 && Math.abs(angleDelta(s.yaw, yaw)) < 0.35) {
@@ -2544,8 +2545,9 @@
     s.jumpCooldown = Math.max(0, (s.jumpCooldown || 0) - dt);
     s.escapeCooldown = Math.max(0, (s.escapeCooldown || 0) - dt);
     s.pitTimer = (s.pitTimer || 0) - dt;
-    s.buildTimer = Math.max(0, (s.buildTimer || 0) - dt);
-    s.actionTimer = Math.max(0, (s.actionTimer || 0) - dt);
+    const workRate = M.upgrades ? M.upgrades.stats(animal).craft : 1;
+    s.buildTimer = Math.max(0, (s.buildTimer || 0) - dt * workRate);
+    s.actionTimer = Math.max(0, (s.actionTimer || 0) - dt * workRate);
 
     if (playerDistance > 92 && !s.action) {
       relocate(animal);
@@ -2577,7 +2579,7 @@
 
     if (s.mode === 'idle') {
       s.speed = damp(s.speed, 0, 5, dt);
-      s.wait -= dt;
+      s.wait -= dt * workRate;
       if (s.wait <= 0) {
         if (s.pendingClimb) {
           startClimb(animal, s.pendingClimb);
@@ -2730,7 +2732,7 @@
   }
 
   function defWalkSpeed(animal) {
-    return animal.def.walkSpeed;
+    return animal.def.walkSpeed * (M.upgrades ? M.upgrades.stats(animal).move : 1);
   }
 
   function findSpawnNear(cx, cz, minRadius, maxRadius, ignore) {

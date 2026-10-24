@@ -9,14 +9,15 @@
   const PICKUP_RADIUS = 1.4;
   const PICKUP_HEIGHT = 1.8;
   const MAX_DROPS = 160;
-  const PLACE_HEIGHT = 2.4;
   const HELD_SCALE = 0.32;
   const HELD_POS = { x: 0, y: 0.70, z: -0.35 };
 
   const ITEM_NAMES = {
+    coin: 'Coin',
     grass: 'Grass Block',
     dirt: 'Dirt',
     stone: 'Stone',
+    coal: 'Coal Ore', copper: 'Copper Ore', iron: 'Iron Ore',
     log: 'Oak Log',
     leaves: 'Leaves'
   };
@@ -78,30 +79,21 @@
     updateHeldBlock();
   }
 
-  // Place the carried block in the cell the goat is facing. The block is set
-  // on top of whatever solid is already there (ground, stone, a low wall).
+  // Use the camera hit face for both the contour and the actual placement.
   // Occupied cells are rejected before consuming the carried block.
-  function placeSelectedBlock() {
+  function placementTarget() {
     const kind = selectedBlockKind();
-    if (!kind || !M.world || !M.world.placeBlock || !M.world.landingHeight || !M.goat || !M.goat.group) {
-      return false;
-    }
-
-    const goat = M.goat.group;
-    const state = M.goat.state;
+    if (!kind || !M.world || !M.goat || !M.goat.group) return null;
     const size = M.world.blockSize || 2;
-    const yaw = state ? state.yaw : goat.rotation.y;
-    const dx = Math.round(Math.sin(yaw));
-    const dz = Math.round(Math.cos(yaw));
-    const bx = Math.floor(goat.position.x / size) + dx;
-    const bz = Math.floor(goat.position.z / size) + dz;
-    const cx = (bx + 0.5) * size;
-    const cz = (bz + 0.5) * size;
-
-    const top = M.world.landingHeight(cx, cz, goat.position.y + PLACE_HEIGHT);
-    const by = Math.floor((top + 0.001) / size);
-
-    if (!M.world.placeBlock(kind, bx, by, bz)) return false;
+    const hit = M.targeting && M.goat.aimCamera ? M.targeting.aim(M.goat.aimCamera, M.goat.group.position) : null;
+    if (!hit) return null;
+    const bx = hit.bx + hit.normal.x, by = hit.by + hit.normal.y, bz = hit.bz + hit.normal.z;
+    return { kind: kind, bx: bx, by: by, bz: bz, x: (bx + .5) * size, y: (by + .5) * size, z: (bz + .5) * size,
+      valid: M.world.canPlaceBlock(bx, by, bz) };
+  }
+  function placeSelectedBlock() {
+    const target = placementTarget();
+    if (!target || !target.valid || !M.world.placeBlock(target.kind, target.bx, target.by, target.bz)) return false;
 
     const item = slots[selectedSlot];
     if (item) {
@@ -320,19 +312,88 @@
     return target;
   }
 
+  function countItem(kind) {
+    return slots.reduce(function (sum, item) { return sum + (item && item.kind === kind ? item.count : 0); }, 0);
+  }
+  function canSpend(cost) {
+    return Object.keys(cost).filter(function (kind) { return kind !== 'coins'; }).every(function (kind) {
+      return kind !== 'tool' && Number.isInteger(cost[kind]) && cost[kind] >= 0 && countItem(kind) >= cost[kind];
+    });
+  }
+  function spend(cost) {
+    if (!canSpend(cost)) return false;
+    Object.keys(cost).forEach(function (kind) {
+      if (kind === 'coins') return;
+      let left = cost[kind];
+      for (let i = 1; i < SLOT_COUNT && left > 0; i++) {
+        if (!slots[i] || slots[i].kind !== kind) continue;
+        const amount = Math.min(left, slots[i].count);
+        slots[i].count -= amount; left -= amount;
+        if (!slots[i].count) slots[i] = null;
+        renderSlot(i);
+      }
+    });
+    renderSelection();
+    return true;
+  }
+
   // ------------------------------------------------------------------- drops
+  let coinGeometry, coinMaterial;
+  function coinMesh() {
+    if (!coinGeometry) {
+      coinGeometry = new THREE.CylinderGeometry(0.85, 0.85, 0.24, 8);
+      coinGeometry.rotateX(Math.PI / 2);
+      coinMaterial = M.std(0xf0c455, 0.35, { metalness: 0.4, emissive: 0x6e3b09, emissiveIntensity: 0.25 });
+    }
+    return new THREE.Mesh(coinGeometry, coinMaterial);
+  }
+  function dropCoins(position, amount) {
+    if (!Number.isInteger(amount) || amount <= 0) return;
+    dropBlock('coin', position.x, position.y + 0.65, position.z, { persistent: true, count: amount });
+  }
+  function lootPathClear(ax, ay, az, bx, by, bz) {
+    if (!M.world.blockedAt) return true;
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay, bz - az) / 0.2));
+    for (let i = 1; i < steps; i++) {
+      const k = i / steps, y = ay + (by - ay) * k;
+      if (M.world.blockedAt(ax + (bx - ax) * k, az + (bz - az) * k, y - 0.03, y + 0.03)) return false;
+    }
+    return true;
+  }
   function dropBlock(kind, x, y, z, options) {
     if (!dropGroup || !M.world || !M.world.makeBlockMesh) return;
     const persistent = !!(options && options.persistent);
+    const amount = options && Number.isInteger(options.count) && options.count > 0 ? options.count : 1;
     // Chewed materials persist. Nearby matching drops stack to keep long
     // sieges inexpensive without discarding the player's building supplies.
     if (persistent) {
       const nearby = drops.find(function (drop) {
-        return drop.userData.drop.kind === kind && Math.hypot(drop.position.x - x, drop.position.z - z) < 4 && Math.abs(drop.position.y - y) < 5;
+        return drop.userData.drop.kind === kind && Math.hypot(drop.position.x - x, drop.position.z - z) < 4 &&
+          Math.abs(drop.position.y - y) < 5 && lootPathClear(x, y, z, drop.position.x, drop.position.y, drop.position.z);
       });
-      if (nearby) { nearby.userData.drop.count++; nearby.userData.drop.persistent = true; return; }
+      if (nearby) { nearby.userData.drop.count += amount; nearby.userData.drop.persistent = true; return; }
     }
-    const mesh = M.world.makeBlockMesh(kind);
+    // Keep valuable loot physical and bounded, even after very long sieges.
+    if (drops.length >= MAX_DROPS) {
+      const disposable = drops.findIndex(function (drop) { return !drop.userData.drop.persistent; });
+      if (disposable >= 0) dropGroup.remove(drops.splice(disposable, 1)[0]);
+      else {
+        const matching = drops.filter(function (drop) { return drop.userData.drop.kind === kind; });
+        matching.sort(function (a, b) { return Math.hypot(a.position.x - x, a.position.z - z) - Math.hypot(b.position.x - x, b.position.z - z); });
+        if (matching.length) { matching[0].userData.drop.count += amount; return; }
+        // Free one slot by consolidating two old stacks of the same material.
+        const seen = new Map();
+        for (let i = 0; i < drops.length; i++) {
+          const oldKind = drops[i].userData.drop.kind;
+          if (seen.has(oldKind)) {
+            seen.get(oldKind).userData.drop.count += drops[i].userData.drop.count;
+            dropGroup.remove(drops.splice(i, 1)[0]); break;
+          }
+          seen.set(oldKind, drops[i]);
+        }
+      }
+    }
+    const mesh = kind === 'coin' ? coinMesh() : M.world.makeBlockMesh(kind);
     mesh.scale.setScalar(DROP_SCALE);
     mesh.position.set(x + rand(-0.16, 0.16), y, z + rand(-0.16, 0.16));
     mesh.rotation.y = rand(0, Math.PI * 2);
@@ -341,7 +402,7 @@
 
     mesh.userData.drop = {
       kind: kind,
-      count: 1,
+      count: amount,
       persistent: persistent,
       vy: rand(1.7, 3.3),
       landed: false,
@@ -361,8 +422,9 @@
 
   function collect(mesh, index) {
     const kind = mesh.userData.drop.kind;
-    const slot = addItem(kind, mesh.userData.drop.count);
-    if (slot < 0) return false;
+    if (kind === 'coin') {
+      if (!M.enemies || !M.enemies.addCoins(mesh.userData.drop.count)) return false;
+    } else if (addItem(kind, mesh.userData.drop.count) < 0) return false;
 
     dropGroup.remove(mesh);
     drops.splice(index, 1);
@@ -382,21 +444,15 @@
       const u = mesh.userData.drop;
       u.age = (u.age || 0) + dt;
       const appear = M.config.reducedMotion ? 1 : 1 - Math.pow(1 - clamp(u.age / 0.2, 0, 1), 3);
-      mesh.scale.setScalar(DROP_SCALE * (0.35 + appear * 0.65));
+      mesh.scale.setScalar(DROP_SCALE * (0.35 + appear * 0.65) * (u.kind === 'coin' ? Math.min(1.6, 1 + Math.log2(u.count) * 0.1) : 1));
       const dx = gx - mesh.position.x;
       const dy = gy - mesh.position.y;
       const dz = gz - mesh.position.z;
       const horiz = Math.hypot(dx, dz);
 
       // Pull nearby drops toward the goat's chest so they are easy to collect.
-      let reachable = horiz < PICKUP_RADIUS && Math.abs(dy) < PICKUP_HEIGHT;
-      if (reachable && M.world.blockedAt) {
-        const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.2));
-        for (let j = 1; j < steps; j++) {
-          const k = j / steps, y = mesh.position.y + dy * k;
-          if (M.world.blockedAt(mesh.position.x + dx * k, mesh.position.z + dz * k, y - 0.03, y + 0.03)) { reachable = false; break; }
-        }
-      }
+      const reachable = horiz < PICKUP_RADIUS && Math.abs(dy) < PICKUP_HEIGHT &&
+        lootPathClear(mesh.position.x, mesh.position.y, mesh.position.z, gx, gy, gz);
       if (reachable) {
         const dist = Math.hypot(dx, dy, dz);
         // If the goat moves away mid-pull, let the drop fall normally again.
@@ -470,14 +526,17 @@
   }
 
   M.items = {
+    count: countItem, canSpend: canSpend, spend: spend,
     init: init,
     update: update,
     dropBlock: dropBlock,
+    dropCoins: dropCoins,
     addItem: addItem,
     selectSlot: selectSlot,
     itemName: itemName,
     hasSelectedBlock: hasSelectedBlock,
     placeSelectedBlock: placeSelectedBlock,
+    placementTarget: placementTarget,
     refreshHeld: refreshHeld,
     slots: slots,
     get selectedSlot() { return selectedSlot; },

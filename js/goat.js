@@ -421,6 +421,7 @@
 
   function updateGoat(dt, t) {
     const s = state;
+    const upgrades = M.upgrades ? M.upgrades.stats() : { move: 1, rate: 1, reach: 0, damage: 0 };
     const previousYaw = s.yaw;
     s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
     recoverOverlap();
@@ -456,8 +457,8 @@
       const running = controlsRef.running;
       s.manualHold = 3.0;
       s.mode = 'manual';
-      if (!controlsRef.firstPerson) face(turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7));
-      s.speed = damp(s.speed, s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8), s.swimming ? 3.5 : 5, dt);
+      if (!controlsRef.firstPerson && s.headbutt < 0) face(turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7));
+      s.speed = damp(s.speed, (s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8)) * upgrades.move, s.swimming ? 3.5 : 5, dt);
 
       const mx = input.x * s.speed * dt;
       const mz = input.y * s.speed * dt;
@@ -561,22 +562,22 @@
     }
 
     // ---- headbutt timing and impact ----
-    s.headbuttCooldown = Math.max(0, s.headbuttCooldown - dt);
+    s.headbuttCooldown = Math.max(0, s.headbuttCooldown - dt * upgrades.rate);
     let buttPose = 0;
     let headbuttPending = false;
     if (s.headbutt >= 0) {
-      s.headbutt += dt;
+      s.headbutt += dt * upgrades.rate;
       buttPose = actionPose(s.headbutt, 0.12, 0.34);
       if (!s.headbuttHit && s.headbutt >= 0.12) headbuttPending = true;
       if (s.headbutt > 0.34) s.headbutt = -1;
     }
 
     // ---- hoof stomp timing ----
-    s.stompCooldown = Math.max(0, s.stompCooldown - dt);
+    s.stompCooldown = Math.max(0, s.stompCooldown - dt * upgrades.rate);
     let stompLift = 0;
     let stompPending = false;
     if (s.stomp >= 0) {
-      s.stomp += dt;
+      s.stomp += dt * upgrades.rate;
       if (s.stomp < STOMP_LIFT_END) {
         const v = clamp(s.stomp / STOMP_LIFT_END, 0, 1);
         stompLift = v * v * (3 - 2 * v);
@@ -654,7 +655,7 @@
     const runHeadBob = moving ? Math.sin(s.runPhase * 2) * 0.05 : 0;
     const headBob = (walkHeadBob * (1 - run) + runHeadBob * run) * (1 - swim) + Math.sin(s.swimPhase * 2 + 0.4) * 0.018 * swim;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
-    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08, 10, dt);
+    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0), 10, dt);
     neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16, 8, dt);
 
     // With a block on the horns, the same lunge places it instead of smashing.
@@ -665,14 +666,17 @@
         if (M.items.placeSelectedBlock()) {
           recoverOverlap();
         }
-      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false)) {
+      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: 2.8 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 3 })) {
         audioRef.thud();
+      } else if (M.targeting) {
+        const hit = M.targeting.aim(cameraRef, goat.position);
+        if (hit) worldRef.breakBlockAt(hit.bx, hit.by, hit.bz);
       } else { worldRef.breakBlockInFront(headPivot); }
     }
 
     if (stompPending) {
       s.stompHit = true;
-      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true);
+      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true, { range: 3.1 + upgrades.reach, damage: 2 + upgrades.damage, maxTargets: 8 });
       const broke = !hit && s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
       audioRef.stomp(broke || hit);
       if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
@@ -749,6 +753,12 @@
 
   function startHeadbutt() {
     if (state.headbuttCooldown > 0) return;
+    if (cameraRef) {
+      const direction = new THREE.Vector3(); cameraRef.getWorldDirection(direction);
+      state.yaw = Math.atan2(direction.x, direction.z);
+      state.aimPitch = Math.asin(clamp(direction.y, -1, 1));
+      state.manualHold = Math.max(state.manualHold, 3);
+    }
     state.headbutt = 0;
     state.headbuttHit = false;
     state.headbuttCooldown = 0.55;
@@ -834,6 +844,7 @@
     greet: greet,
     intersectsBlock: intersectsBlock,
     body: BODY,
+    get aimCamera() { return cameraRef; },
     group: null,
     headPivot: null,
     state: null

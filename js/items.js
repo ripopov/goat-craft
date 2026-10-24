@@ -437,6 +437,31 @@
     return true;
   }
 
+  // Builders have their own construction purse. Removing the physical stack
+  // here keeps player attraction and two nearby builders from claiming it twice.
+  function nearestCoin(position, range) {
+    let best = null, distance = range;
+    for (const mesh of drops) {
+      if (mesh.userData.drop.kind !== 'coin' || Math.abs(mesh.position.y - position.y - .9) > PICKUP_HEIGHT) continue;
+      const d = Math.hypot(mesh.position.x - position.x, mesh.position.z - position.z);
+      if (d >= distance || !lootPathClear(mesh.position.x, mesh.position.y, mesh.position.z, position.x, position.y + .9, position.z)) continue;
+      best = mesh; distance = d;
+    }
+    return best;
+  }
+  function takeCoins(position) {
+    let amount = 0;
+    for (let i = drops.length - 1; i >= 0; i--) {
+      const mesh = drops[i], u = mesh.userData.drop;
+      if (u.kind !== 'coin' || Math.hypot(mesh.position.x - position.x, mesh.position.z - position.z) > 1.8 ||
+          Math.abs(mesh.position.y - position.y - .9) > PICKUP_HEIGHT ||
+          !lootPathClear(mesh.position.x, mesh.position.y, mesh.position.z, position.x, position.y + .9, position.z)) continue;
+      amount += u.count; dropGroup.remove(mesh); drops.splice(i, 1);
+    }
+    if (amount && M.audio && M.audio.pickup) M.audio.pickup();
+    return amount;
+  }
+
   function update(dt, t, goat) {
     if (!dropGroup || !goat) return;
 
@@ -536,6 +561,7 @@
     update: update,
     dropBlock: dropBlock,
     dropCoins: dropCoins,
+    nearestCoin: nearestCoin, takeCoins: takeCoins,
     addItem: addItem,
     selectSlot: selectSlot,
     itemName: itemName,

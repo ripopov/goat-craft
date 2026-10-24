@@ -15,6 +15,14 @@
     { id: 'sun', name: 'Sunspire', role: 'Radiant beam pierces 3 foes', height: 3, damage: 2.5, interval: 1.7, range: 25, color: 0xffd975, cost: { coins: 45, stone: 5, iron: 3, coal: 2 }, pierce: true, style: 'coil' }
   ];
   const byId = Object.fromEntries(definitions.map(d => [d.id, d]));
+  // Builder variants stay out of the workshop catalogue. Their distinct item
+  // IDs preserve training strength when a tower is packed and redeployed.
+  for (let tier = 1; tier <= 3; tier++) {
+    const id = 'builder_frost_' + tier;
+    byId[id] = { ...byId.frost, id, baseId: 'frost', builderTier: tier,
+      name: 'Builder Frost Spire ' + ['I', 'II', 'III'][tier - 1],
+      damage: .5 * tier, interval: 1.3 - (tier - 1) * .15 };
+  }
   const list = [], cells = new Map(), effects = [], projectiles = [], motion = new WeakMap();
   const MAX_TOWERS = 80, SIZE = 2;
   let scene, removing = false, visualTime = 0;
@@ -33,6 +41,13 @@
     parent.add(mesh); return mesh;
   }
   function model(id) {
+    if (byId[id] && byId[id].baseId) {
+      const def = byId[id], group = model(def.baseId);
+      group.name = def.name;
+      for (let i = 0; i < def.builderTier; i++)
+        part(group, 0, .55 + i * .24, .79, .34, .13, .08, def.color, true);
+      return group;
+    }
     if (templates.has(id)) {
       const copy = templates.get(id).clone();
       copy.userData.turret = copy.getObjectByName('Turret'); copy.userData.weapon = copy.getObjectByName('Weapon'); return copy;
@@ -267,7 +282,11 @@
   }
   function itemDefinition(kind) { return typeof kind === 'string' && kind.startsWith('tower_') ? byId[kind.slice(6)] || null : null; }
   function atCell(bx, by, bz) { return cells.get(bx + ',' + by + ',' + bz) || null; }
-  function inventoryCount(id) { return M.items.count('tower_' + id); }
+  function inventoryCount(id) {
+    let count = M.items.count('tower_' + id);
+    if (id === 'frost') for (let tier = 1; tier <= 3; tier++) count += M.items.count('tower_builder_frost_' + tier);
+    return count;
+  }
   function available(def) { return inventoryCount(def.id) > 0 || M.upgrades.canAfford(def.cost); }
   function site(id, bx, by, bz) {
     const def = byId[id];
@@ -282,11 +301,9 @@
     }
     return { valid: true, reason: 'Click to deploy · Shift keeps building' };
   }
-  function place(id, bx, by, bz, inventoryOnly) {
+  function construct(id, bx, by, bz, pay) {
     const def = byId[id];
     if (!scene || !def || M.hearthTree.health <= 0 || !site(id, bx, by, bz).valid) return false;
-    const owned = inventoryCount(id) > 0;
-    if (inventoryOnly && !owned || !owned && !M.upgrades.canAfford(def.cost)) return false;
     // Validate every cell and both balances before editing or spending.
     const tower = { id, bx, by, bz, def, cooldown: .25, kills: 0, shots: 0, fireAge: 10, group: model(id) };
     for (let y = by; y < by + def.height; y++) {
@@ -295,14 +312,51 @@
         return false;
       }
     }
-    if (owned) M.items.spend({ ['tower_' + id]: 1 });
-    else { M.enemies.spendCoins(def.cost.coins); M.items.spend(def.cost); }
+    pay();
     tower.group.position.set((bx + .5) * SIZE, by * SIZE, (bz + .5) * SIZE);
     tower.position = tower.group.position;
     for (let y = by; y < by + def.height; y++) cells.set(bx + ',' + y + ',' + bz, tower);
     scene.add(tower.group); list.push(tower);
     if (M.audio && M.audio.pickup) M.audio.pickup();
     return tower;
+  }
+  function place(id, bx, by, bz, inventoryOnly) {
+    // The Frost card can redeploy trained variants too, preserving their rank.
+    if (id === 'frost' && !M.items.count('tower_frost')) {
+      for (let tier = 3; tier >= 1; tier--) if (M.items.count('tower_builder_frost_' + tier)) {
+        id = 'builder_frost_' + tier; break;
+      }
+    }
+    const def = byId[id];
+    if (!def) return false;
+    const owned = inventoryCount(id) > 0;
+    if (inventoryOnly && !owned || !owned && (def.builderTier || !M.upgrades.canAfford(def.cost))) return false;
+    return construct(id, bx, by, bz, function () {
+      if (owned) M.items.spend({ ['tower_' + id]: 1 });
+      else { M.enemies.spendCoins(def.cost.coins); M.items.spend(def.cost); }
+    });
+  }
+  function builderDefinition(animal) {
+    if (!animal || animal.role !== 'builder' || !M.animals || !M.animals.list.includes(animal) || !M.upgrades || !M.upgrades.level) return null;
+    return byId['builder_frost_' + M.upgrades.level(animal, 'craft')] || null;
+  }
+  function placeBuilder(animal, bx, by, bz) {
+    const def = builderDefinition(animal), s = animal && animal.state;
+    if (!def || !s || !(s.coins >= def.cost.coins && s.towerStone >= def.cost.stone)) return false;
+    const tower = construct(def.id, bx, by, bz, function () { s.coins -= def.cost.coins; s.towerStone -= def.cost.stone; });
+    if (tower) tower.builder = animal;
+    return tower;
+  }
+  function trainBuilder(animal) {
+    const def = builderDefinition(animal);
+    if (!def) return;
+    for (const tower of list) if (tower.builder === animal && tower.def.builderTier < def.builderTier) {
+      const previous = tower.group;
+      tower.id = def.id; tower.def = def; tower.group = model(def.id);
+      tower.group.position.copy(tower.position); tower.position = tower.group.position;
+      tower.mechanism = null; tower.cooldown = Math.min(tower.cooldown, def.interval);
+      scene.remove(previous); scene.add(tower.group);
+    }
   }
   function dismantle(tower) {
     if (removing || !list.includes(tower)) return false;
@@ -448,7 +502,7 @@
   }
   function muzzle(tower, point, aim) {
     if (M.config.reducedMotion || effects.length >= MAX_EFFECTS) return;
-    const id = tower.id, color = tower.def.color, g = new THREE.Group();
+    const id = tower.def.baseId || tower.id, color = tower.def.color, g = new THREE.Group();
     const forward = aim.clone().sub(point).normalize();
     const palette = id === 'ember' || id === 'mortar' ? [0xffdb7c, 0xff8b36, 0xffedba] : [color, 0xecfaff];
     for (let i = 0; i < (id === 'ballista' ? 5 : 15); i++) {
@@ -649,7 +703,7 @@
   };
   function launch(tower, target, origin, visited) {
     if (projectiles.length >= MAX_PROJECTILES) return false;
-    const id = tower.id, spec = flight[id], aim = aimAt(target);
+    const id = tower.def.baseId || tower.id, spec = flight[id], aim = aimAt(target);
     // Lead physical shots using observed velocity; teleports never create
     // impossible intercepts. Homing magic instead follows the live body.
     const movement = motion.get(target);
@@ -775,7 +829,7 @@
   }
   function shoot(tower) {
     if (projectiles.length >= MAX_PROJECTILES) return false;
-    const def = tower.def, center = tower.position.clone(); center.y += def.height * SIZE - .4;
+    const def = tower.def, center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
     const enemies = M.enemies.zombies.filter(e => alive(e) && Math.hypot(e.position.x - center.x, e.position.z - center.z) <= def.range &&
       Math.abs(e.position.y - tower.position.y) < 15);
     enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq());
@@ -785,19 +839,20 @@
     turret.rotation.y = Math.atan2(center.x - aim.x, center.z - aim.z);
     const weapon = tower.group.userData.weapon;
     if (def.style === 'bolt' || def.style === 'shell') {
-      const rise = (flight[tower.id].arc ? target.position.y + .15 + Math.PI * flight[tower.id].arc : aim.y) - center.y;
+      const rise = (flight[id].arc ? target.position.y + .15 + Math.PI * flight[id].arc : aim.y) - center.y;
       weapon.rotation.x = Math.atan2(rise, Math.hypot(aim.x - center.x, aim.z - center.z));
     }
     const origin = new THREE.Vector3(0, .16, def.style === 'bolt' || def.style === 'shell' ? (def.id === 'sniper' ? -1.36 : -1.12) : 0);
     tower.group.updateMatrixWorld(true); weapon.localToWorld(origin);
     if (!lineClear(center, origin, tower) || !launch(tower, target, origin)) return false;
     tower.fireAge = 0; muzzle(tower, origin, aim);
-    if (M.audio && M.audio.towerShot) M.audio.towerShot(origin, def.style, def.id);
+    if (M.audio && M.audio.towerShot) M.audio.towerShot(origin, def.style, id);
     tower.shots++; return true;
   }
   function animateTower(tower, dt) {
     tower.fireAge += dt;
     const weapon = tower.group.userData.weapon, def = tower.def;
+    const id = def.baseId || def.id;
     const k = Math.max(0, 1 - tower.fireAge / (def.id === 'earth' ? .5 : .3));
     const recoil = Math.sin(k * Math.PI * .8) * k;
     weapon.position.z = (def.id === 'sniper' ? .48 : def.style === 'shell' ? .32 : .13) * recoil;
@@ -809,7 +864,7 @@
     const charge = 1 - M.utils.clamp(tower.cooldown / def.interval, 0, 1);
     if (mechanism) {
       if (def.id === 'arcane') { mechanism.rotation.y = t * .8; mechanism.position.y = Math.sin(t * 2) * .055; }
-      if (def.id === 'frost') { mechanism.rotation.y = -t * .4; mechanism.position.y = Math.sin(t * 1.8) * .055; }
+      if (id === 'frost') { mechanism.rotation.y = -t * .4; mechanism.position.y = Math.sin(t * 1.8) * .055; }
       if (def.id === 'sun') mechanism.rotation.z = t * .22;
       if (def.id === 'storm' || def.id === 'venom') mechanism.scale.setScalar(1 + Math.sin(t * 4) * .07 + charge * .12);
       if (def.id === 'ballista') mechanism.scale.x = 1 - recoil * .18;
@@ -822,11 +877,11 @@
       return;
     }
     tower.particleTime = (tower.particleTime || 0) + dt;
-    if (tower.particleTime > .35 && ['frost', 'ember', 'venom', 'storm', 'arcane', 'sun'].includes(def.id)) {
+    if (tower.particleTime > .35 && ['frost', 'ember', 'venom', 'storm', 'arcane', 'sun'].includes(id)) {
       tower.particleTime = 0;
       const point = new THREE.Vector3(Math.cos(t * 2) * .4, .3, Math.sin(t * 2) * .4);
       tower.group.updateMatrixWorld(true); weapon.localToWorld(point);
-      particle(point, def.color, def.id === 'ember' ? .2 : .11, .65, 0, def.id === 'frost' ? -.28 : .4, 0);
+      particle(point, def.color, id === 'ember' ? .2 : .11, .65, 0, id === 'frost' ? -.28 : .4, 0);
       if (def.id === 'ember') particle(point, 0x68616a, .55, .9, .08, .45, 0, true, .3);
       if (def.id === 'storm') {
         const left = weapon.localToWorld(new THREE.Vector3(-.62, .48, 0));
@@ -898,6 +953,7 @@
     updateParticles(dt);
   }
   M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget,
+    builderDefinition, placeBuilder, trainBuilder,
     model, lineClear, maxTowers: MAX_TOWERS, init: function (value) {
       scene = value;
       if (!particlePools.length) { particlePool(false, 900); particlePool(true, 220); }

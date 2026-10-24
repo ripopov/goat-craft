@@ -1089,7 +1089,10 @@
   }
 
   function blockIcon(kind, size) {
-    if (M.towers && M.towers.itemDefinition(kind)) return 'assets/towers/' + M.towers.itemDefinition(kind).id + '.png';
+    if (M.towers && M.towers.itemDefinition(kind)) {
+      const def = M.towers.itemDefinition(kind);
+      return 'assets/towers/' + (def.baseId || def.id) + '.png';
+    }
     if (!blockAtlasCanvas) return '';
     const px = Math.max(32, Math.round(size || 64));
     const key = kind + ':' + px;

@@ -49,7 +49,7 @@ test('NPC training is individual, role appropriate, and leaves shared species de
   const base = sheep.def.walkSpeed;
   train(M, stag, 'power', 2); train(M, builder, 'craft'); train(M, builder, 'move');
   assert.ok(Math.abs(u.stats(stag).damage - 4 / 3) < 1e-9); assert.equal(u.stats(sheep).damage, 0); assert.equal(u.stats().damage, 0);
-  assert.equal(u.stats(builder).craft, 1.75); assert.equal(u.stats(cow).craft, 1);
+  assert.equal(u.stats(builder).craft, 3.5, 'Fleet hooves doubles the Practiced builder work rate'); assert.equal(u.stats(cow).craft, 1);
   assert.equal(u.buy(builder, 'power'), false); assert.equal(u.buy(stag, 'craft'), false);
   assert.equal(builder.def.walkSpeed, base, 'two sheep share definitions without sharing training');
   assert.equal(u.stats(builder).move, 2, 'fully trained fleet hooves double movement speed'); assert.equal(u.stats(sheep).move, 1);
@@ -349,6 +349,77 @@ test('builder work training accelerates the actual action and its block edit', (
   assert.equal(animal.state.action.hit, true, 'trained impact occurs before the untrained 220ms windup');
   assert.equal(M.world.blockInfoAt(8, 6, 7), null, 'the real quarry block is removed');
   assert.equal(animal.state.carryCount, 1);
+});
+
+test('Fleet hooves speeds up gathering and building at every tier without granting free blocks', () => {
+  for (const name of ['Mallow', 'Clover']) {
+    const { M, animal } = training(isolatedAnimal(name)); supplies(M);
+    animal.group.position.set(15, 14, 15);
+    const dt = 1 / 600, timings = [];
+    function action(kind, bx, by, bz, duration) {
+      const job = { kind, target: { bx, by, bz, x: bx * 2 + 1, z: bz * 2 + 1 }, time: 0, duration, hit: false };
+      Object.assign(animal.state, { mode: kind, action: job });
+      let elapsed = 0, impact = 0;
+      for (let i = 0; i < 1000 && animal.state.action; i++) {
+        M.animals.update(dt, elapsed); elapsed += dt;
+        if (!impact && job.hit) impact = elapsed;
+      }
+      assert.equal(animal.state.action, null, name + ' finishes the action');
+      return { elapsed, impact, result: job.result };
+    }
+    const sources = [[8, 7], [7, 8], [6, 7], [7, 6]];
+    const destinations = [[9, 9], [9, 8], [8, 9], [9, 7]];
+    for (let tier = 0; tier <= 3; tier++) {
+      if (tier) train(M, animal, 'move', 1);
+      const [sx, sz] = sources[tier], [bx, bz] = destinations[tier];
+      assert.equal(M.world.blockInfoAt(bx, 7, bz), null);
+      assert.equal(action('place', bx, 7, bz, .68).result, 'failed', 'an empty builder cannot place blocks');
+      assert.equal(M.world.blockInfoAt(bx, 7, bz), null, 'speed never creates free construction material');
+      const mined = action('break', sx, 6, sz, .62);
+      assert.equal(mined.result, 'broke');
+      assert.equal(M.world.blockInfoAt(sx, 6, sz), null, 'resources are removed from the actual world');
+      assert.equal(animal.state.carryCount, 1);
+      const material = animal.state.carry;
+      const placed = action('place', bx, 7, bz, .68);
+      assert.equal(placed.result, 'placed');
+      assert.equal(M.world.blockInfoAt(bx, 7, bz).kind, material);
+      assert.equal(animal.state.carryCount, 0, 'placing consumes the gathered block');
+      assert.equal(animal.state.carry, null);
+      const rate = 1 + tier / 3;
+      for (const [timing, duration] of [[mined, .62], [placed, .68]]) {
+        assert.ok(Math.abs(timing.elapsed - duration / rate) < dt * 2, name + ' completes work at the tier speed');
+        assert.ok(Math.abs(timing.impact - .22 / rate) < dt * 2, 'the real block edit is accelerated too');
+      }
+      timings.push([mined.elapsed, placed.elapsed]);
+    }
+    for (let kind = 0; kind < 2; kind++) {
+      assert.ok(Math.abs(timings[0][kind] - timings[3][kind] * 2) < dt * 3, name + ' gathers and builds twice as fast at tier 3');
+    }
+    assert.equal(M.items.drops.length, 0, 'gathered resources go into the builder carry stack');
+  }
+});
+
+test('builder Fleet hooves accelerates work waits, stacks with Practiced builder and stays individual', () => {
+  const { M, animal } = training(isolatedAnimal()); supplies(M);
+  const hunter = M.animals.list.find(a => a.role === 'hunter');
+  train(M, animal, 'move'); train(M, hunter, 'move'); train(M, M.upgrades.player, 'move');
+  assert.equal(M.upgrades.stats(animal).craft, 2);
+  assert.equal(M.upgrades.stats(hunter).craft, 1, 'hunter movement does not boost work');
+  assert.equal(M.upgrades.stats().craft, 1, 'player movement does not boost work');
+  const otherBuilder = M.animals.list.find(a => a.role === 'builder' && a !== animal);
+  assert.equal(M.upgrades.stats(otherBuilder).craft, 1, 'the other builder keeps its original work speed');
+  const offer = M.upgrades.offer(animal, 'move');
+  assert.match(offer.current, /100% movement, gathering & building speed/);
+  assert.match(offer.description, /consumes gathered blocks/);
+  for (const [craftTiers, rate] of [[0, 2], [3, 3.5]]) {
+    if (craftTiers) train(M, animal, 'craft', craftTiers);
+    assert.equal(M.upgrades.stats(animal).craft, rate);
+    Object.assign(animal.state, { mode: 'idle', wait: 10, actionTimer: 10, buildTimer: 10 });
+    M.animals.update(.1, 0);
+    for (const timer of ['wait', 'actionTimer', 'buildTimer']) {
+      assert.ok(Math.abs(animal.state[timer] - (10 - .1 * rate)) < 1e-9, timer + ' uses the combined work rate');
+    }
+  }
 });
 
 test('Heavy horns tiers enlarge horns and restyle beards without disturbing elemental training', () => {

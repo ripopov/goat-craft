@@ -1262,6 +1262,59 @@
     return true;
   }
 
+  function startCoinRun(animal) {
+    const s = animal.state;
+    if (!M.items || !M.items.nearestCoin || s.coinCooldown > 0) return false;
+    const coin = M.items.nearestCoin(animal.group.position, 18);
+    if (!coin) { s.coinCooldown = 2; return false; }
+    s.coinTarget = coin; s.coinTime = 8; s.coinCooldown = 10;
+    s.target.copy(coin.position); s.mode = 'walk'; s.wait = 0;
+    return true;
+  }
+
+  function startTowerJob(animal) {
+    const s = animal.state, p = animal.group.position;
+    const def = M.towers && M.towers.builderDefinition(animal);
+    // Establish a wall before mixing in a tower, preserving that wall project
+    // across the detour. An unaffordable tower never blocks ordinary wall work.
+    const wallWork = s.walls.length || s.project && s.project.stepCount >= 4;
+    if (!def || !wallWork || s.towerTimer > 0 || s.coins < def.cost.coins) return false;
+    const bx0 = Math.floor(p.x / BLOCK), bz0 = Math.floor(p.z / BLOCK);
+    let target = null, score = Infinity;
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
+      const bx = bx0 + dx, bz = bz0 + dz, c = cellCenter(bx, bz);
+      const distance = Math.hypot(c.x - p.x, c.z - p.z);
+      if (distance < 2.4 || distance > 8 || distance >= score || entityBlocksCell(animal, c.x, c.z, 1.5)) continue;
+      if (animals.some(other => [other.state.project, ...other.state.walls].some(project => project && inSiteFootprint(project, bx, bz, 1)))) continue;
+      if (s.towerStone < def.cost.stone) {
+        const info = worldRef.topSoilInfo(bx, bz);
+        if (!info || !['grass', 'dirt', 'stone'].includes(info.kind) || worldRef.isPlacedBlock(bx, info.by, bz) ||
+            worldRef.blockInfoAt(bx, info.by + 1, bz) ||
+            info.top > p.y + .2 || info.top < p.y - BLOCK * 2 - .2 || worldRef.isWaterColumn(bx, bz)) continue;
+        if (info.kind !== 'stone' && s.carryCount >= CARRY_LIMIT) continue;
+        target = { type: 'terrain', bx, by: info.by, bz, x: c.x, z: c.z, y: info.top };
+      } else {
+        const by = Math.round(worldRef.landingHeight(c.x, c.z, p.y + .1) / BLOCK);
+        if (Math.abs(by * BLOCK - p.y) > .2 || Math.hypot(c.x, c.z) < WALL_TREE_DISTANCE ||
+            !M.towers.site(def.id, bx, by, bz).valid) continue;
+        if (M.towers.list.some(tower => Math.hypot(tower.position.x - c.x, tower.position.z - c.z) < 6)) continue;
+        target = { bx, by, bz, x: c.x, z: c.z, top: (by + def.height) * BLOCK };
+      }
+      score = distance;
+    }
+    if (!target) { s.towerTimer = 8; return false; }
+    if (s.towerStone < def.cost.stone) {
+      s.action = { kind: 'break', target, time: 0, duration: .72, hit: false, towerQuarry: true };
+      beginAction(animal);
+    } else {
+      const approach = findApproach(animal, target.x, target.z, 2.5, { levelY: p.y, maxRise: BLOCK + .45 });
+      if (!approach) { s.towerTimer = 8; return false; }
+      s.action = { kind: 'place', target, approach, time: 0, duration: 1.2, hit: false, towerBuild: true };
+      s.mode = 'seekPlace'; s.seekTime = 9; s.stuck = 0;
+    }
+    return true;
+  }
+
   function chooseWander(animal) {
     const s = animal.state;
     const p = animal.group.position;
@@ -1792,7 +1845,8 @@
       if (kind) {
         // A recovery dig can pack a cannon. Its one intact item stays on the
         // ground; builders must not turn a second copy into wall material.
-        if (!(M.towers && M.towers.itemDefinition(kind))) addCarry(animal, kind, 1);
+        if (action.towerQuarry && kind === 'stone') s.towerStone++;
+        else if (!(M.towers && M.towers.itemDefinition(kind))) addCarry(animal, kind, 1);
         if (action.escape && s.escape) {
           s.escape.opened = { bx: target.bx, by: target.by, bz: target.bz };
           s.escape.dug = true;
@@ -1804,7 +1858,12 @@
       }
     } else if (action.kind === 'place') {
       const target = action.target;
-      if (s.carryCount <= 0 || !s.carry) {
+      if (action.towerBuild) {
+        const tower = M.towers && M.towers.placeBuilder(animal, target.bx, target.by, target.bz);
+        action.result = tower ? 'placed' : 'failed';
+        if (tower) { s.towersBuilt++; s.happy = 1; }
+        s.towerTimer = tower ? 60 : 10;
+      } else if (s.carryCount <= 0 || !s.carry) {
         action.result = 'failed';
       } else if (targetUnsafeForPlacement(animal, target.x, target.z)) {
         action.result = 'failed';
@@ -2673,6 +2732,17 @@
     s.escapeCooldown = Math.max(0, (s.escapeCooldown || 0) - dt);
     s.pitTimer = (s.pitTimer || 0) - dt;
     const workRate = M.upgrades ? M.upgrades.stats(animal).craft : 1;
+    const trainedBuilder = !s.retired && M.towers && M.towers.builderDefinition(animal);
+    s.towerTimer = Math.max(0, s.towerTimer - dt * workRate);
+    s.coinCooldown = Math.max(0, s.coinCooldown - dt);
+    if (trainedBuilder && s.coins < trainedBuilder.cost.coins && M.items && M.items.takeCoins) s.coins += M.items.takeCoins(p);
+    if (s.coinTarget) {
+      s.coinTime -= dt;
+      if (s.mode !== 'walk' || s.coinTime <= 0 || !M.items.drops.includes(s.coinTarget)) {
+        s.coinTarget = null;
+        if (s.mode === 'walk') { s.mode = 'idle'; s.wait = .2; s.speed = 0; }
+      } else s.target.copy(s.coinTarget.position);
+    }
     s.buildTimer = Math.max(0, (s.buildTimer || 0) - dt * workRate);
     s.actionTimer = Math.max(0, (s.actionTimer || 0) - dt * workRate);
 
@@ -2708,7 +2778,11 @@
       s.speed = damp(s.speed, 0, 5, dt);
       s.wait -= dt * workRate;
       if (s.wait <= 0) {
-        if (s.pendingClimb) {
+        if (trainedBuilder && s.coins < trainedBuilder.cost.coins && !s.pendingClimb && startCoinRun(animal)) {
+          // The wall project stays intact while this short collection trip runs.
+        } else if (trainedBuilder && !s.pendingClimb && startTowerJob(animal)) {
+          // Quarrying and tower assembly use the same timed actions as walls.
+        } else if (s.pendingClimb) {
           startClimb(animal, s.pendingClimb);
         } else if (s.project) {
           const project = s.project;
@@ -3001,6 +3075,13 @@
       batchGoal: 0,
       carry: null,
       carryCount: 0,
+      coins: 0,
+      towerStone: 0,
+      towersBuilt: 0,
+      towerTimer: 20,
+      coinTarget: null,
+      coinTime: 0,
+      coinCooldown: 0,
       carriedMesh: null,
       carryPop: 0,
       grazePose: 0,

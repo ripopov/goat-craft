@@ -9,7 +9,7 @@
     cadence: { name: 'Quick strikes', description: 'Refit your neck: braced jab, spring snap, then plated piston strike. Faster windup and recovery at every tier.', material: 'stone', coins: [10, 24, 42], blocks: [2, 4, 6] },
     reach: { name: 'Long horns', description: 'Reach enemies farther away. Walls still stop attacks.', material: 'log', coins: [8, 20, 36], blocks: [2, 4, 6] },
     power: { name: 'Heavy horns', description: 'Grow larger horns, style your beard, and cast thicker, brighter projectiles. Deal more damage with every strike.', material: 'stone', coins: [12, 28, 48], blocks: [3, 5, 8] },
-    craft: { name: 'Practiced builder', description: 'Quarry, place and prepare the next job faster.', material: 'stone', coins: [8, 18, 32], blocks: [2, 4, 6] }
+    craft: { name: 'Practiced builder', description: 'Keep building walls and occasionally add Frost Spires. Collect coins and quarry stone to pay for towers. Higher tiers strengthen your spires and speed up work.', material: 'stone', coins: [8, 18, 32], blocks: [2, 4, 6] }
   };
   function valid(target) { return target === player || !!(M.animals && M.animals.list.includes(target)); }
   function keys(target) { return target !== player && target.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']; }
@@ -25,13 +25,18 @@
   function stats(target) {
     target = target || player;
     const reachLevel = level(target, 'reach');
-    return { move: 1 + level(target, 'move') / 3, rate: 1 + level(target, 'cadence') / 3,
+    const move = 1 + level(target, 'move') / 3;
+    // Builders use the movement bonus for quarrying, placement and job waits
+    // too. Practiced builder remains an additional multiplier on that work.
+    const workMove = target.role === 'builder' ? move : 1;
+    return { move: move, rate: 1 + level(target, 'cadence') / 3,
       reach: reachLevel === 0 ? 0 : SPELL_RANGES[reachLevel],
       damage: level(target, 'power') * DAMAGE_BASE * 2 / 3,
-      craft: 1 + level(target, 'craft') * 0.25 };
+      craft: (1 + level(target, 'craft') * 0.25) * workMove };
   }
   function effect(target, key, rank) {
-    if (key === 'move') return '+' + Math.round(rank * 100 / 3) + '% movement';
+    if (key === 'move') return '+' + Math.round(rank * 100 / 3) +
+      (target.role === 'builder' ? '% movement, gathering & building speed' : '% movement');
     if (key === 'cadence') return '+' + Math.round(rank * 100 / 3) + '% attack speed' +
       (rank > 0 ? ' · ' + M.styleFx.neckStyle[rank].name : '');
     if (key === 'reach') {
@@ -42,12 +47,14 @@
     }
     if (key === 'power') return '+' + (rank * DAMAGE_BASE * 2 / 3).toFixed(1) + ' damage' +
       (rank > 0 ? ' · ' + M.styleFx.powerStyle[rank].beard : '');
-    return '+' + (rank * 25) + '% work speed';
+    return '+' + (rank * 25) + '% work speed' + (rank ? ' · Frost Spires ' + ['I', 'II', 'III'][rank - 1] : ' · walls only');
   }
   function offer(target, key) {
     if (!valid(target) || !keys(target).includes(key)) return null;
     const def = definitions[key], rank = level(target, key), maxed = rank >= MAX_LEVEL;
-    const description = key === 'move' && target !== player ? 'Move faster between enemies or construction jobs.'
+    const description = key === 'move' && target.role === 'builder'
+      ? 'Move, gather resources and build faster: 2× at tier 3. Building still consumes gathered blocks. Stacks with Practiced builder.'
+      : key === 'move' && target !== player ? 'Move faster between enemies or construction jobs.'
       : key === 'reach' && (target === player || target.role === 'hunter') ? SPELL_DESCRIPTION
       : def.description;
     return { key: key, name: def.name, description: description,
@@ -66,6 +73,7 @@
     let levels = training.get(target);
     if (!levels) { levels = {}; training.set(target, levels); }
     levels[key] = item.level + 1;
+    if (key === 'craft' && M.towers && M.towers.trainBuilder) M.towers.trainBuilder(target);
     if (target === player && key === 'move' && M.goat && M.goat.applySpeedStyle) {
       M.goat.applySpeedStyle(levels[key]);
     }

@@ -13,11 +13,13 @@
   function balance(kind) { return kind === 'coins' ? M.enemies.getState().coins : M.items.count(kind); }
   function render() {
     const isPlayer = target === M.upgrades.player;
+    const construction = target.state || {};
     $('upgrade-title').textContent = isPlayer ? 'Your goat' : target.name;
     $('upgrade-role').textContent = isPlayer ? 'Hearth defender' : target.species + ' · ' + target.role;
     $('upgrade-emblem').textContent = isPlayer ? 'YOU' : target.name.slice(0, 1);
     $('upgrade-note').textContent = isPlayer ? 'Build your own fighting style. Training lasts for this run.' :
-      target.role === 'builder' ? 'Invest in faster walls and repairs. Training belongs to ' + target.name + '.' :
+      target.role === 'builder' ? 'Train walls, repairs and Frost Spires. Tower funds: ' + (construction.coins || 0) +
+        ' coins · ' + (construction.towerStone || 0) + ' stone. Construction uses gathered resources.' :
       'Strengthen your hunting partner. Training belongs to ' + target.name + '.';
     $('upgrade-player-tab').setAttribute('aria-pressed', String(isPlayer));
     $('upgrade-animal-tab').setAttribute('aria-pressed', String(!isPlayer));

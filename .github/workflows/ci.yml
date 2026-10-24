@@ -61,8 +61,8 @@ jobs:
       - name: Test player-centered minimap coordinates
         run: node --test scripts/test-minimap.mjs
 
-      - name: Test herd combat and wall maintenance
-        run: node --test scripts/test-animals.mjs
+      - name: Test herd combat, walls and paid builder towers
+        run: node --test scripts/test-animals.mjs scripts/test-builder-towers.mjs
 
       - name: Test isolated NPC stuck recovery
         run: node --test scripts/test-animal-recovery.mjs

@@ -391,147 +391,21 @@
   const stompLeg = legs[1];
 
   // ----------------------------------------------------------------- speed style
-  // Fleet hooves training visibly refits the player's goat. Tiers stack glowing
-  // energy bands up each leg and tint the tail light; the third tier adds a
-  // spinning wheel rim per leg and swaps the gait for a cartoon wheel spin.
-  const speedStyle = { level: 0 };
-  const styleNodes = [];
-  const TIER_GLOW = [0x000000, 0x2fe6d0, 0xffc13d, 0xff5ce1]; // none, teal, gold, magenta
-
-  function disposeStyleNodes() {
-    for (let i = 0; i < styleNodes.length; i++) {
-      const node = styleNodes[i];
-      if (node.parent) node.parent.remove(node);
-      node.traverse(function (o) {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) {
-          const list = Array.isArray(o.material) ? o.material : [o.material];
-          for (let j = 0; j < list.length; j++) list[j].dispose();
-        }
-      });
-    }
-    styleNodes.length = 0;
-  }
-  function glowMaterial(color) {
-    return new THREE.MeshStandardMaterial({
-      color: color, emissive: color, emissiveIntensity: 0.9,
-      roughness: 0.35, metalness: 0.25, flatShading: true
-    });
-  }
-  function addBand(parent, y, radius, color) {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.022, 8, 20), glowMaterial(color));
-    ring.rotation.x = Math.PI / 2;          // hoop around the vertical leg axis
-    ring.position.y = y;
-    parent.add(ring);
-    styleNodes.push(ring);
-  }
-  function addWheel(parent, color) {
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.022, 8, 28), glowMaterial(color));
-    rim.rotation.y = Math.PI / 2;           // annulus in the leg-swing plane
-    rim.position.y = -0.47;                 // hub at mid-leg; leg is the spoke
-    parent.add(rim);
-    styleNodes.push(rim);
-    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), glowMaterial(color));
-    hub.position.y = -0.47;
-    parent.add(hub);
-    styleNodes.push(hub);
-  }
-  function addComet(color) {
-    const comet = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), glowMaterial(color));
-    comet.position.y = 0.46;
-    tailPivot.add(comet);
-    styleNodes.push(comet);
-  }
-  function applySpeedStyle(level) {
-    level = clamp(level || 0, 0, 3);
-    if (level === speedStyle.level || !rig) return;
-    speedStyle.level = level;
-    disposeStyleNodes();
-    if (level < 1 || legs.length === 0) return;
-    const color = TIER_GLOW[level];
-    for (let i = 0; i < legs.length; i++) {
-      const leg = legs[i];
-      addBand(leg.ankle, 0, 0.082, color);
-      if (level >= 2) addBand(leg.hip, -0.24, 0.135, color);
-      if (level >= 3) {
-        addBand(leg.hip, -0.08, 0.17, color);
-        addWheel(leg.hip, color);
-      }
-    }
-    addComet(color);
-  }
-
-  // ----------------------------------------------------------------- horn style
-  // Long horns training re-forges the goat's horns for each elemental tier: an
-  // energized cyan tint with sparking tips, a gold overcharge banded at the
-  // base, then molten fire horns for the capstone fireball. Colors and pulse
-  // rates encode the spell about to be thrown.
-  const HORN_STYLE = [
-    null,
-    { tint: 0x4fd8ff, tips: 0.05, base: 0.5, swing: 0.14, pulse: 3.4 },
-    { tint: 0xffc13d, tips: 0.06, base: 0.6, swing: 0.18, pulse: 5.2 },
-    { tint: 0xff7a2a, tips: 0.085, base: 0.8, swing: 0.24, pulse: 8 }
-  ];
-  const hornStyle = { level: 0, mats: [] };
-  const hornNodes = [];
+  // Fleet hooves training visibly refits the player's goat (and, through
+  // M.styleFx, the whole herd): tiers stack glowing energy bands up each leg
+  // and tint the tail light; tier 3 adds spinning wheel rims and swaps the
+  // gait for a cartoon wheel spin.
+  const speedFx = M.styleFx.makeSpeedStyle(THREE);
+  const hornFx = M.styleFx.makeHornStyle(THREE);
   const HORN_TIP = new THREE.Vector3(0, 0.26, -0.37); // far end of makeHorn's curve
-
-  function disposeHornNodes() {
-    for (let i = 0; i < hornNodes.length; i++) {
-      const node = hornNodes[i];
-      if (node.parent) node.parent.remove(node);
-      node.traverse(function (o) {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) {
-          const list = Array.isArray(o.material) ? o.material : [o.material];
-          for (let j = 0; j < list.length; j++) list[j].dispose();
-        }
-      });
-    }
-    hornNodes.length = 0;
-  }
-  function hornTip(horn, color, size) {
-    const tip = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), glowMaterial(color));
-    tip.position.copy(HORN_TIP);
-    horn.add(tip);
-    hornNodes.push(tip);
+  const GOAT_HORN_BAND = new THREE.Vector3(0, 0.07, -0.03);
+  function applySpeedStyle(level) {
+    speedFx.apply(level, { legs: legs, tailPivot: tailPivot });
   }
   function applyHornStyle(level) {
-    level = clamp(level || 0, 0, 3);
-    if (level === hornStyle.level || !headPivot) return;
-    hornStyle.level = level;
-    disposeHornNodes();
-    for (let i = 0; i < hornStyle.mats.length; i++) hornStyle.mats[i].dispose();
-    hornStyle.mats = [];
-    const style = HORN_STYLE[level];
-    for (let i = 0; i < horns.length; i++) {
-      const horn = horns[i];
-      if (style) {
-        const mat = horn.material === hornMat ? hornMat.clone() : horn.material;
-        mat.emissive = new THREE.Color(style.tint);
-        mat.emissiveIntensity = style.base;
-        horn.material = mat;
-        hornStyle.mats.push(mat);
-        hornTip(horn, style.tint, style.tips);
-        if (level >= 2) {
-          const bandR = level >= 3 ? 0.082 : 0.072;
-          const band = new THREE.Mesh(new THREE.TorusGeometry(bandR, 0.022, 8, 20), glowMaterial(style.tint));
-          band.rotation.x = Math.PI / 2;
-          band.position.set(0, 0.07, -0.03);
-          horn.add(band);
-          hornNodes.push(band);
-        }
-        if (level >= 3) {
-          const halo = new THREE.Mesh(new THREE.SphereGeometry(style.tips * 1.7, 10, 8), glowMaterial(style.tint));
-          halo.material.transparent = true; halo.material.opacity = 0.35; halo.material.depthWrite = false;
-          halo.position.copy(HORN_TIP);
-          horn.add(halo);
-          hornNodes.push(halo);
-        }
-      } else {
-        horn.material = hornMat;
-      }
-    }
+    const ctx = { horns: [], defaultMat: hornMat, scale: 1 };
+    for (let i = 0; i < horns.length; i++) ctx.horns.push({ mesh: horns[i], tip: HORN_TIP, band: GOAT_HORN_BAND });
+    hornFx.apply(level, ctx);
   }
 
   // Damping toward a gait pose normally keeps hips in a small arc. After a long
@@ -642,31 +516,41 @@
   // Returns true when an elemental strike fired. Falls back to melee when the
   // aimed spell finds no enemies (which lets mining and placing still work).
   function castSpell(reachLevel) {
+    if (!M.upgrades || !M.upgrades.stats) return false;
+    const stats = M.upgrades.stats();
+    return castSpellAt(goat.position, reachLevel, 1 + stats.damage, muzzlePos());
+  }
+  // Elemental strikes for any caster, player or trained hunter. Damage flows
+  // through M.enemies; the visuals (bolts, sparks, fireball) live here. The
+  // spell ranges match M.upgrades' SPELL_RANGES: bolt 9, chain 12, fireball 30.
+  function castSpellAt(from, tier, dmg, fxFrom) {
     if (!M.enemies || !M.enemies.spellTargets || !M.enemies.spellHit) return false;
-    const stats = M.upgrades ? M.upgrades.stats() : { damage: 0, reach: 0 };
-    const dmg = 1 + stats.damage;
-    const range = stats.reach; // player reach is the spell range: 9 / 12 / 30
-    const p = goat.position;
-    if (reachLevel >= 3) {
-      const targets = M.enemies.spellTargets(p, range, 1);
+    if (!(tier >= 1)) return false;
+    const ranges = M.upgrades && M.upgrades.spellRanges ? M.upgrades.spellRanges() : [0, 9, 12, 30];
+    const range = ranges[tier] || 0;
+    if (!range) return false;
+    const origin = new THREE.Vector3().copy(from);
+    const muzzle = fxFrom || new THREE.Vector3(origin.x, origin.y + 1.15, origin.z);
+    if (tier >= 3) {
+      const targets = M.enemies.spellTargets(origin, range, 1);
       if (!targets.length) return false;
       const aim = new THREE.Vector3().copy(targets[0].position); aim.y += 0.8;
-      spawnFireball(muzzlePos(), aim, dmg);
-      if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'shell');
+      spawnFireball(muzzle, aim, dmg);
+      if (audioRef && audioRef.towerShot) audioRef.towerShot(origin.clone(), 'shell');
       return true;
     }
-    const targets = M.enemies.spellTargets(p, range, reachLevel === 1 ? 1 : 3);
+    const targets = M.enemies.spellTargets(origin, range, tier <= 1 ? 1 : 3);
     if (!targets.length) return false;
-    let from = muzzlePos();
+    let chainFrom = muzzle;
     for (let i = 0; i < targets.length; i++) {
       const enemy = targets[i];
       if (!M.enemies.zombies.includes(enemy)) continue;
       const to = new THREE.Vector3().copy(enemy.position); to.y += 0.8;
-      spellBolt(from, to);
+      spellBolt(chainFrom, to);
       M.enemies.spellHit(enemy, dmg);
-      from = to;
+      chainFrom = to;
     }
-    if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'bolt');
+    if (audioRef && audioRef.towerShot) audioRef.towerShot(origin.clone(), 'bolt');
     return true;
   }
   // Returns the nearest enemy the goat could actually hit within range; this
@@ -1168,11 +1052,7 @@
     bell.rotation.x = Math.sin(t * 2.1 + 1) * 0.1;
 
     // Horns glow and pulse at the speed of their elemental charge.
-    if (hornStyle.level > 0) {
-      const pulse = HORN_STYLE[hornStyle.level];
-      const charge = pulse.base + Math.sin(t * pulse.pulse) * pulse.swing;
-      for (let i = 0; i < hornStyle.mats.length; i++) hornStyle.mats[i].emissiveIntensity = charge;
-    }
+    hornFx.pulse(t);
 
     // Advance bolts, sparks and fireballs, and their collisions.
     updateSpellFx(dt, t);
@@ -1287,6 +1167,10 @@
     greet: greet,
     applySpeedStyle: applySpeedStyle,
     applyHornStyle: applyHornStyle,
+    get speedStyle() { return speedFx.level; },
+    get hornStyle() { return hornFx.level; },
+    castSpellAt: castSpellAt,
+    advanceSpellFx: updateSpellFx,
     intersectsBlock: intersectsBlock,
     body: BODY,
     get aimCamera() { return cameraRef; },

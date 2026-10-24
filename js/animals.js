@@ -298,14 +298,32 @@
     return geo;
   }
 
+  // Horn styling anchors per species (head-local offsets). The tip is where
+  // the elemental glow sphere lands, the band wraps the horn base; these let
+  // Long horns training charge NPC horns exactly like the player goat's.
+  const HORN_STYLE_ANCHORS = {
+    sheep: function (sign) { return { tip: new THREE.Vector3(sign * 0.15, 0.03, -0.14), band: new THREE.Vector3(sign * 0.14, 0.17, 0) }; },
+    cow: function (sign) { return { tip: new THREE.Vector3(sign * 0.34, 0.44, -0.1), band: new THREE.Vector3(sign * 0.17, 0.24, 0) }; },
+    stag: function (sign) { return { tip: new THREE.Vector3(sign * 0.3, 0.66, -0.29), band: new THREE.Vector3(sign * 0.14, 0.26, -0.03) }; }
+  };
+  // Leg-size ratios against the player goat, so style bands and wheel rims fit
+  // each species, and horn-size ratios for tip spheres and base bands.
+  const STYLE_SCALES = {
+    sheep: { leg: 0.85, horn: 0.6 },
+    cow: { leg: 1.0, horn: 0.75 },
+    stag: { leg: 0.9, horn: 0.65 }
+  };
   function addHorn(head, mats, speciesName, sign) {
     const mesh = new THREE.Mesh(hornGeometry(speciesName, sign), mats.horn);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     head.add(mesh);
+    const anchors = HORN_STYLE_ANCHORS[speciesName](sign);
+    return { mesh: mesh, tip: anchors.tip, band: anchors.band };
   }
 
   function addStagAntlers(head, mats) {
+    const horns = [];
     for (let sign = -1; sign <= 1; sign += 2) {
       const main = taperTube([
         [sign * 0.1, 0.18, 0.02],
@@ -344,7 +362,13 @@
       c.castShadow = true;
       group.add(c);
       head.add(group);
+      const anchors = HORN_STYLE_ANCHORS.stag(sign);
+      horns.push({ mesh: beam, tip: anchors.tip, band: anchors.band });
+      horns.push({ mesh: a }); // tines tint with the beam; only the beam gets tips
+      horns.push({ mesh: b });
+      horns.push({ mesh: c });
     }
+    return horns;
   }
 
   function addEyes(head, mats, opts) {
@@ -539,7 +563,8 @@
       mats: mats,
       legs: [],
       ears: [],
-      eyes: []
+      eyes: [],
+      horns: []
     };
 
     // ---- body ----
@@ -674,8 +699,8 @@
       headPivot.add(poll);
       parts.ears = addEars(headPivot, mats, def, { x: 0.195, y: 0.14, z: 0.04, droop: 0.92, reach: 0.12, rx: 0.16, ry: 0.04, rz: 0.085 });
       parts.eyes = addEyes(headPivot, mats, { x: 0.17, y: 0.06, z: 0.18, size: 0.95 });
-      addHorn(headPivot, mats, speciesName, -1);
-      addHorn(headPivot, mats, speciesName, 1);
+      parts.horns.push(addHorn(headPivot, mats, speciesName, -1));
+      parts.horns.push(addHorn(headPivot, mats, speciesName, 1));
     } else if (speciesName === 'cow') {
       const skull = ellipsoid(mats.face, 0.23, 0.22, 0.29);
       skull.position.set(0, 0.035, 0.07);
@@ -703,8 +728,8 @@
 
       parts.ears = addEars(headPivot, mats, def, { x: 0.215, y: 0.13, z: 0.02, droop: 0.68, reach: 0.13, rx: 0.17, ry: 0.05, rz: 0.09 });
       parts.eyes = addEyes(headPivot, mats, { x: 0.185, y: 0.055, z: 0.2, size: 1.02 });
-      addHorn(headPivot, mats, speciesName, -1);
-      addHorn(headPivot, mats, speciesName, 1);
+      parts.horns.push(addHorn(headPivot, mats, speciesName, -1));
+      parts.horns.push(addHorn(headPivot, mats, speciesName, 1));
     } else {
       const skull = ellipsoid(mats.face, 0.175, 0.21, 0.3);
       skull.position.set(0, 0.035, 0.08);
@@ -723,7 +748,7 @@
 
       parts.ears = addEars(headPivot, mats, def, { x: 0.16, y: 0.16, z: 0.04, droop: 0.46, reach: 0.11, rx: 0.14, ry: 0.045, rz: 0.08 });
       parts.eyes = addEyes(headPivot, mats, { x: 0.15, y: 0.065, z: 0.21, size: 0.9 });
-      addStagAntlers(headPivot, mats);
+      parts.horns = addStagAntlers(headPivot, mats);
     }
 
     const carryAnchor = new THREE.Group();
@@ -2275,6 +2300,11 @@
     }
   }
 
+  // After a long wheel spin the hip angle is some large multiple of two pi;
+  // fold it back into the nearest turn before easing back into the walk gait,
+  // so the legs wind down instead of unwinding a full rotation backwards.
+  function foldAngle(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
+
   function updateVisual(animal, dt, t) {
     const s = animal.state;
     const parts = animal.parts;
@@ -2301,8 +2331,20 @@
 
     s.tuck = damp(s.tuck || 0, s.grounded ? 0 : 1, 11, dt);
     const tuck = s.tuck;
+    // Fleet hooves and Long horns train the herd with the same visible
+    // transformations as the player goat: glowing bands up the legs, wheel
+    // rims at tier 3, and charging elemental horns that pulse.
+    const speedLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'move') : 0;
+    const hornLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
+    if (animal.speedFx) animal.speedFx.apply(speedLevel, animal.speedCtx);
+    if (animal.hornFx) {
+      animal.hornFx.apply(hornLevel, animal.hornCtx);
+      animal.hornFx.pulse(t);
+    }
     const bob = moving ? Math.abs(Math.sin(s.walkPhase)) * 0.024 * stride : 0;
-    parts.rig.position.y = parts.rigBaseY + bob - (s.landPulse || 0) * 0.045 - tuck * 0.025;
+    // Faster tiers bounce with each stride instead of just moving quicker.
+    const hop = moving && s.grounded && speedLevel < 3 ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.012 * speedLevel * stride : 0;
+    parts.rig.position.y = parts.rigBaseY + bob + hop - (s.landPulse || 0) * 0.045 - tuck * 0.025;
     const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.014 * stride;
     parts.rig.position.x = damp(parts.rig.position.x, weightShift, 10, dt);
     parts.rig.rotation.x = damp(parts.rig.rotation.x,
@@ -2325,6 +2367,9 @@
     const headSway = s.mode === 'graze' ? Math.sin(t * 2.1 + animal.seed) * 0.12 * grazePose : 0;
     let neckTarget = def.neckBase + grazePose * (def.grazeNeck - def.neckBase);
     let headTarget = def.headBase + grazePose * (def.grazeHead - def.headBase);
+    // Faster tiers tuck the head and lift the tail, as on the player goat.
+    neckTarget -= speedLevel * 0.01;
+    headTarget -= speedLevel * 0.015;
     neckTarget += actionLunge * def.lungeNeck + terrainGrab * 0.1;
     headTarget += actionLunge * 0.25 + terrainGrab * 0.45;
 
@@ -2356,25 +2401,46 @@
       parts.mouth.rotation.x = chew * 0.18;
     }
 
-    // Legs.
+    // Legs. Trained tiers take crisper, deeper strides; tier 3 spins the legs
+    // as cartwheels. Wheel hips rotate continuously from their current angle so
+    // entering and leaving the spin is seamless, then fold back into gait damp.
     for (let i = 0; i < parts.legs.length; i++) {
       const leg = parts.legs[i];
       const phase = s.walkPhase + leg.offset;
       const gait = hoofPose(phase, stride, s.mode === 'hunt' ? 0.6 : 0);
       const gaitShape = animal.species === 'cow' ? 0.84 : animal.species === 'stag' ? 1.08 : 0.94;
-      let hipTarget = gait.hip * gaitShape;
-      let kneeTarget = gait.knee * (animal.species === 'stag' ? 1.12 : 1);
+      const wheel = speedLevel >= 3 && moving && s.grounded && tuck < 0.01;
+      let hipTarget;
+      let kneeTarget;
       if (tuck > 0.01) {
         hipTarget = (leg.front ? -0.52 : 0.45) * tuck;
         kneeTarget = 0.72 * tuck;
+      } else if (wheel) {
+        const rawPhase = s.walkPhase * 0.7 + leg.offset;
+        if (leg.wheelBase === undefined) leg.wheelBase = leg.hip.rotation.x - rawPhase;
+        hipTarget = leg.wheelBase + rawPhase;
+        kneeTarget = 0.04;
+      } else {
+        if (leg.wheelBase !== undefined) {
+          leg.hip.rotation.x = foldAngle(leg.hip.rotation.x);
+          leg.wheelBase = undefined;
+        }
+        const energy = 1 + speedLevel * 0.05;
+        const kneeEnergy = 1 + speedLevel * 0.07;
+        hipTarget = gait.hip * gaitShape * energy;
+        kneeTarget = gait.knee * (animal.species === 'stag' ? 1.12 : 1) * kneeEnergy;
       }
-      if (actionLunge > 0 && tuck < 0.4) {
+      if (actionLunge > 0 && tuck < 0.4 && !wheel) {
         hipTarget += (leg.front ? -0.18 : 0.12) * actionLunge;
         kneeTarget += (leg.front ? 0.12 : 0.03) * actionLunge;
       }
-      leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 20, dt);
+      if (wheel) {
+        leg.hip.rotation.x = hipTarget; // continuous rotation, no damping lag
+      } else {
+        leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 20, dt);
+      }
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 20, dt);
-      const ankleTarget = -kneeTarget * 0.55 + Math.max(0, Math.sin(phase)) * 0.13 * stride + tuck * 0.2;
+      const ankleTarget = wheel ? 0 : -kneeTarget * 0.55 + Math.max(0, Math.sin(phase)) * 0.13 * stride + tuck * 0.2;
       leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 22, dt);
     }
 
@@ -2395,7 +2461,7 @@
     if (parts.tailPivot) {
       const tailSwing = Math.sin(t * (2.2 + s.happy * 3.2) + animal.seed) * (0.16 + (s.happy || 0) * 0.18);
       parts.tailPivot.rotation.z = tailSwing;
-      parts.tailPivot.rotation.x = (parts.tailPivot.userData.baseX || parts.tailPivot.rotation.x);
+      parts.tailPivot.rotation.x = (parts.tailPivot.userData.baseX || parts.tailPivot.rotation.x) - speedLevel * 0.05;
     }
     s.happy = Math.max(0, (s.happy || 0) - dt * 0.5);
 
@@ -2445,6 +2511,12 @@
     const s = animal.state;
     const p = animal.group.position;
     const upgrades = M.upgrades ? M.upgrades.stats(animal) : { rate: 1, reach: 0, damage: 0 };
+    const reachTier = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
+    // Long horns trains hunters exactly like the player: tier 1 throws an
+    // auto-aimed electric bolt, tier 2 a chaining arc, tier 3 a fireball with
+    // a 3-block blast. Untrained hunters keep their melee headbutt.
+    const spellRange = reachTier >= 1 && M.upgrades && M.upgrades.spellRanges
+      ? M.upgrades.spellRanges()[reachTier] : 0;
     const zombie = s.huntTarget;
     if (!zombie || zombie.hp <= 0 || M.enemies.zombies.indexOf(zombie) < 0) {
       s.huntTarget = null;
@@ -2465,16 +2537,23 @@
     if (s.strikeTime >= 0) {
       const before = s.strikeTime;
       s.strikeTime += dt * upgrades.rate;
-      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 7.95 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
-        if (M.enemies.attack(p, s.yaw, false, { range: 8.4 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 1 })) s.happy = 1;
+      const strikeReach = spellRange || 8.4 + upgrades.reach;
+      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= strikeReach + 0.6 && Math.abs(q.y - p.y) <= 2.8) {
+        const dealt = spellRange
+          ? (M.goat && M.goat.castSpellAt(p, reachTier, 1 + upgrades.damage))
+          : M.enemies.attack(p, s.yaw, false, { range: strikeReach, damage: 1 + upgrades.damage, maxTargets: 1 });
+        if (dealt) s.happy = 1;
       }
       if (s.strikeTime >= 0.45) s.strikeTime = -1;
     }
 
-    if (distance <= 7.35 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
+    const combatRange = spellRange || 7.35 + upgrades.reach;
+    if (distance <= combatRange && Math.abs(q.y - p.y) <= 2.8) {
       s.speed = damp(s.speed, 0, 10, dt);
       s.stuck = 0;
-      if (s.attackCooldown <= 0 && Math.abs(angleDelta(s.yaw, yaw)) < 0.35) {
+      // Spells aim themselves, so a trained hunter fires at any enemy in range;
+      // melee still waits until the target sits in front of the animal.
+      if (s.attackCooldown <= 0 && (spellRange || Math.abs(angleDelta(s.yaw, yaw)) < 0.35)) {
         s.strikeTime = 0;
         s.attackCooldown = 0.75;
       }
@@ -2864,8 +2943,15 @@
       parts: parts,
       group: parts.group,
       seed: rand(0, Math.PI * 2),
+      speedFx: M.styleFx ? M.styleFx.makeSpeedStyle(THREE) : null,
+      hornFx: M.styleFx ? M.styleFx.makeHornStyle(THREE) : null,
+      speedCtx: null,
+      hornCtx: null,
       state: null
     };
+    const styleScale = STYLE_SCALES[animal.species] || { leg: 0.9, horn: 0.6 };
+    animal.speedCtx = { legs: parts.legs, tailPivot: parts.tailPivot, scale: styleScale.leg };
+    animal.hornCtx = { horns: parts.horns, defaultMat: parts.mats.horn, scale: styleScale.horn };
 
     animal.state = {
       mode: 'idle',

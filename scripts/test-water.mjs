@@ -57,6 +57,7 @@ function swimmer({ floor = 0, level = 10, depth = 10, blocked = () => false } = 
   const h = harness();
   const { M, THREE } = h;
   h.load('js/targeting.js');
+  h.load('js/animal-style.js');
   h.load('js/goat.js');
   const input = new THREE.Vector2();
   const controls = { running: false, swimVertical: 0, getMovement: () => input, getSwimPitch: () => 0, noteActivity() {} };

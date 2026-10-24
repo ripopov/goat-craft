@@ -190,8 +190,44 @@ test('hunter reach, damage and cadence training changes real NPC strikes', () =>
   const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 18.4 });
   train(M, hunter, 'reach'); train(M, hunter, 'power', 2); train(M, hunter, 'cadence');
   hunter.state.mode = 'hunt'; hunter.state.huntTarget = zombie;
-  for (let i = 0; i < 20 && zombie.hp > 0; i++) M.animals.update(.02, i * .02);
-  assert.ok(zombie.hp <= 0, 'hunter kills beyond its original reach in under 0.4 seconds');
+  for (let i = 0; i < 20 && zombie.hp > 0; i++) {
+    M.animals.update(.02, i * .02);
+    if (M.goat.advanceSpellFx) M.goat.advanceSpellFx(.02, i * .02); // fireballs land in the shared FX tick
+  }
+  assert.ok(zombie.hp <= 0, 'hunter kills beyond its original reach in under 0.4 seconds, casting like the player');
+});
+
+test('trained hunters cast the same auto-aimed elemental strikes as the player', () => {
+  const { M } = training(isolatedAnimal('Bramble')); supplies(M);
+  const hunter = M.animals.list.find(a => a.name === 'Bramble');
+  hunter.group.position.set(15, 14, 15); hunter.state.yaw = 0; // facing +z
+  const behind = M.enemies.spawnAt({ x: 15, y: 14, z: 9 });  // 6 behind the hunter
+  const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 19 });  // 4 ahead, the nearest
+  train(M, hunter, 'reach', 2);
+  assert.equal(M.upgrades.stats(hunter).reach, 12, 'hunter reach reports the chain range like the player');
+  hunter.state.mode = 'hunt'; hunter.state.huntTarget = ahead;
+  for (let i = 0; i < 15 && ahead.hp > 0; i++) {
+    M.animals.update(.02, i * .02);
+    if (M.goat.advanceSpellFx) M.goat.advanceSpellFx(.02, i * .02);
+  }
+  assert.equal(ahead.hp, 1, 'the chain strikes the nearest foe');
+  assert.equal(behind.hp, 1, 'the arc auto-aims behind the hunter; no facing cone needed');
+});
+
+test('trained animals wear the same visible upgrades as the player goat', () => {
+  const { M } = training(isolatedAnimal('Bramble')); supplies(M);
+  const hunter = M.animals.list.find(a => a.name === 'Bramble');
+  hunter.group.position.set(15, 14, 15);
+  M.goat.group.position.set(15, 14, 2); // keep the goat away from the fight
+  train(M, hunter, 'move', 3); train(M, hunter, 'reach', 3); train(M, M.upgrades.player, 'move', 3);
+  for (let i = 0; i < 10; i++) M.animals.update(.1, i * .1);
+  assert.equal(hunter.speedFx.level, 3, 'the stag spins wheel rims at tier 3 like the goat');
+  assert.equal(hunter.hornFx.level, 3, 'the stag horns charge molten at tier 3');
+  const rimCount = hunter.parts.legs.reduce((sum, leg) => sum + leg.hip.children.length, 0);
+  assert.ok(rimCount > 4 * 2, 'wheel rims, hubs and bands are mounted on the stag legs');
+  assert.equal(M.goat.speedStyle, 3, 'the player goat keeps its wheel rims after the shared refactor');
+  const builder = M.animals.list.find(a => a.name === 'Mallow');
+  assert.equal(builder.hornFx.level, 0, 'builders never train horns and keep plain antlers');
 });
 
 test('builder work training accelerates the actual action and its block edit', () => {

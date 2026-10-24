@@ -56,7 +56,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   document.exitPointerLock = () => { document.pointerLockElement = null; lockChange(() => dispatch('document', 'pointerlockchange')); };
   const context = vm.createContext({ window, document, console, performance: { now: () => 0 } });
   const load = file => vm.runInContext(readFileSync(new URL('../' + file, import.meta.url), 'utf8'), context);
-  for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/controls.js', 'js/goat.js', 'js/towers.js', 'js/strategy.js']) load(file);
+  for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/controls.js', 'js/animal-style.js', 'js/goat.js', 'js/towers.js', 'js/strategy.js']) load(file);
   const M = window.Meadow, THREE = context.THREE, scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1280 / 720, .1, 400);
   M.world = { blockSize: 2, surfaceHeight: () => 14, landingHeight: () => 14, waterInfoAtBlock: () => null,

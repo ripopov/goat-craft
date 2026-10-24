@@ -204,6 +204,7 @@ test('the clearing blends into forest, hills, nearby water and an endless seeded
 test('the player initializes at the configured open-meadow spawn', () => {
   const { M, THREE, scene, load } = meadow();
   load('js/targeting.js');
+  load('js/animal-style.js');
   load('js/goat.js');
   M.goat.init({ scene, camera: new THREE.PerspectiveCamera(), world: M.world,
     controls: {}, audio: {}, ui: {} });

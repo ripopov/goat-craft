@@ -9,7 +9,7 @@ function harness(realWorld = false) {
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
   const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
-  ['vendor/three.min.js', 'js/core.js'].forEach(load);
+  ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js'].forEach(load);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = 1;
   const drops = [];

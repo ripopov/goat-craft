@@ -366,6 +366,45 @@
     return 0;
   }
 
+  function boxColumns(x, z, radius, visit) {
+    if (!group || Math.abs(x - X) > 15 + radius || Math.abs(z - Z) > 15 + radius) return false;
+    const p = toLocal(x, z), lx = p.x, lz = p.z;
+    const reach = radius * (COS + SIN), half = VOXEL / 2, epsilon = 0.00001;
+    for (let vx = Math.floor((lx - reach) / VOXEL); vx <= Math.floor((lx + reach) / VOXEL); vx++) {
+      for (let vz = Math.floor((lz - reach) / VOXEL); vz <= Math.floor((lz + reach) / VOXEL); vz++) {
+        const ys = columns.get(vx + ',' + vz);
+        if (!ys) continue;
+        const cx = (vx + 0.5) * VOXEL, cz = (vz + 0.5) * VOXEL;
+        const dx = X + COS * cx + SIN * cz - x, dz = Z - SIN * cx + COS * cz - z;
+        // Separating axes of the world-aligned actor and rotated tree voxel.
+        if (Math.abs(dx) >= radius + half * (COS + SIN) - epsilon ||
+            Math.abs(dz) >= radius + half * (COS + SIN) - epsilon ||
+            Math.abs(COS * dx - SIN * dz) >= half + reach - epsilon ||
+            Math.abs(SIN * dx + COS * dz) >= half + reach - epsilon) continue;
+        if (visit(ys)) return true;
+      }
+    }
+    return false;
+  }
+
+  function intersectsBox(x, z, radius, minY, maxY) {
+    return boxColumns(x, z, radius, function (ys) {
+      return ys.some(function (y) { return baseY + y * VOXEL < maxY - 0.00001 && baseY + (y + 1) * VOXEL > minY + 0.00001; });
+    });
+  }
+
+  function boxSupportHeight(x, z, radius, maxY) {
+    let floor = 0;
+    boxColumns(x, z, radius, function (ys) {
+      for (let i = 0; i < ys.length; i++) {
+        const top = baseY + (ys[i] + 1) * VOXEL;
+        if (top <= maxY + 0.00001) { floor = Math.max(floor, top); break; }
+      }
+      return false;
+    });
+    return floor;
+  }
+
   // Conservative block/voxel overlap for placement. Checking every voxel
   // centre plus its rotated AABB avoids building through thin diagonal roots.
   function intersectsBlock(bx, by, bz) {
@@ -388,6 +427,7 @@
 
   M.hearthTree = {
     init: init, update: update, blockedAt: blockedAt, supportHeight: supportHeight,
+    intersectsBox: intersectsBox, boxSupportHeight: boxSupportHeight,
     intersectsBlock: intersectsBlock,
     isReserved: function (x, z, margin) { return Math.hypot(x - X, z - Z) < 7.5 + (margin || 0); },
     damage: function (amount) {

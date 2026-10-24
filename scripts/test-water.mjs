@@ -34,6 +34,7 @@ function harness({ pointerLock = false } = {}) {
   const load = name => vm.runInContext(readFileSync(new URL(name, root), 'utf8'), context, { filename: name });
   load('vendor/three.min.js');
   load('js/core.js');
+  load('js/actor-physics.js');
   const M = window.Meadow;
   const THREE = context.THREE;
   M.config.renderRadius = 1;
@@ -419,14 +420,15 @@ test('dry jumps hit ceilings, fast falls land on block edges, and wall slides st
   slide.controls.firstPerson = true; slide.controls.getFacingYaw = () => 0;
   slide.input.set(1, 1).normalize(); slide.advance(2, 20);
   assert.ok(slide.goat.group.position.z > 3);
-  assert.ok(slide.goat.group.position.x + .46 <= 1.001);
+  assert.ok(slide.goat.group.position.x + slide.goat.body.radius <= 1.001);
 });
 
 test('turning against a wall cannot bury the muzzle or lock movement', () => {
   const s = swimmer({ level: 0, depth: 0, blocked: x => x > .7 });
   s.controls.firstPerson = true; s.controls.getFacingYaw = () => Math.PI / 2;
   s.advance(.1);
-  assert.equal(s.goat.state.yaw, .15, 'a colliding turn must preserve the clear body pose');
+  assert.equal(s.goat.state.yaw, Math.PI / 2, 'turning must remain free beside a wall');
+  assert.equal(s.goat.group.position.lengthSq(), 0);
   s.input.set(-1, 0); s.advance(1);
   assert.ok(s.goat.group.position.x < -1);
   assert.equal(s.goat.state.yaw, Math.PI / 2, 'the view-facing pose resumes once there is room');
@@ -493,4 +495,15 @@ test('adjacent placed blocks mesh only exposed faces while collision updates imm
   assert.equal(w.blockedAt(19, -3, 14.1, 19.9), true, 'physics must not wait for the next mesh batch');
   w.update(new THREE.Vector3(8, 14, 24), 0, 0);
   assert.equal(vertices() - before, 180, 'a grounded 3×3×3 cube needs 45 exposed quads');
+});
+
+test('third-person steering can walk away from a two-block inside corner without jumping', () => {
+  const blocked = (x, z, low, high) => high > 0 && low < 2 &&
+    ((x >= 2 && x < 4 && z >= 0 && z < 2) || (z >= 2 && z < 4 && x >= 0 && x < 2));
+  const s = swimmer({ level: 0, depth: 0, blocked });
+  s.goat.group.position.set(1, 0, 1); s.goat.state.yaw = Math.PI / 4;
+  s.input.set(-1, 0); s.advance(1.5);
+  assert.ok(s.goat.group.position.x < -2, 'steering away must not keep moving toward the rejected facing angle: ' + s.goat.group.position.toArray());
+  assert.equal(s.goat.group.position.y, 0);
+  assert.equal(s.goat.state.jumps, 0);
 });

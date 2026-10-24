@@ -11,7 +11,7 @@ function meadow({ coarse = false, reducedMotion = false } = {}) {
   const window = { matchMedia: query => ({ matches: query.includes('reduced-motion') ? reducedMotion : coarse }) };
   const context = vm.createContext({ window, document: { createElement: () => canvas }, console });
   const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
-  for (const file of ['vendor/three.min.js', 'js/core.js']) load(file);
+  for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js']) load(file);
   const M = window.Meadow;
   M.config.renderRadius = 1;
   for (const file of ['js/voxel-water.js', 'js/world.js', 'js/hearth-tree.js']) load(file);

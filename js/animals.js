@@ -3,6 +3,7 @@
 
   const { clamp, rand, damp, turnToward } = M.utils;
   const BLOCK = 2;
+  const physics = M.actorPhysics;
   const GRAVITY = 24;
   const BODY_CLEARANCE = 0.06;
   const MAX_GRASS_BITS = 48;
@@ -29,7 +30,7 @@
       scale: 0.9,
       bodyHeight: 1.52,
       walkSpeed: 1.05,
-      footprint: [[0, 1.12], [0.2, 0.9], [-0.2, 0.9], [0.38, 0.5], [-0.38, 0.5], [0.46, 0], [-0.46, 0]],
+      bodyRadius: 0.42,
       neckBase: 0.36,
       headBase: -0.12,
       grazeNeck: 1.12,
@@ -56,7 +57,7 @@
       scale: 1.06,
       bodyHeight: 1.95,
       walkSpeed: 0.9,
-      footprint: [[0, 1.2], [0.24, 0.98], [-0.24, 0.98], [0.43, 0.56], [-0.43, 0.56], [0.52, 0], [-0.52, 0]],
+      bodyRadius: 0.52,
       neckBase: 0.3,
       headBase: -0.18,
       grazeNeck: 1.18,
@@ -82,7 +83,7 @@
       scale: 1.0,
       bodyHeight: 1.92,
       walkSpeed: 1.16,
-      footprint: [[0, 1.14], [0.2, 0.92], [-0.2, 0.92], [0.38, 0.5], [-0.38, 0.5], [0.46, 0], [-0.46, 0]],
+      bodyRadius: 0.42,
       neckBase: 0.27,
       headBase: -0.14,
       grazeNeck: 1.2,
@@ -781,41 +782,33 @@
     return (worldRef && worldRef.blockSize) || BLOCK;
   }
 
-  // The normal footprint reaches all the way to the nose. That is important
-  // on open ground, but on a two-metre spiral stair the nose probe would
-  // collide with the next step even when the body is properly on the current
-  // one. A compact footprint is used only while climbing/traversing.
-  const STEP_FOOTPRINT = [[0, 0.22], [0.2, 0], [-0.2, 0], [0.3, -0.35], [-0.3, -0.35]];
-
-  function canStandAt(animal, x, z, feetY, yaw, loose) {
+  function bodyOf(animal) {
     const def = animal.def;
-    const scale = def.scale;
-    const footprint = loose ? STEP_FOOTPRINT : def.footprint;
-    const sin = Math.sin(yaw);
-    const cos = Math.cos(yaw);
-    const bottom = feetY + BODY_CLEARANCE;
-    const top = feetY + def.bodyHeight * scale;
+    if (!def.body) def.body = { radius: def.bodyRadius * def.scale,
+      height: def.bodyHeight * def.scale, skin: 0.002 };
+    return def.body;
+  }
 
-    for (let i = 0; i < footprint.length; i++) {
-      const probe = footprint[i];
-      const px = x + sin * probe[1] * scale + cos * probe[0] * scale;
-      const pz = z + cos * probe[1] * scale - sin * probe[0] * scale;
-      if (worldRef.blockedAt(px, pz, bottom, top)) return false;
-    }
-    return true;
+  function canStandAt(animal, x, z, feetY) {
+    return physics.clear(worldRef, x, feetY, z, bodyOf(animal));
+  }
+
+  function verticallyOverlaps(animal, position, height) {
+    const p = animal.group.position;
+    return p.y + bodyOf(animal).height > position.y + 0.01 && p.y < position.y + height - 0.01;
   }
 
   function actorSpotClear(animal, x, z, padding) {
     const pad = padding || 0;
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
-      if (Math.hypot(x - g.x, z - g.z) < 1.0 + pad) return false;
+      if (verticallyOverlaps(animal, g, 1.9) && Math.hypot(x - g.x, z - g.z) < 1.0 + pad) return false;
     }
     for (let i = 0; i < animals.length; i++) {
       const other = animals[i];
       if (other === animal) continue;
       const p = other.group.position;
-      if (Math.hypot(x - p.x, z - p.z) < (animal.def.scale + other.def.scale) * 0.82 + pad) return false;
+      if (verticallyOverlaps(animal, p, bodyOf(other).height) && Math.hypot(x - p.x, z - p.z) < (animal.def.scale + other.def.scale) * 0.82 + pad) return false;
     }
     return true;
   }
@@ -827,28 +820,28 @@
 
     if (!canStandAt(animal, nx, nz, p.y, yaw, loose)) return false;
 
-    // The herd drinks at the shore but does not wade into ponds. If an
-    // animal somehow ends up in the water, allow it to walk back out.
-    const targetWet = worldRef.isWaterColumn(Math.floor(nx / BLOCK), Math.floor(nz / BLOCK));
-    if (targetWet) {
-      const currentlyWet = worldRef.isWaterColumn(Math.floor(p.x / BLOCK), Math.floor(p.z / BLOCK));
-      if (!currentlyWet) return false;
+    // Avoid stepping down into water, while allowing dry bridges over it.
+    function wetAt(x, z) {
+      if (!worldRef.waterAt) return worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK));
+      const floor = physics.support(worldRef, { x: x, y: p.y, z: z }, p.y + BODY_CLEARANCE, bodyOf(animal));
+      return !!worldRef.waterAt(x, Math.min(p.y, floor) + 0.1, z);
     }
+    if (wetAt(nx, nz) && !wetAt(p.x, p.z)) return false;
 
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
       const oldD = Math.hypot(p.x - g.x, p.z - g.z);
       const newD = Math.hypot(nx - g.x, nz - g.z);
-      if (newD < 1.0 && newD <= oldD + 0.001) return false;
+      if (verticallyOverlaps(animal, g, 1.9) && newD < bodyOf(animal).radius + 0.42 && newD <= oldD + 0.00001) return false;
     }
     for (let i = 0; i < animals.length; i++) {
       const other = animals[i];
       if (other === animal) continue;
       const o = other.group.position;
-      const min = (animal.def.scale + other.def.scale) * 0.78;
+      const min = bodyOf(animal).radius + bodyOf(other).radius;
       const oldD = Math.hypot(p.x - o.x, p.z - o.z);
       const newD = Math.hypot(nx - o.x, nz - o.z);
-      if (newD < min && newD <= oldD + 0.001) return false;
+      if (verticallyOverlaps(animal, o, bodyOf(other).height) && newD < min && newD <= oldD + 0.00001) return false;
     }
     return true;
   }
@@ -888,26 +881,22 @@
   }
 
   function moveAnimal(animal, dx, dz, yaw) {
+    let moved = false;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.12));
+    for (let i = 0; i < steps; i++) moved = moveAnimalStep(animal, dx / steps, dz / steps, yaw) || moved;
+    return moved;
+  }
+
+  function moveAnimalStep(animal, dx, dz, yaw) {
     const p = animal.group.position;
     const x = p.x;
     const z = p.z;
     const s = animal.state;
 
-    if (moveStep(animal, x + dx, z + dz, yaw)) {
-      p.x = x + dx;
-      p.z = z + dz;
-      return true;
-    }
-
-    let moved = false;
-    if (dx !== 0 && moveStep(animal, x + dx, z, yaw)) {
-      p.x = x + dx;
-      moved = true;
-    }
-    if (dz !== 0 && moveStep(animal, p.x, z + dz, yaw)) {
-      p.z = z + dz;
-      moved = true;
-    }
+    let moved = physics.moveHorizontal(worldRef, p, bodyOf(animal), dx, dz, function (nx, nz) {
+      return moveStep(animal, nx, nz, yaw);
+    });
+    if (moved) return true;
 
     const len = Math.hypot(dx, dz);
     if (len > 0.0001) {
@@ -1525,8 +1514,8 @@
     s.speed = damp(s.speed, speed, 7, dt);
     const moved = moveAnimal(
       animal,
-      Math.sin(s.yaw) * s.speed * dt,
-      Math.cos(s.yaw) * s.speed * dt,
+      Math.sin(yaw) * s.speed * dt,
+      Math.cos(yaw) * s.speed * dt,
       s.yaw
     );
     if (moved) {
@@ -1656,8 +1645,8 @@
     s.speed = damp(s.speed, speed, 5, dt);
     const moved = moveAnimal(
       animal,
-      Math.sin(s.yaw) * s.speed * dt,
-      Math.cos(s.yaw) * s.speed * dt,
+      Math.sin(yaw) * s.speed * dt,
+      Math.cos(yaw) * s.speed * dt,
       s.yaw
     );
     if (moved) {
@@ -1797,8 +1786,8 @@
     s.speed = damp(s.speed, speed, 6, dt);
     const moved = moveAnimal(
       animal,
-      Math.sin(s.yaw) * s.speed * dt,
-      Math.cos(s.yaw) * s.speed * dt,
+      Math.sin(yaw) * s.speed * dt,
+      Math.cos(yaw) * s.speed * dt,
       s.yaw
     );
     if (moved) {
@@ -1993,8 +1982,8 @@
       s.speed = damp(s.speed, speed, 5, dt);
       const moved = moveAnimal(
         animal,
-        Math.sin(s.yaw) * s.speed * dt,
-        Math.cos(s.yaw) * s.speed * dt,
+        Math.sin(desiredYaw) * s.speed * dt,
+        Math.cos(desiredYaw) * s.speed * dt,
         s.yaw
       );
       if (moved) {
@@ -2053,20 +2042,8 @@
   }
 
   function updateGravity(animal, dt) {
-    const s = animal.state, p = animal.group.position;
-    const loose = s.mode === 'climbBuild' || s.mode === 'traverseTower';
-    const footprint = loose ? STEP_FOOTPRINT : animal.def.footprint;
-    function floorAt(maxY) {
-      let floor = worldRef.supportHeight(p.x, p.z, maxY);
-      const sin = Math.sin(s.yaw), cos = Math.cos(s.yaw), scale = animal.def.scale;
-      for (let i = 0; i < footprint.length; i++) {
-        const v = footprint[i];
-        floor = Math.max(floor, worldRef.supportHeight(p.x + (sin * v[1] + cos * v[0]) * scale,
-          p.z + (cos * v[1] - sin * v[0]) * scale, maxY));
-      }
-      return floor;
-    }
-    let groundY = floorAt(p.y + BODY_CLEARANCE);
+    const s = animal.state, p = animal.group.position, body = bodyOf(animal);
+    let groundY = physics.support(worldRef, p, p.y + BODY_CLEARANCE, body);
     if (s.grounded) {
       if (p.y > groundY + 0.02) { s.grounded = false; s.vy = 0; }
       else { p.y = groundY; s.vy = 0; }
@@ -2075,37 +2052,16 @@
       const previous = p.y;
       s.vy = Math.max(-38, s.vy - GRAVITY * dt);
       const next = p.y + s.vy * dt;
-      groundY = floorAt(Math.max(previous, next) + 0.001);
+      groundY = physics.support(worldRef, p, Math.max(previous, next) + 0.001, body);
       const landing = s.vy <= 0 && next <= groundY;
-      const target = landing ? groundY : next;
-      const steps = Math.max(1, Math.ceil(Math.abs(target - previous) / 0.1));
-      for (let i = 1; i <= steps; i++) {
-        const y = previous + (target - previous) * i / steps;
-        if (!canStandAt(animal, p.x, p.z, y, s.yaw, loose)) { s.vy = 0; break; }
-        p.y = y;
-      }
-      if (landing && Math.abs(p.y - groundY) < 0.001) {
-        p.y = groundY; s.vy = 0; s.grounded = true; s.tuck = 0; s.landPulse = 1;
+      const clear = physics.moveVertical(worldRef, p, body, landing ? groundY : next);
+      if (!clear) s.vy = 0;
+      if ((landing && clear) || (!clear && next < previous)) {
+        s.vy = 0; s.grounded = true; s.tuck = 0; s.landPulse = 1;
       }
     }
     s.landPulse = Math.max(0, (s.landPulse || 0) - dt * 4);
-
-    if (p.y < -6) {
-      rescueAnimal(animal);
-      return;
-    }
-
-    // Terrain edits, a falling tree, or a very unlucky placement should never
-    // leave an animal inside a solid block. Rescue is a last-resort safety net.
-    const bodyH = animal.def.bodyHeight * animal.def.scale;
-    if (s.grounded && worldRef.blockedAt(p.x, p.z, p.y + 0.08, p.y + bodyH * 0.55)) {
-      s.buriedTime = (s.buriedTime || 0) + dt;
-      if (s.buriedTime > 0.7) {
-        rescueAnimal(animal);
-      }
-    } else {
-      s.buriedTime = 0;
-    }
+    if (p.y < -6) rescueAnimal(animal);
   }
 
   function escapeDirection(animal) {
@@ -2630,6 +2586,7 @@
   function updateAnimal(animal, dt, t) {
     const s = animal.state;
     const p = animal.group.position;
+    if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
     const player = goatRef.group.position;
     const playerDistance = Math.hypot(p.x - player.x, p.z - player.z);
 
@@ -2773,7 +2730,7 @@
         s.yaw = turnToward(s.yaw, yaw, dt * 4.0);
         const targetSpeed = defWalkSpeed(animal) * (s.grounded ? 1 : AIR_CONTROL);
         s.speed = damp(s.speed, targetSpeed, 4, dt);
-        const moved = moveAnimal(animal, Math.sin(s.yaw) * s.speed * dt, Math.cos(s.yaw) * s.speed * dt, s.yaw);
+        const moved = moveAnimal(animal, dx / distance * s.speed * dt, dz / distance * s.speed * dt, s.yaw);
         if (moved) {
           s.walkPhase += s.speed * dt * 4.6;
           s.stuck = 0;
@@ -2816,42 +2773,11 @@
     animal.group.rotation.y = s.yaw;
     updateGravity(animal, dt);
 
-    // Landing with the nose inside a higher bank is geometrically possible
-    // even when every horizontal step is collision-checked. Nudge the animal
-    // back to the nearest standable spot instead of leaving it wedged.
-    const looseStance = s.mode === 'climbBuild' || s.mode === 'traverseTower';
-    if (s.grounded && !canStandAt(animal, p.x, p.z, p.y, s.yaw, looseStance)) {
-      s.wedgeTime = (s.wedgeTime || 0) + dt;
-      if (s.wedgeTime > 0.18) {
-        let fixed = false;
-        for (let radius = 0.35; radius <= 1.55 && !fixed; radius += 0.3) {
-          for (let i = 0; i < 16 && !fixed; i++) {
-            const angle = i / 16 * Math.PI * 2;
-            const nx = p.x + Math.sin(angle) * radius;
-            const nz = p.z + Math.cos(angle) * radius;
-            const ny = worldRef.supportHeight(nx, nz, p.y + BLOCK * 1.25);
-            if (Math.abs(ny - p.y) > BLOCK * 1.25) continue;
-            if (!canStandAt(animal, nx, nz, ny, s.yaw)) continue;
-            if (goatRef && goatRef.group) {
-              const g = goatRef.group.position;
-              if (Math.hypot(nx - g.x, nz - g.z) < 1.2) continue;
-            }
-            p.x = nx;
-            p.z = nz;
-            p.y = ny;
-            s.vy = 0;
-            s.grounded = true;
-            fixed = true;
-          }
-        }
-        s.wedgeTime = 0;
-        if (!fixed && s.mode !== 'climbBuild' && s.mode !== 'traverseTower') {
-          rescueAnimal(animal);
-        }
-      }
-    } else {
-      s.wedgeTime = 0;
-    }
+    if (!canStandAt(animal, p.x, p.z, p.y)) {
+      if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
+      s.buriedTime = canStandAt(animal, p.x, p.z, p.y) ? 0 : (s.buriedTime || 0) + dt;
+      if (s.buriedTime > 0.7) rescueAnimal(animal);
+    } else s.buriedTime = 0;
 
     updateVisual(animal, dt, t);
   }
@@ -3098,21 +3024,14 @@
   }
 
   function intersectsBlock(bx, by, bz) {
-    const size = sizeOf();
     return animals.some(function (animal) {
-      const p = animal.group.position, scale = animal.def.scale;
-      if ((by + 1) * size <= p.y + 0.01 || by * size >= p.y + animal.def.bodyHeight * scale) return false;
-      const sin = Math.sin(animal.state.yaw), cos = Math.cos(animal.state.yaw);
-      return animal.def.footprint.some(function (v) {
-        const x = p.x + (sin * v[1] + cos * v[0]) * scale;
-        const z = p.z + (cos * v[1] - sin * v[0]) * scale;
-        return x >= bx * size && x < (bx + 1) * size && z >= bz * size && z < (bz + 1) * size;
-      });
+      return physics.intersectsBlock(animal.group.position, bodyOf(animal), bx, by, bz, sizeOf());
     });
   }
 
   M.animals = {
     intersectsBlock: intersectsBlock,
+    bodyOf: bodyOf,
     init: init,
     update: update,
     list: animals,

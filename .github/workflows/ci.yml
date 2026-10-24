@@ -31,6 +31,9 @@ jobs:
       - name: Test water generation and swimming
         run: node --test scripts/test-water.mjs
 
+      - name: Test actor corners, wall sliding and NPC collision
+        run: node --test scripts/test-collision.mjs
+
       - name: Test voxel water flow and containment
         run: node --test scripts/test-fluids.mjs
 

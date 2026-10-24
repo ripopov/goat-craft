@@ -3,6 +3,7 @@
 
   const MAX_ENEMIES = 50, TREE_BITE_SECONDS = 3, BLOCK_BITE_SECONDS = 10;
   const SPEED = 1.65, SIZE = 2;
+  const physics = M.actorPhysics, BODY = { radius: 0.34, height: 2.8, skin: 0.002 };
   const { clamp, turnToward } = M.utils;
   const zombies = [];
   let scene, world, tree, navigation, mesh;
@@ -190,32 +191,25 @@
     }
     const step = Math.min(d, SPEED * dt);
     const x = p.x + dx / d * step, z = p.z + dz / d * step;
-    if (navigation.clear(x, p.y, z)) {
-      p.x = x; p.z = z; zombie.moving = true; zombie.phase += dt * 5;
-    } else zombie.moving = false;
+    zombie.moving = physics.moveHorizontal(world, p, BODY, x - p.x, z - p.z);
+    if (zombie.moving) zombie.phase += dt * 5;
     zombie.stuck = zombie.moving ? 0 : zombie.stuck + dt;
     if (zombie.stuck > 2 && zombie.grounded) {
       zombie.target = null; zombie.path = null; zombie.retry = 0; zombie.stuck = 0;
     }
   }
-  function physics(zombie, dt) {
+  function updatePhysics(zombie, dt) {
     const p = zombie.position;
+    if (physics.recover(world, p, BODY)) { zombie.vy = 0; zombie.target = null; zombie.path = null; }
     const previousY = p.y;
-    zombie.vy -= 20 * dt;
+    zombie.vy = Math.max(-38, zombie.vy - 20 * dt);
     const nextY = p.y + zombie.vy * dt;
-    if (zombie.vy > 0 && !navigation.clear(p.x, nextY, p.z)) { zombie.vy = 0; }
-    else p.y = nextY;
-    const ceiling = Math.max(previousY, p.y) + 0.06;
-    let floor = world.landingHeight(p.x, p.z, ceiling);
-    // Keep both feet supported until the trailing edge leaves a ledge.
-    // Sampling only the center lets the body fall into the side of a hill.
-    [-0.34, 0.34].forEach(function (dx) {
-      [-0.34, 0.34].forEach(function (dz) {
-        floor = Math.max(floor, world.landingHeight(p.x + dx, p.z + dz, ceiling));
-      });
-    });
-    if (zombie.vy <= 0 && p.y <= floor + 0.04) {
-      p.y = floor; zombie.vy = 0; zombie.grounded = true; zombie.jump = null;
+    const floor = physics.support(world, p, Math.max(previousY, nextY) + 0.002, BODY);
+    const landing = zombie.vy <= 0 && nextY <= floor;
+    const clear = physics.moveVertical(world, p, BODY, landing ? floor : nextY);
+    if (!clear) zombie.vy = 0;
+    if ((landing && clear) || (!clear && nextY < previousY)) {
+      zombie.vy = 0; zombie.grounded = true; zombie.jump = null;
     } else zombie.grounded = false;
   }
   function update(dt) {
@@ -246,7 +240,7 @@
     }
     zombies.forEach(function (zombie) {
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
-      physics(zombie, dt);
+      updatePhysics(zombie, dt);
       if (zombie.grounded && navigation.contact(zombie.position.x, zombie.position.y, zombie.position.z)) {
         zombie.mode = 'tree'; zombie.moving = false; zombie.blockBite = 0;
         zombie.yaw = turnToward(zombie.yaw, Math.atan2(tree.position.x - zombie.position.x, tree.position.z - zombie.position.z), dt * 5);
@@ -279,5 +273,5 @@
     scene.add(mesh); updateHud();
   }
   M.enemies = { init: init, update: update, attack: attack, getState: getState, maxEnemies: MAX_ENEMIES,
-    get zombies() { return zombies; }, get navigation() { return navigation; }, spawnAt: spawnAt };
+    body: BODY, get zombies() { return zombies; }, get navigation() { return navigation; }, spawnAt: spawnAt };
 })(window.Meadow = window.Meadow || {});

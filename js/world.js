@@ -582,9 +582,9 @@
     return landingHeight(x, z, maxY);
   }
 
-  function landingHeight(x, z, maxY) {
+  function landingHeight(x, z, maxY, includeTree) {
     const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
-    const landmarkTop = M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
+    const landmarkTop = includeTree !== false && M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
     for (let by = Math.floor((maxY + 0.001) / BLOCK) - 1; by >= 0; by--) {
       if (solidKindAt(bx, by, bz)) return Math.max(landmarkTop, (by + 1) * BLOCK);
     }
@@ -600,6 +600,31 @@
       if (solidKindAt(bx, by, bz)) return true;
     }
     return includeTree !== false && M.hearthTree && M.hearthTree.blockedAt(x, z, minY, maxY);
+  }
+
+  // Half-open bounds: touching a block face or corner is not penetration.
+  // Iterate occupied voxels instead of inflating the box with nose probes.
+  function bodyBlockedAt(x, z, minY, maxY, radius, includeTree, excavated) {
+    const epsilon = 0.00001;
+    const x0 = Math.floor((x - radius + epsilon) / BLOCK), x1 = Math.floor((x + radius - epsilon) / BLOCK);
+    const z0 = Math.floor((z - radius + epsilon) / BLOCK), z1 = Math.floor((z + radius - epsilon) / BLOCK);
+    const y0 = Math.floor((minY + epsilon) / BLOCK), y1 = Math.floor((maxY - epsilon) / BLOCK);
+    for (let bx = x0; bx <= x1; bx++) for (let bz = z0; bz <= z1; bz++) for (let by = y0; by <= y1; by++) {
+      if (solidKindAt(bx, by, bz) && (!excavated || !excavated.has(blockKey(bx, by, bz)))) return true;
+    }
+    return includeTree !== false && !!(M.hearthTree && M.hearthTree.intersectsBox(x, z, radius, minY, maxY));
+  }
+
+  function bodySupportHeight(x, z, maxY, radius) {
+    const epsilon = 0.00001;
+    const x0 = Math.floor((x - radius + epsilon) / BLOCK), x1 = Math.floor((x + radius - epsilon) / BLOCK);
+    const z0 = Math.floor((z - radius + epsilon) / BLOCK), z1 = Math.floor((z + radius - epsilon) / BLOCK);
+    let floor = 0;
+    for (let bx = x0; bx <= x1; bx++) for (let bz = z0; bz <= z1; bz++) {
+      floor = Math.max(floor, landingHeight((bx + 0.5) * BLOCK, (bz + 0.5) * BLOCK, maxY, false));
+    }
+    if (M.hearthTree) floor = Math.max(floor, M.hearthTree.boxSupportHeight(x, z, radius, maxY));
+    return floor;
   }
 
   function navigationSurfaces(bx, bz) {
@@ -1585,10 +1610,7 @@
     if (M.goat && M.goat.intersectsBlock && M.goat.intersectsBlock(bx, by, bz)) return false;
     if (M.animals && M.animals.intersectsBlock && M.animals.intersectsBlock(bx, by, bz)) return false;
     if (M.enemies && M.enemies.zombies.some(function (zombie) {
-      const p = zombie.position;
-      return p.x + 0.45 > bx * BLOCK && p.x - 0.45 < (bx + 1) * BLOCK &&
-        p.z + 0.45 > bz * BLOCK && p.z - 0.45 < (bz + 1) * BLOCK &&
-        p.y + 2.8 > by * BLOCK && p.y < (by + 1) * BLOCK;
+      return M.actorPhysics.intersectsBlock(zombie.position, M.enemies.body, bx, by, bz, BLOCK);
     })) return false;
     if (M.hearthTree && M.hearthTree.intersectsBlock(bx, by, bz)) return false;
     if (!chunkForBlock(bx, bz)) return false;
@@ -1972,6 +1994,8 @@
     makeBlockMesh: makeBlockMesh,
     navigationChangesSince: navigationChangesSince,
     navigationBlockedAt: navigationBlockedAt,
+    bodyBlockedAt: bodyBlockedAt,
+    bodySupportHeight: bodySupportHeight,
     navigationSurfaces: navigationSurfaces,
     get revision() { return revision; },
     blockSize: BLOCK

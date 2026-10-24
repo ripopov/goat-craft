@@ -15,6 +15,7 @@
     function key(bx, bz) { return bx + ',' + bz; }
     function inside(bx, bz) { return Math.abs(bx - cx) <= radius && Math.abs(bz - cz) <= radius; }
     function clear(x, y, z, includeTree, excavated) {
+      if (world.bodyBlockedAt) return !world.bodyBlockedAt(x, z, y + 0.002, y + height, bodyRadius, includeTree, excavated);
       return samples.every(function (s) {
         const px = x + s[0], pz = z + s[1];
         if (!excavated) return !world.navigationBlockedAt(px, pz, y + 0.025, y + height, includeTree);

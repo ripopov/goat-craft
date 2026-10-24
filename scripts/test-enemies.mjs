@@ -226,7 +226,7 @@ test('later waves send larger groups, still staggered rather than all at once', 
 test('local navigation edits match a fresh field, including new walls and mined tunnels', () => {
   const { M } = harness(true), w = M.world, t = M.hearthTree;
   const nav = M.zombieNavigation.create(w, t, { radius: 12 }); nav.rebuild();
-  const x = 2, z = -13, by = Math.floor(w.surfaceHeight(5, -25) / 2);
+  const x = 6, z = 0, by = Math.floor(w.surfaceHeight(13, 1) / 2);
   function compare() {
     nav.rebuild();
     const fresh = M.zombieNavigation.create(w, t, { radius: 12 }); fresh.rebuild();
@@ -238,9 +238,9 @@ test('local navigation edits match a fresh field, including new walls and mined 
   w.breakBlockAt(x, by + 1, z); compare();
   // A two-block-high tunnel beneath an intact roof is navigable even though
   // the terrain column still has a higher top surface.
-  const bx = 5, bz = -13, ground = w.surfaceHeight(11, -25) / 2;
+  const bx = 9, bz = 0, ground = w.surfaceHeight(19, 1) / 2;
   w.breakBlockAt(bx, ground - 2, bz); w.breakBlockAt(bx, ground - 3, bz); compare();
   const floor = (ground - 3) * 2;
-  assert.equal(w.navigationBlockedAt(11, -25, floor + .01, floor + 2.8), false);
-  assert.ok(nav.nodeAt(11, floor, -25), 'tunnel floor appears in navigation');
+  assert.equal(w.navigationBlockedAt(19, 1, floor + .01, floor + 2.8), false);
+  assert.ok(nav.nodeAt(19, floor, 1), 'tunnel floor appears in navigation');
 });

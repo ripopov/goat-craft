@@ -18,14 +18,17 @@ function meadow({ coarse = false, reducedMotion = false } = {}) {
   const scene = new context.THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);
-  return { M, THREE: context.THREE, scene };
+  return { M, THREE: context.THREE, scene, load };
 }
 
 test('Hearth Tree is a bounded, detailed dry-ground landmark near spawn', () => {
   const { M, THREE, scene } = meadow();
   const tree = M.hearthTree.group;
   assert.equal(tree.parent, scene);
-  assert.ok(tree.position.distanceTo(new THREE.Vector3(0.9, 16, 0.7)) < 32);
+  const spawn = M.config.startingArea.spawn;
+  assert.ok(tree.position.distanceTo(new THREE.Vector3(spawn.x, tree.position.y, spawn.z)) < 30);
+  assert.equal(tree.position.x, M.config.startingArea.x);
+  assert.equal(tree.position.z, M.config.startingArea.z);
   assert.equal(M.world.waterDepthAt(tree.position.x, tree.position.z), 0);
   assert.equal(tree.position.y, M.world.surfaceHeight(tree.position.x, tree.position.z));
   const bounds = new THREE.Box3().setFromObject(tree);
@@ -80,7 +83,7 @@ test('trunk, roots, placement and terrain protection agree with the world', () =
   w.update(new THREE.Vector3(600, y, 600), 0, 1);
   assert.equal(w.blockedAt(x, z, y + 0.1, y + 2), true);
   assert.equal(w.supportHeight(rootTop.x, rootTop.z, rootTop.top + 0.1), rootTop.top);
-  for (let i = 0; i < 5; i++) w.update(new THREE.Vector3(0.9, 16, 0.7), 0, 2);
+  for (let i = 0; i < 5; i++) w.update(new THREE.Vector3(M.config.startingArea.spawn.x, y, M.config.startingArea.spawn.z), 0, 2);
   assert.equal(w.canPlaceBlock(bx, y / 2, bz), false);
 });
 
@@ -95,4 +98,71 @@ test('mobile embers stay bounded and respect reduced motion', () => {
   assert.deepEqual(Array.from(embers.instanceMatrix.array), initial);
   assert.equal(tree.children.length, children, 'animation never allocates scene objects');
   for (const value of initial) assert.ok(Number.isFinite(value));
+});
+
+
+test('starting meadow is flat, dry and free of natural props for fifteen blocks around the tree', () => {
+  const { M, THREE } = meadow();
+  const w = M.world, home = M.config.startingArea, size = w.blockSize;
+  assert.equal(home.radiusBlocks, 15);
+  const ground = home.heightBlocks * size;
+  for (let bz = -16; bz <= 16; bz++) for (let bx = -16; bx <= 16; bx++) {
+    if (!w.isStartingClearing(bx, bz)) continue;
+    const x = (bx + 0.5) * size, z = (bz + 0.5) * size;
+    assert.equal(w.surfaceHeight(x, z), ground, 'flat at ' + bx + ',' + bz);
+    assert.equal(w.waterInfoAtBlock(bx, bz), null);
+    assert.equal(w.topSoilInfo(bx, bz), null, 'herd quarrying leaves the lawn intact');
+    for (let by = home.heightBlocks; by < home.heightBlocks + 16; by++) {
+      assert.equal(w.blockInfoAt(bx, by, bz), null, 'no natural tree or rock at ' + bx + ',' + bz);
+    }
+  }
+  const spawn = home.spawn;
+  assert.ok(Math.hypot(spawn.x - home.x, spawn.z - home.z) < home.radiusBlocks * size);
+  assert.equal(w.blockedAt(spawn.x, spawn.z, ground + .01, ground + 3), false, 'player spawns in open ground');
+  assert.equal(w.supportHeight(spawn.x, spawn.z, ground + 2), ground);
+
+  // The clearing remains editable by the player, including after streaming.
+  assert.ok(w.placeBlock('stone', 8, home.heightBlocks, 0));
+  assert.equal(w.breakBlockAt(8, home.heightBlocks, 0), 'stone');
+  assert.equal(w.breakBlockAt(8, home.heightBlocks - 1, 0), 'grass');
+  w.update(new THREE.Vector3(600, ground, 600), 0, 1);
+  assert.equal(w.surfaceHeight(17, 1), ground - size);
+});
+
+test('the clearing blends into forest, hills, nearby water and an endless seeded world', () => {
+  const { M } = meadow(), w = M.world;
+  const heights = new Set();
+  let woodland = 0;
+  for (let bz = -16; bz <= 31; bz++) for (let bx = -16; bx <= 31; bx++) {
+    const x = (bx + .5) * 2, z = (bz + .5) * 2;
+    if (Math.hypot(x, z) < 44) continue;
+    heights.add(w.surfaceHeight(x, z));
+    for (let by = 4; by < 20; by++) {
+      if (w.blockInfoAt(bx, by, bz)?.kind === 'log') woodland++;
+    }
+  }
+  assert.ok(heights.size >= 3, 'natural hills resume beyond the meadow');
+  assert.ok(woodland > 10, 'a forest grows outside the open center');
+  const pond = w.pondsNear(0, 0, 100).find(p => p.starter);
+  assert.ok(Math.hypot(pond.x, pond.z) - pond.r * 2 * 1.18 > 30, 'the entire nearby pond lies outside the clearing');
+  assert.ok(w.waterDepthAt(pond.x, pond.z) > 3);
+  assert.ok(w.waterDepthAt(0, 56) > 3, 'the river remains outside the clearing');
+  const distant = [[1422, -954], [-3200, 2100], [4000, 6000]];
+  for (const [x, z] of distant) {
+    const before = w.surfaceHeight(x, z);
+    assert.ok(Number.isFinite(before));
+    assert.equal(w.surfaceHeight(x, z), before, 'generation stays deterministic far from home');
+  }
+});
+
+
+test('the player initializes at the configured open-meadow spawn', () => {
+  const { M, THREE, scene, load } = meadow();
+  load('js/goat.js');
+  M.goat.init({ scene, camera: new THREE.PerspectiveCamera(), world: M.world,
+    controls: {}, audio: {}, ui: {} });
+  const spawn = M.config.startingArea.spawn, p = M.goat.group.position;
+  assert.equal(p.x, spawn.x); assert.equal(p.z, spawn.z);
+  assert.equal(p.y, M.config.startingArea.heightBlocks * M.world.blockSize);
+  assert.equal(M.world.blockedAt(p.x, p.z, p.y + .01, p.y + 3), false);
 });

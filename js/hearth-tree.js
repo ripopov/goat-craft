@@ -4,8 +4,8 @@
   // A hand-shaped landmark, built on a half-metre voxel lattice. Only exposed
   // faces are uploaded: thousands of small voxels become two static meshes.
   const VOXEL = 0.5;
-  const X = -8;
-  const Z = -26;
+  const X = M.config.startingArea.x;
+  const Z = M.config.startingArea.z;
   const YAW = 0.32;
   const COS = Math.cos(YAW);
   const SIN = Math.sin(YAW);

@@ -848,7 +848,8 @@
     uiRef = deps.ui;
 
     sceneRef.add(goat);
-    goat.position.set(0.9, worldRef.surfaceHeight(0.9, 0.7), 0.7);
+    const spawn = M.config.startingArea.spawn;
+    goat.position.set(spawn.x, worldRef.surfaceHeight(spawn.x, spawn.z), spawn.z);
     goat.rotation.y = goatYaw;
 
     state = {

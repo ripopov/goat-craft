@@ -76,11 +76,13 @@ function swimmer({ floor = 0, level = 10, depth = 10, blocked = () => false } = 
   return { ...h, goat, controls, input, world, sounds, advance, camera };
 }
 
-test('water generation: dry spawn, deep starter pond, connected rivers and seas', () => {
+test('water generation: dry clearing, nearby pond, connected rivers and seas', () => {
   const { M } = harness();
   const world = M.world;
-  assert.equal(world.waterDepthAt(0.9, 0.7), 0);
-  assert.ok(world.waterDepthAt(-20, -4) > 3);
+  const spawn = M.config.startingArea.spawn;
+  assert.equal(world.waterDepthAt(spawn.x, spawn.z), 0);
+  assert.equal(world.waterDepthAt(-20, -4), 0, 'the old pond site is now flat meadow');
+  assert.ok(world.waterDepthAt(-54, 6) > 3);
   assert.ok(world.waterDepthAt(300, 56) > 10);
   // Trace the continuous river through negative coordinates and into both seas.
   for (let bx = -170; bx <= 170; bx++) {
@@ -98,13 +100,13 @@ test('water generation: dry spawn, deep starter pond, connected rivers and seas'
 test('water columns remain deterministic after cache eviction and terrain edits', () => {
   const { M, THREE } = harness();
   const world = M.world;
-  const before = JSON.stringify(world.waterInfoAtBlock(-10, -2));
+  const before = JSON.stringify(world.waterInfoAtBlock(-27, 3));
   for (let x = 0; x < 66000; x++) world.surfaceHeight(x * 2, 460);
-  assert.equal(JSON.stringify(world.waterInfoAtBlock(-10, -2)), before);
+  assert.equal(JSON.stringify(world.waterInfoAtBlock(-27, 3)), before);
   world.init(new THREE.Scene(), { capabilities: { getMaxAnisotropy: () => 1 } });
-  const pond = world.waterInfoAtBlock(-10, -2);
-  assert.ok(world.breakBlockAt(-10, pond.top / 2 - 1, -2, { drop: false }));
-  assert.equal(world.waterInfoAtBlock(-10, -2).depth, pond.depth + 2);
+  const pond = world.waterInfoAtBlock(-27, 3);
+  assert.ok(world.breakBlockAt(-27, pond.top / 2 - 1, 3, { drop: false }));
+  assert.equal(world.waterInfoAtBlock(-27, 3).depth, pond.depth + 2);
 });
 
 test('deep water floats and paddles instead of walking on the bed', () => {

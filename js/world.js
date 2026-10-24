@@ -22,11 +22,21 @@
   const CHUNK_SIZE = CHUNK_BLOCKS * BLOCK;
   const RENDER_RADIUS = M.config.renderRadius;
   const WORLD_SEED = 1337;
+  const START = M.config.startingArea;
+
+  function clearingDistance(bx, bz) {
+    return Math.hypot(bx + 0.5 - START.x / BLOCK, bz + 0.5 - START.z / BLOCK);
+  }
+
+  // Include cells touching the circular perimeter so no corner of the
+  // buildable meadow hides a height change, rock or water column.
+  function isStartingClearing(bx, bz) {
+    return clearingDistance(bx, bz) <= START.radiusBlocks + Math.SQRT1_2;
+  }
 
   // Ponds are seeded on a 64-block lattice, with shallow banks and a deeper
   // swimming basin. Rivers and seas share one waterline, including estuaries.
-  // The starter pond is hand-placed in the view beyond the goat so the meadow
-  // always introduces water without relying on a lucky lattice roll.
+  // A nearby pond sits beyond the western edge of the starting clearing.
   const POND_CELL = 64;
   const POND_PAD = 14;
   const POND_DENSITY = 0.58;
@@ -37,7 +47,7 @@
   const POND_EDGE = 1.08;
   const POND_INNER = 0.70;
   const STARTER_PONDS = [
-    { id: 'pond-starter', cx: -10, cz: -2, r: 10, phase: 0.8, rimBlock: 7 }
+    { id: 'pond-starter', cx: -27, cz: 3, r: 10, phase: 0.8, rimBlock: 7 }
   ];
 
   function hashInt(x, z, seed) {
@@ -154,7 +164,8 @@
       const r = POND_MIN_RADIUS + rnd() * (POND_MAX_RADIUS - POND_MIN_RADIUS);
       const phase = rnd() * Math.PI * 2;
       const seed = hashInt(gx, gz, POND_SEED ^ 0x9e3779b9);
-      const clearOfSpawn = Math.hypot(cx, cz) >= r + 8;
+      const clearOfSpawn = Math.hypot(cx - START.x / BLOCK, cz - START.z / BLOCK) >=
+        START.radiusBlocks + Math.SQRT1_2 + r * 1.18 + 2;
       let clearOfStarter = true;
       const starters = getStarterPondPlans();
       for (let i = 0; i < starters.length; i++) {
@@ -252,13 +263,22 @@
   function generatedColumn(bx, bz) {
     const key = bx + ',' + bz;
     if (columnCache.has(key)) return columnCache.get(key);
-    const base = rawHeightBlocks(bx, bz);
-    const regional = regionalWaterAt(bx + 0.5, bz + 0.5);
-    const pond = regional ? null : pondInfluenceAtBlock(bx, bz);
-    const column = {
-      height: regional ? regional.height : pond ? pondHeightAt(bx, bz, base, pond) : base,
-      plan: regional ? regional.plan : pond ? pond.plan : null
-    };
+    let column;
+    if (isStartingClearing(bx, bz)) {
+      column = { height: START.heightBlocks, plan: null };
+    } else {
+      const base = rawHeightBlocks(bx, bz);
+      const regional = regionalWaterAt(bx + 0.5, bz + 0.5);
+      const pond = regional ? null : pondInfluenceAtBlock(bx, bz);
+      const natural = regional ? regional.height : pond ? pondHeightAt(bx, bz, base, pond) : base;
+      const edge = START.radiusBlocks + Math.SQRT1_2;
+      const t = clamp((clearingDistance(bx, bz) - edge) / START.transitionBlocks, 0, 1);
+      const blend = t * t * (3 - 2 * t);
+      column = {
+        height: Math.round(START.heightBlocks + (natural - START.heightBlocks) * blend),
+        plan: regional ? regional.plan : pond ? pond.plan : null
+      };
+    }
     if (columnCache.size >= 65536) columnCache.delete(columnCache.keys().next().value);
     columnCache.set(key, column);
     return column;
@@ -456,7 +476,7 @@
   // it are intentionally ignored; callers can test the cell above before
   // quarrying so they do not mine underneath a tree or a build.
   function topSoilInfo(bx, bz) {
-    if (isProtectedArea(bx, bz)) return null;
+    if (isProtectedArea(bx, bz) || isStartingClearing(bx, bz)) return null;
     const by = topSolidY(bx, bz);
     if (by < 0) return null;
     return {
@@ -1185,13 +1205,19 @@
       const bz = cz * CHUNK_BLOCKS + Math.round(z / BLOCK);
       const by = Math.round(y / BLOCK);
       const key = blockKey(bx, by, bz);
-      if (!force && removedPropBlocks.has(key)) return;
+      if (!force && (removedPropBlocks.has(key) || isStartingClearing(bx, bz))) return;
       blocks.set(key, kind);
       pushBlock(data, x, y, z, topTile, sideTile, bottomTile, shadeTop, shadeSide);
     }
 
     let treeCount = rnd() < 0.72 ? 1 : 0;
     if (rnd() < 0.18) treeCount++;
+    // A denser woodland borders the open meadow; farther out the original
+    // seeded wilderness continues indefinitely.
+    const chunkDistance = clearingDistance(cx * CHUNK_BLOCKS + 7.5, cz * CHUNK_BLOCKS + 7.5);
+    if (chunkDistance > START.radiusBlocks - 10 && chunkDistance < START.radiusBlocks + 32) {
+      treeCount = 3 + Math.floor(rnd() * 2);
+    }
 
     for (let t = 0; t < treeCount; t++) {
       let bx = 0;
@@ -1204,7 +1230,8 @@
         const worldBZ = cz * CHUNK_BLOCKS + bz;
         const wx = worldBX * BLOCK + BLOCK / 2;
         const wz = worldBZ * BLOCK + BLOCK / 2;
-        if (wx * wx + wz * wz < 225) continue;
+        // Leave room for the whole canopy outside the 15-block lawn.
+        if (Math.hypot(wx - START.x, wz - START.z) < (START.radiusBlocks + 3) * BLOCK) continue;
         if (M.hearthTree && M.hearthTree.isReserved(wx, wz, 11)) continue;
         if (isPondArea(worldBX, worldBZ)) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
@@ -1223,7 +1250,7 @@
       const wz = (cz * CHUNK_BLOCKS + rz) * BLOCK + BLOCK / 2;
       const stoneWorldBX = cx * CHUNK_BLOCKS + rx;
       const stoneWorldBZ = cz * CHUNK_BLOCKS + rz;
-      if (wx * wx + wz * wz > 100 && !isPondArea(stoneWorldBX, stoneWorldBZ) &&
+      if (!isStartingClearing(stoneWorldBX, stoneWorldBZ) && !isPondArea(stoneWorldBX, stoneWorldBZ) &&
           !(M.hearthTree && M.hearthTree.isReserved(wx, wz, 3))) {
         const baseY = heightBlocks(stoneWorldBX, stoneWorldBZ) * BLOCK;
         const count = 1 + Math.floor(rnd() * 3);
@@ -1716,7 +1743,7 @@
     for (let bx = bx0 - r; bx <= bx0 + r; bx++) {
       for (let bz = bz0 - r; bz <= bz0 + r; bz++) {
         const by = topSolidY(bx, bz);
-        if (isProtectedArea(bx, bz)) continue;
+        if (isProtectedArea(bx, bz) || isStartingClearing(bx, bz)) continue;
         if (by < 0) continue;
         const cx = (bx + 0.5) * BLOCK;
         const cz = (bz + 0.5) * BLOCK;
@@ -1882,6 +1909,7 @@
     isWaterColumn: isWaterColumn,
     isPondArea: isPondArea,
     isProtectedArea: isProtectedArea,
+    isStartingClearing: isStartingClearing,
     waterDepthAt: waterDepthAt,
     waterLevelAt: waterLevelAt,
     waterInfoAtBlock: waterInfoAtBlock,

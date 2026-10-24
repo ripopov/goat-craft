@@ -33,7 +33,13 @@
 
   M.config = {
     coarsePointer: coarsePointer,
-    renderRadius: coarsePointer ? 4 : 5
+    renderRadius: coarsePointer ? 4 : 5,
+    // Center and spawn use world units; radius and height use terrain blocks
+    // (two world units per block).
+    startingArea: {
+      x: 0, z: 0, radiusBlocks: 15, transitionBlocks: 5, heightBlocks: 7,
+      spawn: { x: 8, z: 24 }
+    }
   };
 
   M.utils = {

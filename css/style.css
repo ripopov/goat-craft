@@ -479,7 +479,7 @@
   .tower-card { position: relative; display: grid; grid-template-columns: 56px 1fr; grid-template-rows: auto auto auto; align-items: center; column-gap: 9px; text-align: left; min-width: 0; padding: 7px; border: 1px solid #8ba18b40; border-radius: 7px; background: #243a302e; color: #e4e9d6; transition: border-color .15s, background .15s; }
   .tower-card:hover { border-color: #c7c39b; background: #57745844; }
   .tower-card.chosen { border-color: #efd28b; background: #a6974c29; box-shadow: inset 0 0 0 1px #eace7e55; }
-  .tower-card.unaffordable:not(.chosen) { border-color: #82918122; }
+  .tower-card.unaffordable { border-color: #ed8e83; box-shadow: inset 0 0 0 1px #ed8e8359; }
   .tower-card.unaffordable .tower-art img { filter: saturate(.6) brightness(.8); }
   .tower-art { position: relative; grid-row: 1 / 4; display: block; width: 56px; height: 62px; }
   .tower-art img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }

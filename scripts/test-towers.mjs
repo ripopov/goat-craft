@@ -15,6 +15,18 @@ function defense(rich = true) {
 }
 function step(M, duration) { for (let i = 0; i < duration * 60; i++) M.towers.update(1 / 60); }
 
+test('a fresh run can purchase any tower using only its starting resources', () => {
+  const ids = ['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'];
+  for (const id of ids) {
+    const { M } = defense(false);
+    M.upgrades.init();
+    assert.ok(M.towers.definitions.every(def => M.towers.available(def)), 'every opening choice is affordable');
+    const def = M.towers.byId[id], coins = M.enemies.getState().coins;
+    assert.ok(M.towers.place(id, 8, 7, 8), def.name + ' can be built immediately');
+    assert.equal(M.enemies.getState().coins, coins - def.cost.coins);
+  }
+});
+
 test('all ten blueprints buy real 1–3 block towers and debit the complete price', () => {
   const { M } = defense();
   assert.equal(M.towers.definitions.length, 10);

@@ -69,10 +69,11 @@
     const resources = document.getElementById('rts-resources');
     resources.innerHTML = Object.keys(names).map((kind, i) => '<span data-resource="' + kind + '"><small>' + names[kind] + '</small><b>' + counts[i] + '</b></span>').join('');
     cards.forEach(({ button, ownedEl, def }, i) => {
+      const affordable = M.towers.available(def);
       button.classList.toggle('chosen', selected === def.id);
-      button.classList.toggle('unaffordable', !M.towers.available(def));
+      button.classList.toggle('unaffordable', !affordable);
       button.setAttribute('aria-pressed', String(selected === def.id));
-      button.setAttribute('aria-label', def.name + '. ' + def.role + '. ' + (owned[i] ? owned[i] + ' packed in inventory. Free to redeploy.' : costText(def.cost)));
+      button.setAttribute('aria-label', def.name + '. ' + def.role + '. ' + (owned[i] ? owned[i] + ' packed in inventory. Free to redeploy.' : costText(def.cost)) + (affordable ? '' : '. Not enough resources.'));
       ownedEl.textContent = owned[i] ? 'Packed ×' + owned[i] : def.height + (def.height === 1 ? ' block' : ' blocks');
     });
     const def = inspected ? inspected.def : M.towers.byId[selected];

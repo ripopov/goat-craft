@@ -37,7 +37,7 @@ js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and w
 js/enemies.js       instanced zombies, spiders, skeletons and brutes; waves, combat and defeat
 js/upgrades.js      individual training tiers, prices, resource purchases and nearby targeting
 js/upgrade-menu.js  accessible paused training menu, character switching and purchase feedback
-js/minimap.js       circular player-centered radar for enemies, herd and the Hearth
+js/minimap.js       circular player-centered radar for enemies, herd, coin drops and the Hearth
 js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
@@ -182,7 +182,7 @@ The builders shave the top turf course around a flat site, one block at a time, 
 
 NPC recovery measures progress toward the current walk, hunt, quarry, build, climb, or descent target. A blocked animal tries a validated jump, then a local detour, then digs a body-sized opening and uses the recovered blocks to build steps out. Recovery can dismantle placed blocks when physically necessary; ordinary quarrying still leaves player construction alone, and the Hearth Tree foundation remains protected. Solvable escapes happen through normal movement and block edits, with relocation reserved for a final failed-recovery fallback. `scripts/test-animal-recovery.mjs` runs each stuck scenario against one independently controlled NPC. Animal quarrying creates no competing item drops.
 
-The HUD keeps Hearth health at the upper left, the wave timer at the top center, resources at the upper right, and the hotbar along the bottom. A circular **80m minimap** at the lower left stays centered on the player and points north. A white arrow shows the player and facing, red dots show enemies, green dots show animals, and the gold diamond marks the Hearth. Ringed edge markers indicate locations beyond range. The controls guide opens only when requested. The layout adapts to narrow screens without covering the central action.
+The HUD keeps Hearth health at the upper left, the wave timer at the top center, resources at the upper right, and the hotbar along the bottom. A circular **80m minimap** at the lower left stays centered on the player and points north. A white arrow shows the player and facing, red dots show enemies, green dots show animals, gold dots show dropped coin stacks, and the gold diamond marks the Hearth. Coin dots follow the loot and disappear when collected. Ringed edge markers indicate locations beyond range. The controls guide opens only when requested. The layout adapts to narrow screens without covering the central action.
 
 Goat and herd movement blend through planted-hoof stance and lifted recovery, with turn lean, landing compression and timed attack wind-ups. Builders strike at the moment their block edit happens, and hunters wind up before dealing damage. Zombies blend from shambling to articulated chewing, recoil on hits and briefly collapse when killed; a bounded pool keeps death visuals separate from live enemy counts. Fish bank through turns and vary tail cadence with their speed. Reduced motion suppresses extra leaning, compression, death tumbles and item spins.
 

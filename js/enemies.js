@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
 
-  const MAX_ENEMIES = 50, WATCHDOG_SECONDS = 20;
+  const MAX_ENEMIES = 200, WATCHDOG_SECONDS = 20;
   const SIZE = 2;
   const TYPES = {
     zombie: { name: 'Zombie', unlock: 1, hp: 2, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
@@ -10,6 +10,12 @@
     brute: { name: 'Stone brute', unlock: 8, hp: 7, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 }
   };
   function waveSize(level) { return Math.min(MAX_ENEMIES, 1 + level * 3); }
+  // Higher waves toughen enemies: health climbs toward 5x and speed toward 3x
+  // of their level-1 values, easing in quickly at first and capping slowly.
+  function waveDifficulty(wave) {
+    const t = wave <= 1 ? 0 : 1 - Math.exp(-(wave - 1) / 30);
+    return { hp: 1 + 4 * t, speed: 1 + 2 * t };
+  }
   // Deterministic slots introduce a readable mix and bound the durable units.
   function typeForWave(level, slot) {
     if (level >= 8 && slot % 6 === 5) return 'brute';
@@ -389,7 +395,9 @@
     if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || !node) return null;
     type = TYPES[type] ? type : 'zombie';
     const def = TYPES[type], start = navigation.nodeAt(node.x, node.y, node.z);
-    const zombie = { type: type, body: { radius: def.radius, height: def.height, skin: 0.002 }, id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: def.hp, maxHp: def.hp,
+    // Difficulty is locked in at spawn so each enemy keeps its wave's stats.
+    const difficulty = waveDifficulty(wave), hp = Math.max(1, Math.round(def.hp * difficulty.hp));
+    const zombie = { type: type, body: { radius: def.radius, height: def.height, skin: 0.002 }, id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: hp, maxHp: hp, speedScale: difficulty.speed,
       tint: 0.88 + Math.random() * 0.24, phase: Math.random() * 6.28, mode: 'walk', moving: false,
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,
       jump: null, vy: 0, grounded: true, retry: 0, stuck: 0, stride: 0, eatBlend: 0,
@@ -559,7 +567,7 @@
       // rejected by navigation before the jump is attempted.
       zombie.vy = 10.6; zombie.grounded = false; zombie.jump = target;
     }
-    const step = Math.min(d, TYPES[zombie.type].speed * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
+    const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
     const x = p.x + dx / d * step, z = p.z + dz / d * step;
     zombie.moving = physics.moveHorizontal(world, p, zombie.body, x - p.x, z - p.z);
     if (zombie.moving) zombie.phase += dt * (zombie.type === 'spider' ? 10 : 5);
@@ -686,7 +694,7 @@
     return killed;
   }
   M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
-    watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, typeForWave: typeForWave,
+    watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
     startNextWave: startNextWave,
     startWave: startWave,
     addCoins: function (amount) { if (!Number.isInteger(amount) || amount <= 0) return false; coins += amount; updateHud(); return true; },

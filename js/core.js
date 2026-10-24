@@ -22,6 +22,26 @@
     return a + clamp(d, -maxDelta, maxDelta);
   }
 
+  // Long planted stance, short lifted recovery. Zero slope at contact makes
+  // hooves settle instead of scissoring continuously through the floor.
+  function hoofPose(phase, stride, run) {
+    const cycle = ((phase / (Math.PI * 2)) % 1 + 1) % 1;
+    const stance = 0.62 - run * 0.18;
+    const swing = clamp((cycle - stance) / (1 - stance), 0, 1);
+    return {
+      hip: (cycle < stance ? Math.cos(Math.PI * cycle / stance) : -Math.cos(Math.PI * swing)) * (0.6 + run * 0.35) * stride,
+      knee: 0.04 + Math.pow(Math.sin(Math.PI * swing), 2) * (0.85 + run * 0.3) * stride
+    };
+  }
+
+  function actionPose(time, impact, end) {
+    function smooth(x) { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); }
+    if (time < 0) return 0;
+    if (time < impact * 0.55) return -0.2 * smooth(time / (impact * 0.55));
+    if (time < impact) return -0.2 + 1.2 * smooth((time - impact * 0.55) / (impact * 0.45));
+    return 1 - smooth((time - impact) / (end - impact));
+  }
+
   function std(color, roughness, extra) {
     return new THREE.MeshStandardMaterial(Object.assign({
       color: color,
@@ -33,6 +53,7 @@
 
   M.config = {
     coarsePointer: coarsePointer,
+    reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     renderRadius: coarsePointer ? 4 : 5,
     // Center and spawn use world units; radius and height use terrain blocks
     // (two world units per block).
@@ -43,6 +64,8 @@
   };
 
   M.utils = {
+    hoofPose: hoofPose,
+    actionPose: actionPose,
     clamp: clamp,
     rand: rand,
     damp: damp,

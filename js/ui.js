@@ -5,6 +5,7 @@
   let bubbleEl = null;
   let bubbleTime = 0;
   let defenseEls = null;
+  let lastHealth = 100;
 
   function showBubble(text) {
     if (!bubbleEl) return;
@@ -60,9 +61,26 @@
       });
     }
 
+    const effectsButton = document.getElementById('effects');
+    if (effectsButton) effectsButton.addEventListener('click', function () {
+      const enabled = effectsButton.getAttribute('aria-pressed') !== 'true';
+      M.audio.unlock(); M.audio.setEffectsEnabled(enabled);
+      effectsButton.setAttribute('aria-pressed', String(enabled));
+      effectsButton.setAttribute('aria-label', enabled ? 'Mute sound effects' : 'Unmute sound effects');
+      effectsButton.classList.toggle('muted', !enabled);
+      effectsButton.querySelector('.label').textContent = enabled ? 'Sound' : 'Muted';
+    });
+
+    window.addEventListener('keydown', function (event) {
+      if (event.code === 'Escape') {
+        const help = document.getElementById('controls-help');
+        if (help) help.open = false;
+      }
+    });
+
     if (M.config.coarsePointer) {
       const hint = document.getElementById('hint');
-      if (hint) hint.innerHTML = '<b>drag</b> to orbit &nbsp;·&nbsp; <b>pinch</b> to zoom &nbsp;·&nbsp; <b>tap</b> headbutt';
+      if (hint) hint.innerHTML = '<strong>Defend the Hearth</strong><p><b>Drag</b> Orbit<br><b>Pinch</b> Zoom<br><b>Tap</b> Headbutt / place</p><small>Horns: 2 hits · Stomp: 1 hit<br>Each zombie earns 1 coin.</small>';
     }
   }
 
@@ -79,6 +97,13 @@
   function setDefense(state) {
     if (!defenseEls) return;
     function text(id, value) { if (defenseEls[id]) defenseEls[id].textContent = value; }
+    const card = document.querySelector('.objective-card');
+    if (state.health < lastHealth && card) {
+      card.classList.remove('damaged');
+      void card.offsetWidth;
+      card.classList.add('damaged');
+    }
+    lastHealth = state.health;
     text('tree-hp', state.health + ' / ' + state.maxHealth + ' HP');
     text('defense-coins', state.coins);
     text('defense-enemies', state.count + ' / 50');

@@ -287,6 +287,7 @@
     f.x = p.x;
     f.z = p.z;
 
+    const previousYaw = f.yaw;
     const dx = f.x - prevX;
     const dz = f.z - prevZ;
     if (dx * dx + dz * dz > 0.000001) {
@@ -297,10 +298,14 @@
     const bob = Math.sin(t * 1.7 + f.yPhase) * 0.045;
     f.group.position.set(f.x, f.baseY + bob, f.z);
     f.group.rotation.y = f.yaw;
-    f.group.rotation.z = Math.sin(t * 1.2 + f.yPhase) * 0.035;
+    const turn = Math.atan2(Math.sin(f.yaw - previousYaw), Math.cos(f.yaw - previousYaw));
+    const bank = M.config.reducedMotion ? 0 : clamp(turn / Math.max(dt, 0.001) * -0.12, -0.22, 0.22);
+    f.group.rotation.z = M.utils.damp(f.group.rotation.z, bank + Math.sin(t * 1.2 + f.yPhase) * 0.035, 5, dt);
     f.group.rotation.x = Math.sin(t * 1.5 + f.yPhase) * 0.025;
 
-    const beat = Math.sin(t * 5.4 + f.phase);
+    // Tail cadence follows swimming speed and integrates continuously.
+    model.phase += dt * (3.6 + Math.hypot(dx, dz) / Math.max(dt, 0.001) * 2.2);
+    const beat = Math.sin(model.phase + f.phase);
     model.tail.rotation.y = beat * 0.48;
     model.dorsal.rotation.z = Math.sin(t * 3.1 + f.phase) * 0.08;
     for (let i = 0; i < model.pectorals.length; i++) {

@@ -4,8 +4,8 @@
   const MAX_ENEMIES = 50, TREE_BITE_SECONDS = 3, BLOCK_BITE_SECONDS = 10;
   const SPEED = 1.65, SIZE = 2;
   const physics = M.actorPhysics, BODY = { radius: 0.34, height: 2.8, skin: 0.002 };
-  const { clamp, turnToward } = M.utils;
-  const zombies = [];
+  const { clamp, turnToward, damp } = M.utils;
+  const zombies = [], fallen = [];
   let scene, world, tree, navigation, mesh;
   let elapsed = 0, wave = 0, nextWave = 10, pending = 0, spawnTimer = 0, coins = 0;
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
@@ -38,6 +38,9 @@
   part(-0.08, 2.18, 0.44, 0.08, 0.055, 0.025, 0xc5bf96);
   part(-0.44, 2.4, 0.01, 0.08, 0.23, 0.22, 0x557f54);
   part(0.44, 2.4, 0.01, 0.08, 0.23, 0.22, 0x557f54);
+  parts.forEach(function (p, i) {
+    if (i >= 5) { p.limb = i === 13 || i === 14 ? 6 : 5; p.y -= 2.04; }
+  });
   // Limb coordinates are relative to hip / shoulder pivots.
   [-1, 1].forEach(function (side, i) {
     const leg = i + 1, arm = i + 3;
@@ -52,21 +55,34 @@
   function render(time) {
     if (!mesh) return;
     let index = 0;
-    zombies.forEach(function (zombie) {
+    zombies.concat(fallen).forEach(function (zombie) {
       const p = zombie.position;
-      rotation.set(0, zombie.yaw, 0); quaternion.setFromEuler(rotation);
-      position.set(p.x, p.y, p.z); scale.set(1, 1, 1);
+      const dying = zombie.death !== undefined;
+      const death = dying ? clamp(zombie.death / 0.65, 0, 1) : 0;
+      const motion = reducedMotion ? 0.25 : 1;
+      const recoil = Math.sin(clamp(zombie.flash / 0.2, 0, 1) * Math.PI) * 0.22 * motion;
+      const bob = Math.abs(Math.sin(zombie.phase)) * 0.045 * zombie.stride * motion;
+      rotation.set(-recoil - death * 1.45, zombie.yaw, Math.sin(zombie.phase) * 0.04 * zombie.stride * motion + death * 0.22);
+      quaternion.setFromEuler(rotation);
+      position.set(p.x, p.y + bob - death * 0.35, p.z);
+      const shrink = dying ? 1 - Math.pow(clamp((death - 0.65) / 0.35, 0, 1), 2) : 1;
+      scale.setScalar(Math.max(0.001, shrink));
       rootMatrix.compose(position, quaternion, scale);
-      const gait = zombie.moving ? Math.sin(zombie.phase) * 0.55 : 0;
-      const eating = zombie.mode === 'tree' || zombie.mode === 'block';
+      const gait = Math.sin(zombie.phase) * 0.55 * zombie.stride;
+      const bite = Math.sin(time * 8 + zombie.id) * zombie.eatBlend * motion;
       parts.forEach(function (p) {
-        const angle = p.limb <= 2 ? (p.limb === 1 ? gait : -gait) :
-          -1.12 + (eating && !reducedMotion ? Math.sin(time * 6 + zombie.id) * 0.16 : gait * 0.13);
+        const leg = p.limb === 1 || p.limb === 2;
+        const arm = p.limb === 3 || p.limb === 4;
+        const head = p.limb >= 5;
+        const angle = leg ? (p.limb === 1 ? gait : -gait) * motion + (zombie.grounded ? 0 : 0.3) :
+          arm ? -1.12 + gait * 0.13 * motion + bite * 0.16 + Math.sin(time * 1.7 + zombie.id + p.limb) * 0.035 * motion :
+          head ? 0.05 + Math.sin(time * 1.3 + zombie.id) * 0.035 * motion + bite * 0.09 + (p.limb === 6 ? (0.12 + bite * 0.15) * zombie.eatBlend : 0) : 0;
         const limb = p.limb > 0;
-        const y = limb ? p.y * Math.cos(angle) - p.z * Math.sin(angle) + (p.limb <= 2 ? 1 : 1.96) : p.y;
+        const pivot = leg ? 1 : arm ? 1.96 : 2.04;
+        const y = limb ? p.y * Math.cos(angle) - p.z * Math.sin(angle) + pivot : p.y;
         const z = limb ? p.y * Math.sin(angle) + p.z * Math.cos(angle) : p.z;
         position.set(p.x, y, z); scale.set(p.sx, p.sy, p.sz);
-        rotation.set(limb ? angle : 0, 0, 0); quaternion.setFromEuler(rotation);
+        rotation.set(angle, head ? Math.sin(time * 0.8 + zombie.id) * 0.045 * motion : 0, 0); quaternion.setFromEuler(rotation);
         matrix.compose(position, quaternion, scale).premultiply(rootMatrix);
         mesh.setMatrixAt(index, matrix);
         color.setHex(p.tint).multiplyScalar(zombie.tint);
@@ -96,7 +112,8 @@
     const zombie = { id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: 2,
       tint: 0.88 + Math.random() * 0.24, phase: Math.random() * 6.28, mode: 'walk', moving: false,
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,
-      jump: null, vy: 0, grounded: true, retry: 0, stuck: 0 };
+      jump: null, vy: 0, grounded: true, retry: 0, stuck: 0, stride: 0, eatBlend: 0,
+      voiceTimer: 1 + (nextId * 1.71) % 5, chewTimer: 0 };
     zombies.push(zombie);
     return zombie;
   }
@@ -130,7 +147,12 @@
       if (!lineClear(origin, p)) continue;
       hit = true; zombie.hp -= stomp ? 2 : 1; zombie.flash = 0.2;
       zombie.bite = 0; zombie.blockBite = 0;
+      if (M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
       if (zombie.hp <= 0) {
+        if (!reducedMotion) {
+          zombie.death = 0; fallen.push(zombie);
+          if (fallen.length > 12) fallen.shift();
+        }
         zombies.splice(i, 1); coins++;
         if (M.audio && M.audio.pickup) M.audio.pickup();
       }
@@ -215,8 +237,12 @@
   function update(dt) {
     if (!mesh) return;
     elapsed += dt;
+    for (let i = fallen.length - 1; i >= 0; i--) {
+      fallen[i].death += dt;
+      if (fallen[i].death >= 0.65) fallen.splice(i, 1);
+    }
     plannerTimer -= dt; rebuildTimer -= dt;
-    if (tree.health <= 0) { updateHud(); return; }
+    if (tree.health <= 0) { updateHud(); render(elapsed); return; }
     if (world.revision !== navigation.revision && rebuildTimer <= 0) {
       navigation.rebuild(); rebuildTimer = 0.75;
       zombies.forEach(function (zombie) {
@@ -231,6 +257,7 @@
     }
     if (elapsed >= nextWave) {
       wave++; pending = Math.min(100, pending + 1 + wave * 3); nextWave += 35;
+      if (M.audio && M.audio.cue) M.audio.cue('wave');
       if (M.ui) M.ui.showBubble('Wave ' + wave + ' — protect the Hearth!');
     }
     spawnTimer -= dt;
@@ -260,6 +287,23 @@
       // even while the shared field waits for its next bounded rebuild.
       walk(zombie, target, dt);
     });
+    zombies.forEach(function (zombie) {
+      zombie.stride = damp(zombie.stride, zombie.moving ? 1 : 0, 8, dt);
+      const eating = zombie.mode === 'tree' || zombie.mode === 'block';
+      zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);
+      const footBeat = Math.floor(zombie.phase / Math.PI);
+      if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat && M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
+      zombie.footBeat = footBeat;
+      zombie.voiceTimer -= dt; zombie.chewTimer -= dt;
+      if (zombie.voiceTimer <= 0) {
+        if (M.audio && M.audio.zombie) M.audio.zombie('groan', zombie.position);
+        zombie.voiceTimer = 7.5 + Math.sin(elapsed + zombie.id) * 3.5;
+      }
+      if (eating && zombie.chewTimer <= 0) {
+        if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
+        zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
+      }
+    });
     updateHud(); render(elapsed);
   }
   function init(options) {
@@ -267,7 +311,7 @@
     scene = options.scene; world = options.world; tree = options.tree;
     navigation = M.zombieNavigation.create(world, tree);
     navigation.rebuild();
-    mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.std(0xffffff, 0.94), MAX_ENEMIES * parts.length);
+    mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * parts.length);
     mesh.name = 'Zombie horde'; mesh.count = 0; mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.castShadow = true; mesh.receiveShadow = true;
     scene.add(mesh); updateHud();

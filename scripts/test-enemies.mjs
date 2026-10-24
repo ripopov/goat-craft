@@ -254,3 +254,23 @@ test('local navigation edits match a fresh field, including new walls and mined 
   assert.equal(w.navigationBlockedAt(19, 1, floor + .01, floor + 2.8), false);
   assert.ok(nav.nodeAt(19, floor, 1), 'tunnel floor appears in navigation');
 });
+
+
+test('death animation stays bounded and expires without changing immediate kills or rewards', () => {
+  const { M, THREE, world, tree, scene } = fixture();
+  M.enemies.init({ scene, world, tree });
+  const origin = new THREE.Vector3(9, 0, 1);
+  for (let i = 0; i < 50; i++) M.enemies.spawnAt(origin);
+  const mesh = scene.children.find(node => node.name === 'Zombie horde');
+  M.enemies.attack(origin, 0, true);
+  assert.equal(M.enemies.getState().count, 0, 'fallen bodies stop being enemies immediately');
+  assert.equal(M.enemies.getState().coins, 50, 'each kill still awards exactly one coin');
+  assert.ok(mesh.count > 0 && mesh.count <= mesh.instanceMatrix.count, 'only a bounded visual death pool remains');
+  for (let i = 0; i < 50; i++) M.enemies.spawnAt(origin);
+  advance(M, 0.2);
+  assert.ok(mesh.count <= mesh.instanceMatrix.count);
+  assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite), 'crowded articulated poses stay finite');
+  M.enemies.attack(origin, 0, true);
+  advance(M, 0.8);
+  assert.equal(mesh.count, 0, 'no corpse instances leak after their animation');
+});

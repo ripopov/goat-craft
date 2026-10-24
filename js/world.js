@@ -1631,6 +1631,7 @@
     recordChange(bx, bz);
     wakeWater(bx, by, bz);
     dirtyPropChunks.add(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS));
+    if (M.audio && M.audio.block) M.audio.block('place', { x: (bx + 0.5) * BLOCK, y: (by + 0.5) * BLOCK, z: (bz + 0.5) * BLOCK });
     return true;
   }
 
@@ -1656,6 +1657,7 @@
   }
 
   function spawnBlockDebris(bx, by, bz, kind) {
+    if (M.audio && M.audio.block) M.audio.block('break', { x: (bx + 0.5) * BLOCK, y: (by + 0.5) * BLOCK, z: (bz + 0.5) * BLOCK });
     const cx = bx * BLOCK + BLOCK / 2;
     const cy = by * BLOCK + BLOCK / 2;
     const cz = bz * BLOCK + BLOCK / 2;

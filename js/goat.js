@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
 
-  const { clamp, rand, damp, turnToward } = M.utils;
+  const { clamp, rand, damp, turnToward, hoofPose, actionPose } = M.utils;
   const std = M.std;
 
   let sceneRef = null;
@@ -421,6 +421,8 @@
 
   function updateGoat(dt, t) {
     const s = state;
+    const previousYaw = s.yaw;
+    s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
     recoverOverlap();
 
     const input = controlsRef.getMovement(cameraRef);
@@ -552,6 +554,7 @@
         if ((landing && clear) || (!clear && nextY < prevY)) {
           s.vy = 0; s.grounded = true; s.jumps = 0;
           s.footTimer = Math.max(s.footTimer, 0.14);
+          s.landPulse = impact;
           if (!s.inWater) audioRef.land(impact);
         }
       }
@@ -563,7 +566,7 @@
     let headbuttPending = false;
     if (s.headbutt >= 0) {
       s.headbutt += dt;
-      buttPose = Math.sin(clamp(s.headbutt / 0.34, 0, 1) * Math.PI);
+      buttPose = actionPose(s.headbutt, 0.12, 0.34);
       if (!s.headbuttHit && s.headbutt >= 0.12) headbuttPending = true;
       if (s.headbutt > 0.34) s.headbutt = -1;
     }
@@ -587,7 +590,8 @@
 
     s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
-    const stride = moving ? clamp(s.speed / 0.6, 0, 1) : 0;
+    s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
+    const stride = s.stride;
 
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i];
@@ -599,12 +603,10 @@
       } else {
         const phW = s.walkPhase + leg.offset;
         const phR = s.runPhase + leg.runOffset;
-        const hipWalk = Math.sin(phW) * 0.6 * stride;
-        const kneeWalk = Math.max(0, -Math.cos(phW)) * 0.85 * stride + 0.04;
-        const hipRun = Math.sin(phR) * 0.95 * stride;
-        const kneeRun = Math.max(0, -Math.cos(phR)) * 1.15 * stride + 0.04;
-        hipTarget = hipWalk + (hipRun - hipWalk) * run;
-        kneeTarget = kneeWalk + (kneeRun - kneeWalk) * run;
+        const walk = hoofPose(phW, stride, 0);
+        const gallop = hoofPose(phR, stride, 1);
+        hipTarget = walk.hip + (gallop.hip - walk.hip) * run;
+        kneeTarget = walk.knee + (gallop.knee - walk.knee) * run;
       }
       // Alternating diagonal dog-paddle: a long power stroke, folded knee
       // recovery, and slightly splayed hooves. Phase never resets on entry.
@@ -625,8 +627,12 @@
     const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
     const bob = walkBob * (1 - run) + runBob * run;
-    rig.position.y = damp(rig.position.y, bob * (1 - swim) + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
+    rig.position.y = damp(rig.position.y, bob * (1 - swim) - s.landPulse * 0.08 + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
     rig.position.z = buttPose * 0.18;
+    const squash = M.config.reducedMotion ? 0 : s.landPulse;
+    rig.scale.set(1 + squash * 0.025, 1 - squash * 0.055, 1 + squash * 0.025);
+    const yawDelta = Math.atan2(Math.sin(s.yaw - previousYaw), Math.cos(s.yaw - previousYaw));
+    s.turnLean = damp(s.turnLean || 0, clamp(yawDelta / Math.max(dt, 0.001), -3, 3) * s.speed * 0.008, 8, dt);
 
     const breath = 1 + Math.sin(t * 1.55) * (moving ? 0.004 : 0.011);
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
@@ -634,7 +640,7 @@
     const swimPitch = clamp(-s.vy * 0.075, -0.26, 0.26) - 0.08;
     rig.rotation.x = damp(rig.rotation.x, ((jumpK > 0 ? -0.16 * jumpK : 0) + Math.sin(s.runPhase + 0.7) * 0.05 * run) * (1 - swim) + swimPitch * swim + buttPose * 0.08, 6, dt);
     const landRoll = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run;
-    rig.rotation.z = damp(rig.rotation.z, landRoll * (1 - swim) + Math.sin(s.swimPhase) * 0.035 * swim + stompTilt, 8, dt);
+    rig.rotation.z = damp(rig.rotation.z, landRoll * (1 - swim) + Math.sin(s.swimPhase) * 0.035 * swim + stompTilt - (M.config.reducedMotion ? 0 : s.turnLean), 8, dt);
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
     if (s.headbutt >= 0 || s.stomp >= 0) lookYaw = 0;
@@ -658,13 +664,10 @@
       if (carrying) {
         if (M.items.placeSelectedBlock()) {
           recoverOverlap();
-          audioRef.thud();
         }
       } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false)) {
         audioRef.thud();
-      } else if (worldRef.breakBlockInFront(headPivot)) {
-        audioRef.thud();
-      }
+      } else { worldRef.breakBlockInFront(headPivot); }
     }
 
     if (stompPending) {

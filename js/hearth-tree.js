@@ -432,6 +432,7 @@
     isReserved: function (x, z, margin) { return Math.hypot(x - X, z - Z) < 7.5 + (margin || 0); },
     damage: function (amount) {
       if (!Number.isFinite(amount) || amount <= 0) return;
+      if (health > 0 && M.audio && M.audio.cue) M.audio.cue(health <= amount ? 'defeat' : 'damage');
       health = Math.max(0, health - amount); damageFlash = reducedMotion ? 0 : 0.35;
     },
     get health() { return health; }, maxHealth: 100,

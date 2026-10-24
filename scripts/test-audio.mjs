@@ -21,7 +21,8 @@ function harness({ suspended = false } = {}) {
         assert.ok(value > 0, 'exponential targets must be positive');
         this.events.push({ type: 'exponential', value, at });
       },
-      cancelScheduledValues(at) { this.events = this.events.filter(event => event.at < at); }
+      cancelScheduledValues(at) { this.events = this.events.filter(event => event.at < at); },
+      setTargetAtTime(value, at, constant) { this.events.push({ type: 'target', value, at, constant }); }
     };
   }
   function node(type) {
@@ -93,7 +94,11 @@ function harness({ suspended = false } = {}) {
 
 const effects = [
   ['bleat'], ['thud'], ['step', false, 4.8], ['step', true, 9.6], ['jump'], ['whoosh'],
-  ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1]
+  ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1],
+  ['zombie', 'groan'], ['zombie', 'hurt'], ['zombie', 'death'], ['zombie', 'bite'],
+  ['animal', 'sheep'], ['animal', 'cow'], ['animal', 'stag'], ['actorStep', 'zombie'],
+  ['actorStep', 'cow'], ['actorJump', null, false], ['actorJump', null, true],
+  ['block', 'break'], ['block', 'place'], ['cue', 'wave'], ['cue', 'damage'], ['cue', 'defeat'], ['select']
 ];
 
 test('every effect has a silent attack/release, scheduling headroom, and frees its complete graph', () => {
@@ -211,4 +216,58 @@ test('long playback releases transient graphs and effect storms have bounded pol
   const after = h.sources.length;
   h.M.audio.thud();
   assert.ok(h.sources.length > after, 'freed voices can be reused');
+});
+
+
+test('world sounds attenuate, pan with the camera, and cull distant events', () => {
+  const h = harness();
+  h.M.audio.unlock();
+  const camera = { position: { x: 0, y: 0, z: 0 }, matrixWorld: { elements: [1, 0, 0] } };
+  h.M.audio.setListener(camera);
+  const first = h.nodes.length;
+  h.M.audio.zombie('groan', { x: 4, y: 0, z: 0 });
+  const near = h.nodes.slice(first);
+  assert.ok(near.some(n => n.pan.value > 0.5), 'right-side groan comes from the right');
+  const nearLevel = Math.max(...near.flatMap(n => n.gain.events.map(e => e.value)));
+  h.advance(2, false);
+  const second = h.nodes.length;
+  camera.matrixWorld.elements[0] = -1;
+  h.M.audio.setListener(camera);
+  h.M.audio.zombie('groan', { x: 25, y: 0, z: 0 });
+  const far = h.nodes.slice(second);
+  assert.ok(far.some(n => n.pan.value < -0.5), 'turning the camera reverses stereo');
+  const farLevel = Math.max(...far.flatMap(n => n.gain.events.map(e => e.value)));
+  assert.ok(farLevel < nearLevel * 0.3, 'distant groans are much quieter');
+  h.advance(4, false);
+  const count = h.sources.length;
+  h.M.audio.zombie('groan', { x: 100, y: 0, z: 0 });
+  assert.equal(h.sources.length, count, 'offscreen distant horde does not allocate voices');
+});
+
+test('crowds are rate limited, suspended audio does not queue, and mute preserves music', () => {
+  const h = harness();
+  h.M.audio.unlock();
+  const count = h.sources.length;
+  for (let i = 0; i < 50; i++) {
+    h.M.audio.zombie('groan', { x: 2, y: 0, z: 0 });
+    h.M.audio.zombie('bite', { x: 2, y: 0, z: 0 });
+    h.M.audio.actorStep('zombie', { x: 2, y: 0, z: 0 });
+  }
+  assert.ok(h.sources.length - count < 15, 'a whole wave cannot start fifty simultaneous groans');
+  h.advance(2, false);
+  assert.ok(h.sources.every(s => s.disconnected), 'the complete crowd graph is released');
+  h.setState('suspended');
+  const before = h.sources.length;
+  h.M.audio.zombie('groan'); h.M.audio.thud();
+  assert.equal(h.sources.length, before, 'paused contexts never queue ambient sounds');
+  h.setState('running');
+  h.M.audio.setEffectsEnabled(false);
+  h.M.audio.zombie('hurt'); h.M.audio.pickup();
+  assert.equal(h.sources.length, before, 'muted effects allocate no sources');
+  h.M.music.start();
+  assert.ok(h.sources.length > before, 'music remains independent of effects mute');
+  h.M.audio.setEffectsEnabled(true);
+  const playing = h.sources.length;
+  h.M.audio.zombie('hurt');
+  assert.ok(h.sources.length > playing, 'unmuting restores effects');
 });

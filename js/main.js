@@ -129,6 +129,7 @@
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.environment.update(camera, M.goat.group, dt, elapsed);
     M.water.update(dt, elapsed, M.goat.group, M.goat.state, camera, M.world);
+    M.audio.setListener(camera);
     M.ui.updateBubble(dt, M.goat.headPivot, camera);
 
     renderer.render(scene, camera);

@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
 
-  const { clamp, rand, damp, turnToward } = M.utils;
+  const { clamp, rand, damp, turnToward, hoofPose, actionPose } = M.utils;
   const BLOCK = 2;
   const physics = M.actorPhysics;
   const recovery = M.animalRecovery;
@@ -868,10 +868,7 @@
     s.tuck = 0;
     s.jumpReason = reason || 'hop';
     if (reason === 'ledge' || reason === 'stuck-ledge') s.recoveryJumps = (s.recoveryJumps || 0) + 1;
-    if (goatRef && goatRef.group && audioRef && audioRef.jump) {
-      const d = Math.hypot(p.x - goatRef.group.position.x, p.z - goatRef.group.position.z);
-      if (d < 17) audioRef.jump();
-    }
+    if (audioRef && audioRef.actorJump) audioRef.actorJump(p, false);
     return true;
   }
 
@@ -1731,7 +1728,6 @@
     const action = s.action;
     if (!action) return;
     const p = animal.group.position;
-    const distToPlayer = Math.hypot(p.x - goatRef.group.position.x, p.z - goatRef.group.position.z);
 
     if (action.kind === 'break') {
       const target = action.target;
@@ -1747,7 +1743,6 @@
         }
         s.happy = Math.max(s.happy || 0, 0.45);
         action.result = 'broke';
-        if (audioRef && audioRef.thud && distToPlayer < 22) audioRef.thud();
       } else {
         action.result = 'failed';
       }
@@ -1773,7 +1768,6 @@
           if (action.build && s.project) commitBuildTarget(s.project, target);
           consumeCarry(animal);
           s.happy = Math.max(s.happy || 0, 0.6);
-          if (audioRef && audioRef.thud && distToPlayer < 22) audioRef.thud();
         }
       } else {
         action.result = 'failed';
@@ -1891,6 +1885,7 @@
       if (!clear) s.vy = 0;
       if ((landing && clear) || (!clear && next < previous)) {
         s.vy = 0; s.grounded = true; s.tuck = 0; s.landPulse = 1;
+        if (audioRef && audioRef.actorJump) audioRef.actorJump(p, true);
       }
     }
     s.landPulse = Math.max(0, (s.landPulse || 0) - dt * 4);
@@ -2254,7 +2249,16 @@
     const parts = animal.parts;
     const def = animal.def;
     const moving = s.speed > 0.08;
-    const stride = moving ? clamp(s.speed / def.walkSpeed, 0, 1.2) : 0;
+    s.stride = damp(s.stride || 0, moving ? clamp(s.speed / def.walkSpeed, 0, 1.2) : 0, 10, dt);
+    const stride = s.stride;
+    const footBeat = Math.floor(s.walkPhase / Math.PI);
+    if (moving && s.grounded && s.footBeat !== undefined && s.footBeat !== footBeat && audioRef && audioRef.actorStep) audioRef.actorStep(animal.species, animal.group.position);
+    s.footBeat = footBeat;
+    const turn = angleDelta(s.visualYaw === undefined ? s.yaw : s.visualYaw, s.yaw);
+    s.visualYaw = s.yaw;
+    parts.rig.rotation.z = damp(parts.rig.rotation.z, M.config.reducedMotion ? 0 : -clamp(turn / Math.max(dt, 0.001), -3, 3) * stride * 0.035, 8, dt);
+    const squash = M.config.reducedMotion ? 0 : (s.landPulse || 0);
+    parts.rig.scale.set(1 + squash * 0.025, 1 - squash * 0.055, 1 + squash * 0.025);
     const grazing = s.mode === 'graze' ? 1 : 0;
     s.grazePose = damp(s.grazePose || 0, grazing, 4.2, dt);
 
@@ -2274,8 +2278,9 @@
 
     const walkLift = moving ? Math.sin(s.walkPhase * 2) * 0.04 * stride : 0;
     const actionLunge = (s.mode === 'break' || s.mode === 'place') && s.action
-      ? Math.sin(clamp(s.action.time / s.action.duration, 0, 1) * Math.PI)
-      : 0;
+      ? actionPose(s.action.time, 0.22, s.action.duration)
+      : s.strikeTime >= 0 ? actionPose(s.strikeTime, 0.16, 0.45) : 0;
+    parts.rig.position.z = actionLunge * 0.13;
     const terrainGrab = s.action && s.action.kind === 'break' && s.action.target.type === 'terrain'
       ? actionLunge
       : 0;
@@ -2319,8 +2324,9 @@
     for (let i = 0; i < parts.legs.length; i++) {
       const leg = parts.legs[i];
       const phase = s.walkPhase + leg.offset;
-      let hipTarget = Math.sin(phase) * 0.58 * stride;
-      let kneeTarget = Math.max(0, -Math.cos(phase)) * 0.8 * stride + 0.035;
+      const gait = hoofPose(phase, stride, s.mode === 'hunt' ? 0.6 : 0);
+      let hipTarget = gait.hip;
+      let kneeTarget = gait.knee;
       if (tuck > 0.01) {
         hipTarget = (leg.front ? -0.52 : 0.45) * tuck;
         kneeTarget = 0.72 * tuck;
@@ -2402,6 +2408,7 @@
     const zombie = s.huntTarget;
     if (!zombie || zombie.hp <= 0 || M.enemies.zombies.indexOf(zombie) < 0) {
       s.huntTarget = null;
+      s.strikeTime = -1;
       s.mode = 'idle';
       s.wait = 0.15;
       s.speed = 0;
@@ -2415,15 +2422,21 @@
     const yaw = Math.atan2(dx, dz);
     s.yaw = turnToward(s.yaw, yaw, dt * 7);
     s.attackCooldown = Math.max(0, (s.attackCooldown || 0) - dt);
+    if (s.strikeTime >= 0) {
+      const before = s.strikeTime;
+      s.strikeTime += dt;
+      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 2.65 && Math.abs(q.y - p.y) <= 2.8) {
+        if (M.enemies.attack(p, s.yaw, false)) s.happy = 1;
+      }
+      if (s.strikeTime >= 0.45) s.strikeTime = -1;
+    }
 
     if (distance <= 2.45 && Math.abs(q.y - p.y) <= 2.8) {
       s.speed = damp(s.speed, 0, 10, dt);
       s.stuck = 0;
       if (s.attackCooldown <= 0 && Math.abs(angleDelta(s.yaw, yaw)) < 0.35) {
-        if (M.enemies.attack(p, s.yaw, false)) {
-          s.attackCooldown = 0.75;
-          s.happy = 1;
-        }
+        s.strikeTime = 0;
+        s.attackCooldown = 0.75;
       }
       return;
     }
@@ -2521,6 +2534,12 @@
     if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
     const player = goatRef.group.position;
     const playerDistance = Math.hypot(p.x - player.x, p.z - player.z);
+    if (s.mode !== 'hunt') s.strikeTime = -1;
+    s.voiceTimer -= dt;
+    if (s.voiceTimer <= 0) {
+      if (audioRef && audioRef.animal) audioRef.animal(animal.species, p);
+      s.voiceTimer = 19 + Math.sin(t + animal.seed) * 7;
+    }
 
     s.jumpCooldown = Math.max(0, (s.jumpCooldown || 0) - dt);
     s.escapeCooldown = Math.max(0, (s.escapeCooldown || 0) - dt);
@@ -2827,6 +2846,8 @@
       actionTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(9, 18),
       buildTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(3, 9),
       attackCooldown: 0,
+      strikeTime: -1,
+      voiceTimer: 5 + animal.seed * 1.7,
       huntTarget: null,
       project: null,
       walls: [],

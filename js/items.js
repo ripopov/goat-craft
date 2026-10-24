@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
 
-  const { rand } = M.utils;
+  const { rand, clamp } = M.utils;
 
   const SLOT_COUNT = 10;
   const DROP_SCALE = 0.24;
@@ -284,6 +284,7 @@
 
   function selectSlot(index) {
     if (!Number.isInteger(index) || index < 0 || index >= SLOT_COUNT) return;
+    if (index !== selectedSlot && M.audio && M.audio.select) M.audio.select();
     selectedSlot = index;
     renderSelection();
   }
@@ -345,7 +346,8 @@
       vy: rand(1.7, 3.3),
       landed: false,
       baseY: y,
-      phase: rand(0, Math.PI * 2)
+      phase: rand(0, Math.PI * 2),
+      age: 0
     };
 
     dropGroup.add(mesh);
@@ -378,6 +380,9 @@
     for (let i = drops.length - 1; i >= 0; i--) {
       const mesh = drops[i];
       const u = mesh.userData.drop;
+      u.age = (u.age || 0) + dt;
+      const appear = M.config.reducedMotion ? 1 : 1 - Math.pow(1 - clamp(u.age / 0.2, 0, 1), 3);
+      mesh.scale.setScalar(DROP_SCALE * (0.35 + appear * 0.65));
       const dx = gx - mesh.position.x;
       const dy = gy - mesh.position.y;
       const dz = gz - mesh.position.z;
@@ -434,10 +439,10 @@
           u.landed = true;
         }
       } else {
-        mesh.position.y = u.baseY + Math.sin(t * 2.6 + u.phase) * 0.07 + 0.035;
+        mesh.position.y += (u.baseY + (M.config.reducedMotion ? 0 : Math.sin(t * 2.6 + u.phase) * 0.07 + 0.035) - mesh.position.y) * (1 - Math.exp(-12 * dt));
       }
 
-      mesh.rotation.y += dt * 1.2;
+      if (!M.config.reducedMotion) mesh.rotation.y += dt * 1.2;
 
       if (mesh.position.y < -8) {
         dropGroup.remove(mesh);

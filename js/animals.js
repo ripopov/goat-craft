@@ -8,11 +8,8 @@
   const BODY_CLEARANCE = 0.06;
   const MAX_GRASS_BITS = 48;
 
-  // Herd construction tuning. Animals quarry a shallow patch layer by layer,
-  // carry a batch of turf on their horns, then build a little ziggurat: a 3x3
-  // base, a 2x2 second tier, and a two-column stair that keeps climbing.
+  // Builders quarry shallow patches and carry turf between their horns.
   const CARRY_LIMIT = 34;
-  const TOWER_STEPS = 20;
   const JUMP_SPEED = 12.8;
   const JUMP_COOLDOWN = 0.52;
   const AIR_CONTROL = 2.15;
@@ -942,11 +939,12 @@
   }
 
   // ------------------------------------------------------------------------
-  // Build projects
+  // Wall projects
   // ------------------------------------------------------------------------
-  // A project starts with a flat 3x3 turf plinth, adds a 2x2 tier, then grows
-  // a two-column stair. The plan is deliberately made of adjacent cells so an
-  // animal can place one block, hop onto it, and immediately place the next.
+  const WALL_LENGTH = 10;
+  const WALL_HEIGHT = 2;
+  const WALL_TREE_DISTANCE = 10 * BLOCK;
+
   function cellCenter(bx, bz) {
     const bs = sizeOf();
     return { x: (bx + 0.5) * bs, z: (bz + 0.5) * bs };
@@ -954,8 +952,9 @@
 
   function inSiteFootprint(project, bx, bz, margin) {
     const m = margin || 0;
-    return Math.abs(bx - project.site.bx) <= 1 + m &&
-      Math.abs(bz - project.site.bz) <= 1 + m;
+    return bx >= project.site.bx - WALL_LENGTH / 2 - m &&
+      bx < project.site.bx + WALL_LENGTH / 2 + m &&
+      Math.abs(bz - project.site.bz) <= m;
   }
 
   function entityBlocksCell(animal, x, z, radius) {
@@ -980,21 +979,19 @@
     if (groundY < 0.01) return null;
     if (Math.abs(groundY - animal.group.position.y) > 0.1) return null;
     const baseBy = Math.round(groundY / bs);
+    const tree = M.hearthTree && M.hearthTree.position;
 
-    // A plinth needs a genuinely flat 3x3 footprint and a clear shaft for the
-    // first few courses. This prevents a tower from growing through a tree or
-    // a player's build.
-    for (let dx = -1; dx <= 1; dx++) {
+    for (let dx = -WALL_LENGTH / 2; dx < WALL_LENGTH / 2; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         const px = (bx + dx + 0.5) * bs;
         const pz = (bz + dz + 0.5) * bs;
+        if (tree && Math.hypot(px - tree.x, pz - tree.z) < WALL_TREE_DISTANCE) return null;
         if (worldRef.isPondArea(bx + dx, bz + dz)) return null;
         if (worldRef.isProtectedArea && worldRef.isProtectedArea(bx + dx, bz + dz)) return null;
-        if (worldRef.isStartingClearing && worldRef.isStartingClearing(bx + dx, bz + dz)) return null;
         if (worldRef.isWaterColumn(bx + dx, bz + dz)) return null;
         if (Math.abs(worldRef.surfaceHeight(px, pz) - groundY) > 0.01) return null;
         if (!worldRef.canPlaceBlock(bx + dx, baseBy, bz + dz)) return null;
-        for (let k = 0; k < 5; k++) {
+        for (let k = 0; k < WALL_HEIGHT + 1; k++) {
           if (worldRef.blockInfoAt(bx + dx, baseBy + k, bz + dz)) return null;
         }
         if (entityBlocksCell(animal, px, pz, 1.25)) return null;
@@ -1010,7 +1007,7 @@
       const other = animals[i];
       if (other === animal || !other.state.project) continue;
       const os = other.state.project.site;
-      if (Math.hypot(c.x - os.centerX, c.z - os.centerZ) < 7.0) return null;
+      if (Math.hypot(c.x - os.centerX, c.z - os.centerZ) < WALL_LENGTH * bs + 2) return null;
     }
 
     return {
@@ -1029,20 +1026,9 @@
     const anchorBX = Math.floor(p.x / bs);
     const anchorBZ = Math.floor(p.z / bs);
 
-    for (let attempt = 0; attempt < 96; attempt++) {
+    for (let attempt = 0; attempt < 176; attempt++) {
       const angle = rand(0, Math.PI * 2);
-      const distance = rand(3.8, 8.0);
-      const bx = anchorBX + Math.round(Math.sin(angle) * distance / bs);
-      const bz = anchorBZ + Math.round(Math.cos(angle) * distance / bs);
-      const site = validSiteAt(animal, bx, bz);
-      if (site) return site;
-    }
-
-    // If the immediate terrace is crowded, search a wider ring at the same
-    // elevation instead of dropping down a bank to a lower shelf.
-    for (let attempt = 0; attempt < 80; attempt++) {
-      const angle = rand(0, Math.PI * 2);
-      const distance = rand(8, 16);
+      const distance = attempt < 96 ? rand(10, 20) : rand(20, 34);
       const bx = anchorBX + Math.round(Math.sin(angle) * distance / bs);
       const bz = anchorBZ + Math.round(Math.cos(angle) * distance / bs);
       const site = validSiteAt(animal, bx, bz);
@@ -1054,44 +1040,21 @@
   function makeBuildProject(animal, site) {
     const bs = sizeOf();
     const plan = [];
-
-    function addCell(dx, dz, by, phase) {
-      const bx = site.bx + dx;
-      const bz = site.bz + dz;
-      const c = cellCenter(bx, bz);
-      plan.push({
-        phase: phase,
-        bx: bx,
-        bz: bz,
-        by: by,
-        x: c.x,
-        z: c.z,
-        top: (by + 1) * bs
-      });
-    }
-
-    // Solid 3x3 plinth, then a 2x2 tier: a small turf ziggurat.
-    const platform = [
-      [0, -1], [1, -1], [1, 0], [1, 1],
-      [0, 1], [-1, 1], [0, 0], [-1, -1], [-1, 0]
-    ];
-    for (let i = 0; i < platform.length; i++) {
-      addCell(platform[i][0], platform[i][1], site.baseBy, 'base');
-    }
-    const tier = [[0, 0], [1, 0], [1, 1], [0, 1]];
-    for (let i = 0; i < tier.length; i++) {
-      addCell(tier[i][0], tier[i][1], site.baseBy + 1, 'tier');
-    }
-
-    // The sky stair starts next to the last tier cell and spirals around the
-    // same 3x3 footprint, one block higher per step.
-    const ring = [
-      [-1, 1], [-1, 0], [-1, -1], [0, -1],
-      [1, -1], [1, 0], [1, 1], [0, 1]
-    ];
-    for (let i = 0; i < TOWER_STEPS; i++) {
-      const r = ring[i % ring.length];
-      addCell(r[0], r[1], site.baseBy + 2 + i, 'step');
+    for (let layer = 0; layer < WALL_HEIGHT; layer++) {
+      for (let dx = -WALL_LENGTH / 2; dx < WALL_LENGTH / 2; dx++) {
+        const bx = site.bx + dx;
+        const bz = site.bz;
+        const c = cellCenter(bx, bz);
+        plan.push({
+          phase: 'wall',
+          bx: bx,
+          bz: bz,
+          by: site.baseBy + layer,
+          x: c.x,
+          z: c.z,
+          top: (site.baseBy + layer + 1) * bs
+        });
+      }
     }
 
     return {
@@ -1106,8 +1069,12 @@
   }
 
   function nextBuildTarget(project) {
-    if (!project || project.stepCount >= project.plan.length) return null;
-    return project.plan[project.stepCount];
+    if (!project) return null;
+    for (let i = 0; i < project.plan.length; i++) {
+      const target = project.plan[i];
+      if (!worldRef.blockInfoAt(target.bx, target.by, target.bz)) return target;
+    }
+    return null;
   }
 
   function commitBuildTarget(project, target) {
@@ -1121,9 +1088,8 @@
       top: target.top,
       phase: target.phase
     });
-    project.stepCount++;
+    project.stepCount = project.steps.length;
     project.stuck = 0;
-    target.projectDone = nextBuildTarget(project) === null;
   }
 
   function hasBuildTarget(project) {
@@ -1358,6 +1324,21 @@
     }
 
     if (targetUnsafeForPlacement(animal, target.x, target.z)) {
+      if (Math.hypot(target.x - p.x, target.z - p.z) < 1.15) {
+        const approach = findApproach(animal, target.x, target.z, 2.35, {
+          levelY: project.site.groundY,
+          maxRise: BLOCK + 0.45
+        });
+        if (approach) {
+          s.action = { kind: 'place', target: target, approach: approach,
+            time: 0, duration: 0.68, hit: false, build: true };
+          s.mode = 'seekPlace';
+          s.seekTime = 9;
+          s.stuck = 0;
+          s.gathering = false;
+          return true;
+        }
+      }
       s.wait = rand(0.5, 1.0);
       return false;
     }
@@ -1365,9 +1346,6 @@
     if (!worldRef.canPlaceBlock(target.bx, target.by, target.bz)) {
       const existing = worldRef.blockInfoAt(target.bx, target.by, target.bz);
       if (existing) {
-        // The cell is already filled. It may be our own retry after a failed
-        // climb, or a player's block. Either way it is safe to move on.
-        commitBuildTarget(project, target);
         project.invalid = 0;
         return false;
       }
@@ -1376,23 +1354,11 @@
       return false;
     }
 
-    const lastStep = project.steps.length > 0
-      ? project.steps[project.steps.length - 1]
-      : null;
-    if (lastStep && p.y < lastStep.top - 0.45) {
-      startTraverseTower(animal);
-      return false;
-    }
-
     const dx = target.x - p.x;
     const dz = target.z - p.z;
     const reach = Math.hypot(dx, dz);
-    const levelOk = p.y >= target.top - BLOCK - 0.4 && p.y <= target.top + 0.4;
+    const levelOk = p.y >= target.top - BLOCK * 2 - 0.4 && p.y <= target.top + 0.4;
     if (!levelOk || reach > 3.7) {
-      if (project.stepCount > 0) {
-        startTraverseTower(animal);
-        return false;
-      }
       const approach = findApproach(animal, target.x, target.z, 2.35, {
         levelY: project.site.groundY,
         maxRise: BLOCK + 0.45
@@ -1965,8 +1931,8 @@
       : Infinity;
 
     const levelOk = !action.build ||
-      (p.y >= target.top - BLOCK - 0.4 && p.y <= target.top + 0.4);
-    if ((distanceToApproach < 0.7 || distanceToTarget < 3.7) && levelOk) {
+      (p.y >= target.top - BLOCK * 2 - 0.4 && p.y <= target.top + 0.4);
+    if ((approach ? distanceToApproach < 0.7 : distanceToTarget < 3.7) && levelOk) {
       const desiredYaw = Math.atan2(target.x - p.x, target.z - p.z);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 9);
       s.speed = damp(s.speed, 0, 8, dt);
@@ -2018,10 +1984,6 @@
     s.action = null;
     s.speed = 0;
 
-    if (wasBuild && result === 'placed') {
-      startClimb(animal, target);
-      return;
-    }
     if (wasEscape && escapePlace && result === 'placed') {
       startEscapeClimb(animal, target);
       return;
@@ -2583,6 +2545,79 @@
     }
   }
 
+  function nearestZombie(animal) {
+    if (!M.enemies || !M.enemies.zombies) return null;
+    const p = animal.group.position;
+    let best = null;
+    let bestDistance = Infinity;
+    for (let i = 0; i < M.enemies.zombies.length; i++) {
+      const zombie = M.enemies.zombies[i];
+      if (zombie.hp <= 0) continue;
+      const q = zombie.position;
+      const distance = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2;
+      if (distance < bestDistance) {
+        best = zombie;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  function updateHunt(animal, dt) {
+    const s = animal.state;
+    const p = animal.group.position;
+    const zombie = s.huntTarget;
+    if (!zombie || zombie.hp <= 0 || M.enemies.zombies.indexOf(zombie) < 0) {
+      s.huntTarget = null;
+      s.mode = 'idle';
+      s.wait = 0.15;
+      s.speed = 0;
+      return;
+    }
+
+    const q = zombie.position;
+    const dx = q.x - p.x;
+    const dz = q.z - p.z;
+    const distance = Math.hypot(dx, dz);
+    const yaw = Math.atan2(dx, dz);
+    s.yaw = turnToward(s.yaw, yaw, dt * 7);
+    s.attackCooldown = Math.max(0, (s.attackCooldown || 0) - dt);
+
+    if (distance <= 2.45 && Math.abs(q.y - p.y) <= 2.8) {
+      s.speed = damp(s.speed, 0, 10, dt);
+      s.stuck = 0;
+      if (s.attackCooldown <= 0 && Math.abs(angleDelta(s.yaw, yaw)) < 0.35) {
+        if (M.enemies.attack(p, s.yaw, false)) {
+          s.attackCooldown = 0.75;
+          s.happy = 1;
+        }
+      }
+      return;
+    }
+
+    const speed = defWalkSpeed(animal) * 1.65 * (s.grounded ? 1 : AIR_CONTROL);
+    s.speed = damp(s.speed, speed, 6, dt);
+    const moved = distance > 0.001 && moveAnimal(
+      animal,
+      dx / distance * s.speed * dt,
+      dz / distance * s.speed * dt,
+      s.yaw
+    );
+    if (moved) {
+      s.walkPhase += s.speed * dt * 4.6;
+      s.stuck = 0;
+    } else if (s.grounded) {
+      s.stuck += dt;
+      if (s.stuck > 2.0) {
+        s.huntTarget = null;
+        s.mode = 'idle';
+        s.wait = 0.5;
+        s.speed = 0;
+        s.stuck = 0;
+      }
+    }
+  }
+
   function updateAnimal(animal, dt, t) {
     const s = animal.state;
     const p = animal.group.position;
@@ -2614,10 +2649,16 @@
       }
     }
 
-    if (s.mode === 'idle') {
-      if (s.retired && !s.project && s.carryCount > 0) {
-        setCarried(animal, null, 0);
+    if (animal.role === 'hunter' && (s.mode === 'idle' || s.mode === 'walk' || s.mode === 'graze')) {
+      const zombie = nearestZombie(animal);
+      if (zombie) {
+        s.huntTarget = zombie;
+        s.mode = 'hunt';
+        s.stuck = 0;
       }
+    }
+
+    if (s.mode === 'idle') {
       s.speed = damp(s.speed, 0, 5, dt);
       s.wait -= dt;
       if (s.wait <= 0) {
@@ -2627,7 +2668,7 @@
           const project = s.project;
           const site = project.site;
           const onStructure = p.y > site.groundY + 0.3 &&
-            Math.hypot(p.x - site.centerX, p.z - site.centerZ) < 5.2;
+            Math.hypot(p.x - site.centerX, p.z - site.centerZ) < WALL_LENGTH;
           const hasTarget = hasBuildTarget(project);
           const atSite = Math.hypot(p.x - site.centerX, p.z - site.centerZ) < 1.35 &&
             Math.abs(p.y - site.groundY) < 0.35;
@@ -2636,21 +2677,13 @@
             if (p.y > site.groundY + 0.25) {
               startDescend(animal);
             } else {
-              s.lastTower = {
-                site: project.site,
-                steps: project.stepCount,
-                plan: project.plan.map(function (t) {
-                  return { phase: t.phase, bx: t.bx, by: t.by, bz: t.bz };
-                })
-              };
-              s.towersBuilt = (s.towersBuilt || 0) + 1;
+              project.completed = true;
+              if (s.walls.indexOf(project) < 0) s.walls.push(project);
               s.project = null;
               s.gathering = false;
               s.batchGoal = 0;
               s.happy = 1;
-              s.retired = true;
-              s.buildTimer = Infinity;
-              setCarried(animal, null, 0);
+              s.buildTimer = rand(6, 10);
               s.wait = rand(1.0, 2.0);
             }
           } else if (s.gathering && s.carryCount < s.batchGoal && !onStructure) {
@@ -2662,21 +2695,13 @@
               s.quarryMisses = (s.quarryMisses || 0) + 1;
               if (s.quarryMisses < 4) {
                 s.wait = rand(0.25, 0.6);
-              } else {
+              } else if (s.carryCount > 0) {
                 s.quarryMisses = 0;
-                // No more turf around this site. Keep the load, abandon the
-                // half-built plinth and pick a fresh site rather than starting
-                // a multi-trip construction that would need stair traversal
-                // and can strand the animal inside its own spiral.
-                s.gathering = true;
-                s.batchGoal = CARRY_LIMIT;
-                const carried = s.carryCount;
-                const carriedKind = s.carry;
+                s.gathering = false;
+                s.batchGoal = s.carryCount;
+                s.wait = 0.1;
+              } else {
                 abandonProject(animal, 'quarry-exhausted');
-                s.project = null;
-                s.carryCount = carried;
-                if (carriedKind) s.carry = carriedKind;
-                if (!chooseWander(animal)) s.wait = rand(0.5, 1.0);
               }
             }
           } else if (s.carryCount > 0) {
@@ -2691,15 +2716,27 @@
             startDescend(animal);
           } else {
             s.gathering = true;
-            s.batchGoal = CARRY_LIMIT;
+            s.batchGoal = project.plan.reduce(function (count, target) {
+              return count + (worldRef.blockInfoAt(target.bx, target.by, target.bz) ? 0 : 1);
+            }, 0);
             s.wait = 0.1;
           }
-        } else if (!s.retired && s.buildTimer <= 0) {
-          const site = chooseBuildSite(animal);
-          if (site) {
-            s.project = makeBuildProject(animal, site);
-            s.gathering = s.carryCount < CARRY_LIMIT;
-            s.batchGoal = s.gathering ? CARRY_LIMIT : 0;
+        } else if (animal.role === 'builder' && s.buildTimer <= 0) {
+          for (let i = 0; i < s.walls.length; i++) {
+            if (hasBuildTarget(s.walls[i])) {
+              s.project = s.walls[i];
+              break;
+            }
+          }
+          if (!s.project) {
+            const site = chooseBuildSite(animal);
+            if (site) s.project = makeBuildProject(animal, site);
+          }
+          if (s.project) {
+            s.batchGoal = s.project.plan.reduce(function (count, target) {
+              return count + (worldRef.blockInfoAt(target.bx, target.by, target.bz) ? 0 : 1);
+            }, 0);
+            s.gathering = s.carryCount < s.batchGoal;
             s.quarryMisses = 0;
             s.wait = 0.12;
             s.happy = 1;
@@ -2707,8 +2744,7 @@
             s.buildTimer = rand(5, 10);
             if (!chooseWander(animal) && !startGraze(animal)) s.wait = rand(1.5, 3.0);
           }
-        } else if (s.carryCount > 0 && s.buildTimer <= 0.5) {
-          // Leftover turf from a finished project can seed the next one.
+        } else if (animal.role === 'builder' && s.carryCount > 0 && s.buildTimer <= 0.5) {
           s.buildTimer = 0;
           s.wait = 0.05;
         } else if (!s.carry && Math.random() < 0.38) {
@@ -2717,6 +2753,8 @@
           s.wait = rand(1.2, 2.5);
         }
       }
+    } else if (s.mode === 'hunt') {
+      updateHunt(animal, dt);
     } else if (s.mode === 'walk') {
       const dx = s.target.x - p.x;
       const dz = s.target.z - p.z;
@@ -2872,6 +2910,7 @@
       species: speciesName,
       def: def,
       name: options && options.name,
+      role: options && options.role,
       parts: parts,
       group: parts.group,
       seed: rand(0, Math.PI * 2),
@@ -2892,7 +2931,10 @@
       action: null,
       actionTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(9, 18),
       buildTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(3, 9),
+      attackCooldown: 0,
+      huntTarget: null,
       project: null,
+      walls: [],
       gathering: false,
       batchGoal: 0,
       carry: null,
@@ -2926,8 +2968,6 @@
       wedgeTime: 0,
       seekFailures: 0,
       quarryMisses: 0,
-      towersBuilt: 0,
-      lastTower: null,
       lastAbandon: null,
       retired: false
     };
@@ -2950,12 +2990,13 @@
     const gz = goatRef.group.position.z;
 
     const roster = [
-      { species: 'sheep', name: 'Mallow', dx: -3.0, dz: 2.0, actionTimer: 0.8 },
-      { species: 'cow', name: 'Clover', dx: 2.6, dz: -3.0, actionTimer: 3.0 },
-      { species: 'stag', name: 'Bramble', dx: -3.8, dz: -1.2, actionTimer: 5.5 },
+      { species: 'sheep', name: 'Mallow', role: 'builder', dx: -3.0, dz: 2.0, actionTimer: 0.8 },
+      { species: 'cow', name: 'Clover', role: 'builder', dx: 2.6, dz: -3.0, actionTimer: 3.0 },
+      { species: 'stag', name: 'Bramble', role: 'hunter', dx: -3.8, dz: -1.2, actionTimer: 5.5 },
       {
         species: 'sheep',
         name: 'Poppy',
+        role: 'hunter',
         dx: 1.6,
         dz: -5.6,
         actionTimer: 8.0,

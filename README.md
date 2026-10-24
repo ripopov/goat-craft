@@ -33,7 +33,7 @@ js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/goat.js          goat rig, coat, gaits, swimming/buoyancy, physics, jumps, headbutt and hoof stomp
-js/animals.js       sheep, cow and stag NPCs: grazing, jumping, turf quarrying, stair building and pit escape
+js/animals.js       specialized sheep, cow and stag NPCs: zombie hunting, wall building, repairs and pit escape
 js/controls.js      pointer-lock mouse look, third-/first-person cameras, keyboard and touch input
 js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
@@ -44,6 +44,7 @@ scripts/test-water.mjs  dependency-free terrain, bank leaks, swimming, collision
 scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
 scripts/test-hearth-tree.mjs  landmark geometry, root collision, clearing terrain, player spawn, placement and reduced-motion checks
 scripts/test-enemies.mjs  routes, jumps, block chewing, tree damage, combat, spawning and persistent drops
+scripts/test-animals.mjs  herd roles, zombie combat, ten-block wall construction and repairs
 .github/workflows/ci.yml    syntax, asset and served-page checks
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
@@ -75,11 +76,11 @@ Collision checks the occupied voxels rather than treating everything below the t
 
 Gameplay runs at a fixed 60 simulation steps per second, with bounded catch-up after slow frames and no hidden-tab simulation. Block edits update collision immediately and batch mesh rebuilding by chunk. Prop meshes omit hidden faces, construction looks up placed blocks by chunk, and chunk streaming reuses its nearby-first queue. Fluid updates process at most 1,024 queued cells per tick; settled water needs no simulation work. Generation caches are bounded, and flowing cells outside streamed chunks are reconstructed from saved terrain edits when the area returns.
 
-The player starts at **(8, 24)** in an open, level meadow, with the ancient **Hearth Tree** at its center, world coordinates **(0, 0)**. The meadow stays flat and dry for a **15-block radius** (30 world units) around the tree, leaving room to build defenses in every direction. Natural trees, rocks, ponds and rivers stay outside this space. A five-block terrain transition leads into denser woodland, hills and the infinite procedural wilderness. The herd builds and quarries outside the clearing; players can still dig and build on the lawn.
+The player starts at **(8, 24)** in an open, level meadow, with the ancient **Hearth Tree** at its center, world coordinates **(0, 0)**. The meadow stays flat and dry for a **15-block radius** (30 world units) around the tree, leaving room to build defenses in every direction. Natural trees, rocks, ponds and rivers stay outside this space. A five-block terrain transition leads into denser woodland, hills and the infinite procedural wilderness. The builders place defensive walls on the lawn at least ten blocks from the tree and quarry turf outside the clearing; players can still dig and build everywhere on the lawn.
 
 The tree's half-unit voxels form a forked oak, a layered green-and-gold crown, and mossy roots fitted to the terrain. An inset amber heart, golden sap seams, hanging lanterns, and slowly drifting embers make it a warm landmark after dark. The trunk, roots, and canopy have persistent collision; the foundation is protected from mining and herd construction. The tree starts with **100 HP**, shown alongside the coin balance and living zombie count in the defense HUD. Its glow fades as its health falls.
 
-After **10 seconds** of preparation, the first wave sends four zombies. A new wave arrives every **35 seconds**, with three more zombies than the previous wave; they enter individually, increasingly quickly. There are never more than **50 living zombies**. Each zombie follows the terrain toward the tree and eats **1 HP every 3 seconds** while in contact with its trunk or roots. At zero HP, attacks and spawning stop and **Defend again** restarts the game.
+After **10 seconds** of preparation, the first wave sends four zombies. A new wave arrives every **35 seconds**, with three more zombies than the previous wave; they enter individually, increasingly quickly. Zombies spawn **54–72 world units** from the tree, fifty percent farther away than the original ring. There are never more than **50 living zombies**. Each zombie follows the terrain toward the tree and eats **1 HP every 3 seconds** while in contact with its trunk or roots. At zero HP, attacks and spawning stop and **Defend again** restarts the game.
 
 Zombies walk around high walls and hills, jump up **one block**, and cannot jump up two. Shared navigation covers the defense arena, 56 world units in each direction from the tree, and updates locally when blocks change. If no walking route exists, zombies plan a breach and chew each obstructing block for **10 seconds**. Terrain can be tunneled and player-built walls can be dismantled. Every chewed block becomes a **persistent collectible drop**; nearby matching materials stack and can be collected and placed again. The tree's protected foundation remains intact, and the arena stays loaded while the goat explores elsewhere.
 
@@ -87,9 +88,9 @@ Select **Horns & Hooves** to fight: two headbutts or one stomp kill a zombie, ea
 
 The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long.
 
-A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). They wander, graze, jump up ledges, and set out to build independently.
+A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). Bramble and Poppy are hunters: they chase nearby zombies and headbutt them, using the same two-hit combat rules as the goat. Mallow and Clover are builders.
 
-When an animal starts a project it shaves the top turf course around a flat site, one block at a time, and carries the load between its horns. It then lays a 3×3 turf plinth, a 2×2 tier, and a 20-step spiral stair that climbs toward the sky. The herd keeps its construction and turf quarrying outside the starting meadow. Every step is a real world block, so the tower collides with the player and can be climbed or dismantled. The builders jump from step to step as they work, and retire to graze once their tower is finished.
+The builders shave the top turf course around a flat site, one block at a time, and carry the load between their horns. Each project is a straight, two-block-high wall section ten blocks long, with every block at least ten blocks from the Hearth Tree. Every block is real and collides with the player and zombies. Builders revisit their completed sections and replace missing blocks before starting new ones, so walls damaged by zombies are repaired automatically.
 
 If an animal falls into a pit, it does not dig itself deeper: it breaks open the pit wall, builds or jumps onto a step, and keeps widening and climbing until it is back on the surface. The herd leaves ponds and player-placed blocks alone, and animal quarrying creates no competing item drops.
 
@@ -99,6 +100,6 @@ Music and effects share a filtered, compressed output with volume headroom. Ever
 
 ## CI and hosting
 
-Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs scripts/test-enemies.mjs scripts/test-fluids.mjs scripts/test-collision.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs scripts/test-enemies.mjs scripts/test-animals.mjs scripts/test-fluids.mjs scripts/test-collision.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
 
 Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

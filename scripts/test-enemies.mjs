@@ -111,6 +111,16 @@ test('zombies arrive gradually, increase with waves, and never exceed fifty', ()
   assert.equal(M.enemies.getState().wave, 2);
 });
 
+test('automatic zombie spawns use the fifty-percent-farther ring', () => {
+  const { M, scene, world, tree } = fixture();
+  M.enemies.init({ scene, world, tree });
+  advance(M, 10.1);
+  assert.equal(M.enemies.zombies.length, 1);
+  const p = M.enemies.zombies[0].position;
+  const distance = Math.hypot(p.x - tree.position.x, p.z - tree.position.z);
+  assert.ok(distance >= 54 && distance <= 72, `spawn distance ${distance}`);
+});
+
 test('each zombie eats exactly one tree HP per three seconds; defeat clamps at zero', () => {
   const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
   const zombie = M.enemies.spawnAt(M.enemies.navigation.nodeAt(3, 0, 1));

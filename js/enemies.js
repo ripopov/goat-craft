@@ -103,7 +103,7 @@
   function spawn() {
     const candidates = navigation.nodes.filter(function (node) {
       const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
-      return d >= 36 && d <= 48 && world.waterDepthAt(node.x, node.z) < 0.9 &&
+      return d >= 54 && d <= 72 && world.waterDepthAt(node.x, node.z) < 0.9 &&
         !zombies.some(function (z) { return z.position.distanceToSquared(node) < 2.25; });
     });
     if (!candidates.length) return false;

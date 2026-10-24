@@ -46,6 +46,9 @@ jobs:
       - name: Test zombie defense gameplay
         run: node --test scripts/test-enemies.mjs
 
+      - name: Test herd combat and wall maintenance
+        run: node --test scripts/test-animals.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

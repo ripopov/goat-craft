@@ -49,6 +49,9 @@
     let levels = training.get(target);
     if (!levels) { levels = {}; training.set(target, levels); }
     levels[key] = item.level + 1;
+    if (target === player && key === 'move' && M.goat && M.goat.applySpeedStyle) {
+      M.goat.applySpeedStyle(levels[key]);
+    }
     if (M.audio && M.audio.pickup) M.audio.pickup();
     return true;
   }

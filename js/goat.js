@@ -387,6 +387,84 @@
   makeLeg(-0.25, -0.45, false, Math.PI, 0);
   makeLeg(0.25, -0.45, false, 0, Math.PI * 0.5);
   const stompLeg = legs[1];
+
+  // ----------------------------------------------------------------- speed style
+  // Fleet hooves training visibly refits the player's goat. Tiers stack glowing
+  // energy bands up each leg and tint the tail light; the third tier adds a
+  // spinning wheel rim per leg and swaps the gait for a cartoon wheel spin.
+  const speedStyle = { level: 0 };
+  const styleNodes = [];
+  const TIER_GLOW = [0x000000, 0x2fe6d0, 0xffc13d, 0xff5ce1]; // none, teal, gold, magenta
+
+  function disposeStyleNodes() {
+    for (let i = 0; i < styleNodes.length; i++) {
+      const node = styleNodes[i];
+      if (node.parent) node.parent.remove(node);
+      node.traverse(function (o) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const list = Array.isArray(o.material) ? o.material : [o.material];
+          for (let j = 0; j < list.length; j++) list[j].dispose();
+        }
+      });
+    }
+    styleNodes.length = 0;
+  }
+  function glowMaterial(color) {
+    return new THREE.MeshStandardMaterial({
+      color: color, emissive: color, emissiveIntensity: 0.9,
+      roughness: 0.35, metalness: 0.25, flatShading: true
+    });
+  }
+  function addBand(parent, y, radius, color) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.022, 8, 20), glowMaterial(color));
+    ring.rotation.x = Math.PI / 2;          // hoop around the vertical leg axis
+    ring.position.y = y;
+    parent.add(ring);
+    styleNodes.push(ring);
+  }
+  function addWheel(parent, color) {
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.022, 8, 28), glowMaterial(color));
+    rim.rotation.y = Math.PI / 2;           // annulus in the leg-swing plane
+    rim.position.y = -0.47;                 // hub at mid-leg; leg is the spoke
+    parent.add(rim);
+    styleNodes.push(rim);
+    const hub = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), glowMaterial(color));
+    hub.position.y = -0.47;
+    parent.add(hub);
+    styleNodes.push(hub);
+  }
+  function addComet(color) {
+    const comet = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), glowMaterial(color));
+    comet.position.y = 0.46;
+    tailPivot.add(comet);
+    styleNodes.push(comet);
+  }
+  function applySpeedStyle(level) {
+    level = clamp(level || 0, 0, 3);
+    if (level === speedStyle.level || !rig) return;
+    speedStyle.level = level;
+    disposeStyleNodes();
+    if (level < 1 || legs.length === 0) return;
+    const color = TIER_GLOW[level];
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      addBand(leg.ankle, 0, 0.082, color);
+      if (level >= 2) addBand(leg.hip, -0.24, 0.135, color);
+      if (level >= 3) {
+        addBand(leg.hip, -0.08, 0.17, color);
+        addWheel(leg.hip, color);
+      }
+    }
+    addComet(color);
+  }
+
+  // Damping toward a gait pose normally keeps hips in a small arc. After a long
+  // wheel spin the hip angle is some large multiple of two pi; fold it back into
+  // the nearest turn before easing into the walk, so the legs wind down instead
+  // of unwinding a full rotation backwards.
+  function foldAngle(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
+
   const GRAVITY = 26;
   const JUMP_SPEED = 12.2;
   const MAX_JUMPS = 3;
@@ -450,6 +528,8 @@
   function updateGoat(dt, t) {
     const s = state;
     const upgrades = M.upgrades ? M.upgrades.stats() : { move: 1, rate: 1, reach: 0, damage: 0 };
+    const speedLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'move') : 0;
+    const wheel = speedLevel >= 3;
     const previousYaw = s.yaw;
     s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
     recoverOverlap();
@@ -622,6 +702,7 @@
     s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
     const stride = s.stride;
 
+    const wheelSpin = wheel && jumpK <= 0.01 && stride > 0.06 && swim < 0.5;
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i];
       let hipTarget;
@@ -629,13 +710,28 @@
       if (jumpK > 0.01) {
         hipTarget = (leg.front ? -0.55 : 0.5) * jumpK;
         kneeTarget = 0.75 * jumpK;
+      } else if (wheelSpin) {
+        // Third tier: legs cartwheel end over end like spinning wheel spokes.
+        // Diagonal pairs stay opposite, as in a gallop, and knees lock straight.
+        // The wheel starts at the leg's current angle so switching gaits is seamless.
+        const rawPhase = s.walkPhase * 0.7 + leg.offset;
+        if (leg.wheelBase === undefined) leg.wheelBase = leg.hip.rotation.x - rawPhase;
+        hipTarget = leg.wheelBase + rawPhase;
+        kneeTarget = 0.02;
       } else {
+        if (leg.wheelBase !== undefined) {
+          leg.hip.rotation.x = foldAngle(leg.hip.rotation.x);
+          leg.wheelBase = undefined;
+        }
+        // Trained tiers take crisper, deeper strides rather than a plain speed-up.
+        const amp = 1 + speedLevel * 0.06;
+        const kneeAmp = 1 + speedLevel * 0.08;
         const phW = s.walkPhase + leg.offset;
         const phR = s.runPhase + leg.runOffset;
         const walk = hoofPose(phW, stride, 0);
         const gallop = hoofPose(phR, stride, 1);
-        hipTarget = walk.hip + (gallop.hip - walk.hip) * run;
-        kneeTarget = walk.knee + (gallop.knee - walk.knee) * run;
+        hipTarget = (walk.hip + (gallop.hip - walk.hip) * run) * amp;
+        kneeTarget = (walk.knee + (gallop.knee - walk.knee) * run) * kneeAmp;
       }
       // Alternating diagonal dog-paddle: a long power stroke, folded knee
       // recovery, and slightly splayed hooves. Phase never resets on entry.
@@ -649,17 +745,23 @@
         hipTarget -= 0.72 * stompLift;
         kneeTarget += 1.35 * stompLift;
       }
-      leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
+      if (wheelSpin) {
+        leg.hip.rotation.x = hipTarget; // continuous rotation, no damping lag
+      } else {
+        leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
+      }
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
       const recovery = Math.max(0, Math.sin(s.walkPhase + leg.offset));
-      const ankleTarget = -kneeTarget * 0.58 + recovery * 0.16 * stride * (1 - swim) + jumpK * 0.22;
+      const ankleTarget = wheelSpin ? 0 : -kneeTarget * 0.58 + recovery * 0.16 * stride * (1 - swim) + jumpK * 0.22;
       leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 24, dt);
     }
 
     const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
+    // Faster tiers bounce with each stride instead of just moving quicker.
+    const hopBob = !wheel && moving && s.grounded ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.014 * speedLevel * stride : 0;
     const bob = walkBob * (1 - run) + runBob * run;
-    rig.position.y = damp(rig.position.y, bob * (1 - swim) - s.landPulse * 0.08 + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
+    rig.position.y = damp(rig.position.y, bob * (1 - swim) + hopBob * (1 - swim) - s.landPulse * 0.08 + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
     rig.position.z = damp(rig.position.z, buttPose * 0.18 + run * 0.035, 16, dt);
     const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.018 * stride * (1 - run);
     rig.position.x = damp(rig.position.x, weightShift + Math.sign(stompLeg.hip.position.x) * stompLift * 0.025, 12, dt);
@@ -688,8 +790,8 @@
     const runHeadBob = moving ? Math.sin(s.runPhase * 2) * 0.05 : 0;
     const headBob = (walkHeadBob * (1 - run) + runHeadBob * run) * (1 - swim) + Math.sin(s.swimPhase * 2 + 0.4) * 0.018 * swim;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
-    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0), 10, dt);
-    neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16, 8, dt);
+    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0) - speedLevel * 0.03, 10, dt);
+    neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16 - speedLevel * 0.04, 8, dt);
 
     // With a block on the horns, the same lunge places it instead of smashing.
     if (headbuttPending) {
@@ -749,12 +851,12 @@
       const bounce = Math.sin(s.walkPhase * 2 + ear.side) * 0.1 * stride;
       ear.pivot.rotation.z = ear.baseZ + ear.side * (bounce + twitch);
       ear.pivot.rotation.x = 0.08 + Math.sin(t * 1.1 + ear.side) * 0.035 + run * 0.12;
-      ear.pivot.rotation.y = -ear.side * 0.55 * run;
+      ear.pivot.rotation.y = -ear.side * (0.55 * run + 0.28 * speedLevel);
     }
 
     s.happy = Math.max(0, s.happy - dt * 0.75);
     tailPivot.rotation.z = Math.sin(t * (3.2 + s.happy * 6.5)) * (0.22 + s.happy * 0.3 + run * 0.14);
-    tailPivot.rotation.x = -0.55 - run * 0.25 + Math.sin(t * 1.6) * 0.05;
+    tailPivot.rotation.x = -0.55 - run * 0.25 - speedLevel * 0.12 + Math.sin(t * 1.6) * 0.05 + wheel * Math.sin(s.walkPhase) * 0.15;
 
     blinkTimer -= dt;
     if (blinkTimer <= 0) {
@@ -875,6 +977,7 @@
     startHeadbutt: startHeadbutt,
     startStomp: startStomp,
     greet: greet,
+    applySpeedStyle: applySpeedStyle,
     intersectsBlock: intersectsBlock,
     body: BODY,
     get aimCamera() { return cameraRef; },

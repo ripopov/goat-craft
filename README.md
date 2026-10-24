@@ -165,6 +165,8 @@ Press **Q** near an animal to train it, or away from the herd to train yourself.
 
 Every track has three tiers. Bonuses add within each track: movement and attack speed cap at +100% (2×) and attack reach and strike damage cap at 3× the base values, while work speed caps at +75%. A single tier of Heavy horns lets basic zombie headbutts drop in one hit, and tier 3 reach lands the headbutt about three times farther out; brutes still need focused attacks. Prices rise so upgrading the player competes with investing in hunters and wall repairs.
 
+Fleet hooves training is visible on your own goat, not a stat-only change. Energized hooves glow with teal bands at tier 1, gold leg bands deepen the stride and add a bouncier hop at tier 2, and tier 3 turns the whole goat into a cartoon blur: magenta wheel rims spin at each hip and the legs cartwheel end over end like wheel spokes, winding down to a normal trot when you stop. Hunters still improve by the same numbers without changing their look.
+
 | Enemy | First wave | HP | Move speed | Hearth damage | Wall break time | Dropped coins |
 | --- | --- | --- | --- | --- | --- | --- |
 | Zombie | 1 | 2 | 1.65 | 1 / 3s | 10s | 1 |

@@ -7,7 +7,7 @@ const root = new URL('../', import.meta.url);
 
 // Exercise the actual classic scripts and THREE math/rig without WebGL or any
 // npm dependencies. Only DOM drawing and input dispatch are substituted.
-function harness() {
+function harness({ pointerLock = false } = {}) {
   const listeners = { window: {}, document: {}, canvas: {} };
   const listen = target => (type, fn) => (listeners[target][type] ||= []).push(fn);
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
@@ -19,7 +19,18 @@ function harness() {
     body: { classList: { toggle() {} } }
   };
   const window = { matchMedia: () => ({ matches: false }), addEventListener: listen('window') };
-  const context = vm.createContext({ window, document, console, performance: { now: () => 0 } });
+  if (pointerLock) {
+    canvas.requestPointerLock = () => {
+      document.pointerLockElement = canvas;
+      dispatch('document', 'pointerlockchange');
+    };
+    document.exitPointerLock = () => {
+      document.pointerLockElement = null;
+      dispatch('document', 'pointerlockchange');
+    };
+  }
+  let now = 0;
+  const context = vm.createContext({ window, document, console, performance: { now: () => now } });
   const load = name => vm.runInContext(readFileSync(new URL(name, root), 'utf8'), context, { filename: name });
   load('vendor/three.min.js');
   load('js/core.js');
@@ -36,7 +47,7 @@ function harness() {
     document.hidden = hidden;
     dispatch('document', 'visibilitychange');
   }
-  return { M, THREE, load, dispatch, setHidden };
+  return { M, THREE, load, dispatch, setHidden, setTime: value => { now = value; } };
 }
 
 function swimmer({ floor = 0, level = 10, depth = 10, blocked = () => false } = {}) {
@@ -236,6 +247,96 @@ test('the camera boom retracts before hitting solid river banks', () => {
   const world = { surfaceHeight: () => 0, blockedAt: x => x > 2 };
   M.controls.update(1 / 60, 0, goat, { grounded: false, runBlend: 0 }, world);
   assert.ok(camera.position.x < 2);
+});
+
+test('P toggles FPS once per press, preserves orbit zoom, and works with mouse capture', () => {
+  const { M, THREE, load, dispatch } = harness({ pointerLock: true });
+  load('js/controls.js');
+  const camera = new THREE.PerspectiveCamera(42);
+  const goat = new THREE.Group();
+  const state = { grounded: true, runBlend: 0 };
+  const world = { surfaceHeight: () => 0, blockedAt: () => false };
+  M.controls.init(camera);
+  M.controls.snapTo(goat.position);
+  dispatch('canvas', 'wheel', { deltaY: 200 });
+  for (let i = 0; i < 180; i++) M.controls.update(1 / 60, 0, goat, state, world);
+  const orbitPosition = camera.position.clone();
+
+  dispatch('window', 'keydown', { key: 'f', code: 'KeyF' });
+  assert.equal(M.controls.lookActive, true);
+  // Physical key codes work even with a non-Latin keyboard layout.
+  const press = dispatch('window', 'keydown', { key: 'з', code: 'KeyP' });
+  assert.equal(press.prevented, true);
+  assert.equal(M.controls.firstPerson, true);
+  dispatch('window', 'keydown', { key: 'p', code: 'KeyP', repeat: true });
+  assert.equal(M.controls.firstPerson, true);
+  M.controls.update(1 / 60, 0, goat, state, world);
+  assert.equal(goat.visible, false);
+  assert.equal(camera.fov, 70);
+  assert.equal(M.controls.lookActive, true);
+  dispatch('canvas', 'wheel', { deltaY: -500 });
+
+  dispatch('window', 'keydown', { key: 'P', code: 'KeyP' });
+  M.controls.update(1 / 60, 0, goat, state, world);
+  assert.equal(M.controls.firstPerson, false);
+  assert.equal(goat.visible, true);
+  assert.equal(camera.fov, 42);
+  assert.ok(camera.position.distanceTo(orbitPosition) < 1e-8);
+  assert.equal(M.controls.lookActive, true);
+  dispatch('window', 'keydown', { key: 'Escape', code: 'Escape' });
+  assert.equal(M.controls.lookActive, false);
+  dispatch('window', 'keydown', { key: 'p', code: 'KeyP', ctrlKey: true });
+  assert.equal(M.controls.firstPerson, false, 'leave browser shortcuts alone');
+});
+
+test('FPS follows jumps and dives directly, supports looking up, and stays still when idle', () => {
+  const { M, THREE, load, dispatch, setTime } = harness();
+  load('js/controls.js');
+  const camera = new THREE.PerspectiveCamera();
+  const goat = new THREE.Group();
+  const state = { grounded: false, runBlend: 0 };
+  const world = { surfaceHeight: () => 0, blockedAt: () => true };
+  M.controls.init(camera);
+  dispatch('window', 'keydown', { key: 'p', code: 'KeyP' });
+  for (const position of [[10, 20, -5], [-3, 2, 8]]) {
+    goat.position.set(...position);
+    M.controls.update(1 / 60, 0, goat, state, world);
+    assert.equal(camera.position.x, goat.position.x);
+    assert.equal(camera.position.z, goat.position.z);
+    assert.equal(camera.position.y, goat.position.y + 1.75);
+  }
+  const direction = camera.getWorldDirection(new THREE.Vector3());
+  setTime(60000);
+  M.controls.update(1, 60, goat, state, world);
+  assert.ok(camera.getWorldDirection(new THREE.Vector3()).distanceTo(direction) < 1e-8);
+
+  dispatch('canvas', 'pointerdown', { pointerId: 1, clientX: 0, clientY: 0 });
+  dispatch('canvas', 'pointermove', { pointerId: 1, clientX: 80, clientY: -200 });
+  dispatch('canvas', 'pointerup', { pointerId: 1 });
+  for (let i = 0; i < 60; i++) M.controls.update(1 / 60, 60, goat, state, world);
+  assert.ok(camera.getWorldDirection(new THREE.Vector3()).y > 0.5);
+  dispatch('window', 'keydown', { key: 'w', code: 'KeyW' });
+  assert.ok(M.controls.getSwimPitch(camera) > 0.5);
+});
+
+test('FPS strafes and backs up without turning away from the view or wandering while idle', () => {
+  const { goat, controls, input, advance } = swimmer({ level: 0, depth: 0 });
+  controls.firstPerson = true;
+  controls.getFacingYaw = () => Math.PI / 2;
+  input.set(0, -1);
+  advance(1);
+  assert.ok(goat.group.position.z < -1);
+  assert.equal(goat.group.position.x, 0);
+  assert.equal(goat.state.yaw, Math.PI / 2);
+  const z = goat.group.position.z;
+  input.set(1, 0);
+  advance(1);
+  assert.ok(goat.group.position.x > 1);
+  assert.equal(goat.group.position.z, z);
+  const position = goat.group.position.clone();
+  input.set(0, 0);
+  advance(12);
+  assert.ok(goat.group.position.distanceTo(position) < 1e-8);
 });
 
 test('underwater feedback uses a fixed particle pool and restores daylight fog', () => {

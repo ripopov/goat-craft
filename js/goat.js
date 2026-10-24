@@ -475,6 +475,12 @@
 
     const input = controlsRef.getMovement(cameraRef);
     const steering = input.lengthSq() > 0;
+    if (controlsRef.firstPerson) {
+      // Face the view even when strafing or backing up, and never wander
+      // autonomously while the player is looking through the goat's eyes.
+      s.yaw = controlsRef.getFacingYaw();
+      s.manualHold = 3;
+    }
     let moving = false;
     s.shoreJump = Math.max(0, s.shoreJump - dt);
     const water = worldRef.waterInfoAtBlock(
@@ -498,11 +504,11 @@
       const running = controlsRef.running;
       s.manualHold = 3.0;
       s.mode = 'manual';
-      s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
+      if (!controlsRef.firstPerson) s.yaw = turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7);
       s.speed = damp(s.speed, s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8), s.swimming ? 3.5 : 5, dt);
 
-      const mx = Math.sin(s.yaw) * s.speed * dt;
-      const mz = Math.cos(s.yaw) * s.speed * dt;
+      const mx = (controlsRef.firstPerson ? input.x : Math.sin(s.yaw)) * s.speed * dt;
+      const mz = (controlsRef.firstPerson ? input.y : Math.cos(s.yaw)) * s.speed * dt;
       if (moveGoat(mx, mz, s.yaw)) {
         s.walkPhase += s.speed * dt * (running ? 2.4 : 4.6);
         if (running) s.runPhase += s.speed * dt * 2.4;

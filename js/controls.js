@@ -16,13 +16,17 @@
   let polar = 1.4;
   let viewPolar = polar;
   let distance = 7.6;
+  let firstPerson = false;
+  let snapCamera = false;
+  let orbitFov = 42;
+  const EYE_HEIGHT = 1.75;
   const camTarget = new THREE.Vector3();
   const desired = new THREE.Vector3();
   const pointers = new Map();
   let drag = null;
   let pinch = null;
 
-  // Pointer Lock gives a conventional third-person mouse-look: no button held,
+  // Pointer Lock gives mouse-look in either camera mode: no button held,
   // no dragging. Browsers require a real user gesture to capture the pointer,
   // so the visible "Mouse look" button (or F) is the entry point and Esc exits.
   const LOOK_YAW = 0.003;
@@ -72,7 +76,22 @@
     if (held.w || held.a || held.s || held.d || held.space || held.ctrl) lastInteraction = performance.now();
     const elapsed = (performance.now() - lastInteraction) / 1000;
     const steering = held.w || held.a || held.s || held.d;
-    if (elapsed > 3.0 && !drag && !lookActive && !reduceMotion && !steering) azimuth += dt * 0.1;
+    if (!firstPerson && elapsed > 3.0 && !drag && !lookActive && !reduceMotion && !steering) azimuth += dt * 0.1;
+
+    goat.visible = !firstPerson;
+    viewPolar = damp(viewPolar, polar, 14, dt);
+    if (firstPerson) {
+      // Attach directly to the player so walking, jumps and dives never leave
+      // the viewpoint trailing behind. Keep rig animation out of the camera.
+      cameraRef.position.set(goat.position.x, goat.position.y + EYE_HEIGHT, goat.position.z);
+      cameraRef.lookAt(
+        cameraRef.position.x - Math.sin(viewPolar) * Math.sin(azimuth),
+        cameraRef.position.y - Math.cos(viewPolar),
+        cameraRef.position.z - Math.sin(viewPolar) * Math.cos(azimuth)
+      );
+      camTarget.set(goat.position.x, goat.position.y + 1.25, goat.position.z);
+      return;
+    }
 
     // Follow the swimmer down, rather than pinning the camera above water.
     // Mouse look, drag and zoom all keep their normal meaning underwater.
@@ -86,7 +105,6 @@
     // Smooth the pitch itself. Position damping alone is not enough while
     // looking up, because the camera stops at the ground/level point and only
     // its orientation keeps changing from raw mouse deltas.
-    viewPolar = damp(viewPolar, polar, 14, dt);
     const phi = Math.min(viewPolar + Math.sin(t * 0.17) * 0.014, POLAR_MAX);
 
     // Never let the boom swing below the target. Upward look is handled by
@@ -117,9 +135,10 @@
         break;
       }
     }
-    cameraRef.position.x = obstructed ? px : damp(cameraRef.position.x, px, 14, dt);
-    cameraRef.position.y = obstructed ? py : damp(cameraRef.position.y, py, 14, dt);
-    cameraRef.position.z = obstructed ? pz : damp(cameraRef.position.z, pz, 14, dt);
+    cameraRef.position.x = obstructed || snapCamera ? px : damp(cameraRef.position.x, px, 14, dt);
+    cameraRef.position.y = obstructed || snapCamera ? py : damp(cameraRef.position.y, py, 14, dt);
+    cameraRef.position.z = obstructed || snapCamera ? pz : damp(cameraRef.position.z, pz, 14, dt);
+    snapCamera = false;
     const floor = world.surfaceHeight(cameraRef.position.x, cameraRef.position.z) + 0.3;
     if (cameraRef.position.y < floor) cameraRef.position.y = floor;
 
@@ -181,7 +200,7 @@
 
     if (pointers.size === 2 && pinch) {
       const d = pinchDistance();
-      if (d > 0) distance = clamp(pinch.radius * (pinch.dist / d), 4, 11);
+      if (!firstPerson && d > 0) distance = clamp(pinch.radius * (pinch.dist / d), 4, 11);
     } else if (drag && e.pointerId === drag.id) {
       const dx = e.clientX - drag.x;
       const dy = e.clientY - drag.y;
@@ -233,7 +252,7 @@
 
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
-    distance = clamp(distance * (1 + e.deltaY * 0.0012), 4, 11);
+    if (!firstPerson) distance = clamp(distance * (1 + e.deltaY * 0.0012), 4, 11);
     lastInteraction = performance.now();
   }, { passive: false });
 
@@ -269,7 +288,7 @@
     const hint = document.getElementById('hint');
     if (!hint) return;
     hint.innerHTML = active
-      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
       : defaultHint;
   }
 
@@ -389,6 +408,19 @@
       return;
     }
 
+    if (e.code === 'KeyP' || e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (e.repeat) return;
+      firstPerson = !firstPerson;
+      snapCamera = true;
+      if (cameraRef) {
+        cameraRef.fov = firstPerson ? 70 : orbitFov;
+        cameraRef.updateProjectionMatrix();
+      }
+      noteActivity();
+      return;
+    }
+
     if (e.code === 'KeyE' || e.key.toLowerCase() === 'e') {
       e.preventDefault();
       if (!e.repeat && M.controls.onHeadbutt) M.controls.onHeadbutt();
@@ -444,6 +476,7 @@
 
   function init(camera) {
     cameraRef = camera;
+    orbitFov = camera.fov;
 
     const hint = document.getElementById('hint');
     if (hint) defaultHint = hint.innerHTML;
@@ -473,6 +506,8 @@
     requestLook: requestLook,
     releaseLook: releaseLook,
     get lookActive() { return lookActive; },
+    get firstPerson() { return firstPerson; },
+    getFacingYaw: function () { return azimuth + Math.PI; },
     getMovement: getMovement,
     getSwimPitch: getSwimPitch,
     get swimVertical() { return (held.space ? 1 : 0) - (held.ctrl ? 1 : 0); },

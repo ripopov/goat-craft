@@ -72,11 +72,15 @@
       const affordable = M.towers.available(def);
       button.classList.toggle('chosen', selected === def.id);
       button.classList.toggle('unaffordable', !affordable);
+      button.classList.toggle('packed', !!owned[i]);
       button.setAttribute('aria-pressed', String(selected === def.id));
-      button.setAttribute('aria-label', def.name + '. ' + def.role + '. ' + (owned[i] ? owned[i] + ' packed in inventory. Free to redeploy.' : costText(def.cost)) + (affordable ? '' : '. Not enough resources.'));
-      ownedEl.textContent = owned[i] ? 'Packed ×' + owned[i] : def.height + (def.height === 1 ? ' block' : ' blocks');
+      const label = def.name + '. ' + def.role + '. ' + (owned[i] ? owned[i] + ' packed in inventory. Free to redeploy.' : costText(def.cost)) + (affordable ? '' : '. Not enough resources.');
+      button.setAttribute('aria-label', label); button.title = label;
+      ownedEl.hidden = !owned[i];
+      ownedEl.textContent = owned[i] ? 'Packed ×' + owned[i] : '';
     });
     const def = inspected ? inspected.def : M.towers.byId[selected];
+    document.getElementById('rts-detail').hidden = !def;
     document.getElementById('rts-count').textContent = M.towers.list.length + ' / ' + M.towers.maxTowers + ' deployed';
     document.getElementById('rts-detail-title').textContent = def ? def.name : 'Build your defense';
     document.getElementById('rts-detail-role').textContent = def ? def.role : 'Ten towers. One living Hearth.';
@@ -162,7 +166,7 @@
       cards.push({ button, def, ownedEl: button.querySelector('.tower-owned') });
     });
     toggleButton.addEventListener('click', () => setActive(!active));
-    document.getElementById('rts-cancel').addEventListener('click', cancel);
+    document.getElementById('rts-close').addEventListener('click', () => setActive(false));
     document.getElementById('rts-hearth').addEventListener('click', () => recenter(false));
     document.getElementById('rts-goat').addEventListener('click', () => recenter(true));
     document.getElementById('rts-pack').addEventListener('click', () => {

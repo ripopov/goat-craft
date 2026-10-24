@@ -265,6 +265,10 @@ test('RTS keys select towers instead of inventory/actions, Tab remains accessibl
   press('Escape', 'Escape'); assert.equal(M.strategy.active, false);
   assert.equal(dispatch('window', 'keydown', { key: 't', code: 'KeyT', repeat: true }).prevented, true);
   assert.equal(M.strategy.active, false, 'key repeat does not switch views');
+  press('t', 'KeyT'); press('0', 'Digit0');
+  dispatch('rts-close', 'click');
+  assert.equal(M.strategy.active, false, 'the T-labeled close button exits strategic view even with a tower selected');
+  assert.equal(M.strategy.selected, null);
 });
 
 test('command wheel changes zoom, blur stops camera drift, and the HUD button switches without resetting third person', () => {

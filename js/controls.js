@@ -290,7 +290,7 @@
     lookButton.classList.toggle('on', active);
     lookButton.setAttribute('aria-pressed', active ? 'true' : 'false');
     lookButton.setAttribute('aria-label', active ? 'Release mouse capture' : 'Capture mouse for free look');
-    lookButton.title = active ? 'Press Esc to release the mouse' : 'Capture the pointer for mouse look (Esc releases)';
+    lookButton.title = active ? 'Press F to release the mouse' : 'Capture the pointer for mouse look (F releases)';
     const label = lookButton.querySelector('.label');
     if (label) label.textContent = active ? 'Mouse captured' : 'Mouse look';
   }
@@ -300,7 +300,7 @@
     const hint = document.getElementById('hint');
     if (!hint) return;
     hint.innerHTML = active
-      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click / E</b> mine or place &nbsp;·&nbsp; attacks fire automatically &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>F</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click / E</b> mine or place &nbsp;·&nbsp; attacks fire automatically &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
       : defaultHint;
   }
 

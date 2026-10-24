@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to mine or place blocks (attacks fire automatically at nearby enemies), Q to upgrade yourself or a nearby animal, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to mine or place blocks (attacks fire automatically at nearby enemies), Q to upgrade yourself or a nearby animal, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (F releases it). Drag still orbits on touch or when the pointer is free."></canvas>
   <div id="aim-reticle" aria-hidden="true"></div>
   <div id="vignette"></div>
   <div id="water-overlay" aria-hidden="true"></div>
@@ -39,7 +39,7 @@
       <strong>Defend the Hearth</strong>
       <p><b>WASD</b> Move <b>Shift</b> Gallop<br><b>Space</b> Jump / swim up <b>Ctrl</b> Dive</p>
       <p><b>E / click</b> Mine / place (attacks are automatic)<br><b>1–0</b> Items</p>
-      <p><b>F</b> Mouse look <b>Esc</b> Release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
+      <p><b>F</b> Mouse look / release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
       <p><b>Q</b> Train yourself / nearby animal<br><b>T</b> Strategic view / tower building</p>
       <p><b>/</b> Console — press again to close</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
     </div>
@@ -63,17 +63,17 @@
   <button id="hi" type="button"><span></span>Say hi</button>
   <button id="strategy-toggle" type="button" aria-pressed="false" aria-controls="rts-hud"><i aria-hidden="true">⌘</i><span>Strategic view</span><kbd>T</kbd></button>
   <section id="rts-hud" aria-label="Strategic command" hidden>
-    <header class="rts-banner"><div><span class="rts-live">● LIVE STRATEGY</span><strong>Defend the Hearth</strong><small>Your goat is roaming on autopilot</small></div><div class="rts-camera-actions"><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Find goat</button></div></header>
+    <header class="rts-banner"><span class="rts-live" title="Your goat is roaming on autopilot">● STRATEGY</span><div class="rts-camera-actions"><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Goat</button></div></header>
     <div id="rts-resources" aria-label="Building resources"></div>
     <div class="rts-dock">
-      <div class="rts-herd"><div class="rts-herd-heading"><span class="rts-eyebrow">HERD TRAINING</span><small>Click an ally to upgrade</small></div><div id="rts-animals" role="group" aria-label="Animal upgrades"></div></div>
-      <div class="rts-dock-top"><div><span class="rts-eyebrow">HEARTH ENGINEERING</span><h2>Cannon workshop <small id="rts-count">0 / 80 deployed</small></h2></div><p id="rts-message" role="status" aria-live="polite">Select a tower to begin</p><button id="rts-cancel" type="button">Cancel <kbd>Esc</kbd></button></div>
-      <div class="rts-workspace"><aside class="rts-detail"><img id="rts-detail-icon" alt="" hidden><div><h3 id="rts-detail-title">Build your defense</h3><p id="rts-detail-role">Ten towers. One living Hearth.</p><p id="rts-detail-stats"></p><p id="rts-detail-cost"></p><button id="rts-pack" type="button" hidden>Pack tower into pickup</button></div></aside><div id="rts-roster" role="group" aria-label="Tower blueprints"></div></div>
-      <footer class="rts-footer"><span><b>WASD / drag</b> Pan <b>Scroll</b> Zoom <b>1–0</b> Tower <b>Right click</b> Cancel</span><span>Click a deployed tower to inspect · Packed towers redeploy for free</span></footer>
+      <div class="rts-dock-top"><h2>Workshop <small id="rts-count">0 / 80 deployed</small></h2><div id="rts-animals" role="group" aria-label="Animal upgrades"></div><button id="rts-close" type="button">Close <kbd>T</kbd></button></div>
+      <div class="rts-workspace"><div id="rts-roster" role="group" aria-label="Tower blueprints · scroll horizontally for more"></div></div>
+      <aside id="rts-detail" class="rts-detail" aria-label="Tower details" hidden><img id="rts-detail-icon" alt="" hidden><div><h3 id="rts-detail-title"></h3><p id="rts-detail-role"></p></div><p id="rts-detail-stats"></p><p id="rts-detail-cost"></p><button id="rts-pack" type="button" hidden>Pack tower</button></aside>
+      <footer class="rts-footer"><p id="rts-message" role="status" aria-live="polite">Select a tower to begin</p><span><b>WASD / drag</b> Pan <b>Scroll</b> Zoom <b>1–0</b> Tower <b>Right click</b> Cancel</span></footer>
     </div>
   </section>
   <div class="top-actions">
-    <button id="look" type="button" aria-pressed="false" aria-label="Capture mouse for free look" title="Capture the pointer for mouse look (Esc releases)"><span class="mouse" aria-hidden="true">⌖</span><span class="label">Mouse look</span></button>
+    <button id="look" type="button" aria-pressed="false" aria-label="Capture mouse for free look" title="Capture the pointer for mouse look (F releases)"><span class="mouse" aria-hidden="true">⌖</span><span class="label">Mouse look</span></button>
     <button id="effects" type="button" aria-pressed="true" aria-label="Mute sound effects" title="Sound effects"><svg class="speaker" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7h4l4-4v14l-4-4H3z"/><path class="sound-waves" d="M14 6c3 2 3 6 0 8m2-11c5 4 5 10 0 14"/><path class="sound-slash" d="m14 7 5 6m0-6-5 6"/></svg><span class="label">Sound</span></button>
     <button id="music" class="on" type="button" aria-pressed="true" aria-label="Turn music off"><span class="note">♪</span><span class="label">Music on</span></button>
   </div>

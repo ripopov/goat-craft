@@ -97,6 +97,15 @@ if (existsSync(towersPath)) {
   }
 }
 
+// Training icons are also created dynamically, including the builder-only card.
+const upgradeMenuPath = path.join(jsDir, 'upgrade-menu.js');
+if (existsSync(upgradeMenuPath)) {
+  const source = readFileSync(upgradeMenuPath, 'utf8');
+  for (const match of source.matchAll(/['"](assets\/upgrades\/[^'"]+\.png)['"]/g)) {
+    if (checkReference(match[1], root, 'js/upgrade-menu.js')) checked++;
+  }
+}
+
 if (failures.length) {
   console.error('Static site check failed:');
   for (const failure of failures) console.error(`  - ${failure}`);

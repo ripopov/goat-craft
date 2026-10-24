@@ -1,0 +1,26 @@
+{
+  "generator": "Built-in image_gen tool",
+  "preparation": "Generated originals retained in Codex; local PNG copies downscaled to 256px using sips for crisp 64px menu icons.",
+  "prompts": [
+    {
+      "file": "move.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense upgrade menu icon. Style: polished painterly 3D game inventory artwork with Minecraft-like chunky cuboid geometry, beveled edges, strong readable silhouette, warm rim light, subtle material wear, matching a forest fantasy ballista icon set. Composition: a single centered emblem filling 80% of the square, three-quarter isometric view, generous safe margin. Background: dark desaturated forest-teal soft vignette. No text, letters, numbers, border, watermark, UI, or extra objects. Clear at 64 pixels. Subject: Fleet hooves: a pair of sturdy dark cloven goat hooves in mid-gallop, pale cream fur cuffs, mint-green sweeping speed trails behind them. Make the split hooves recognizable, energetic diagonal silhouette."
+    },
+    {
+      "file": "cadence.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense upgrade menu icon. Style: polished painterly 3D game inventory artwork with Minecraft-like chunky cuboid geometry, beveled edges, strong readable silhouette, warm rim light, subtle material wear, matching a forest fantasy ballista icon set. Composition: a single centered emblem filling 80% of the square, three-quarter isometric view, generous safe margin. Background: dark desaturated forest-teal soft vignette. No text, letters, numbers, border, watermark, UI, or extra objects. Clear at 64 pixels. Subject: Quick strikes: a compact pair of ivory goat horns thrusting forward with three cyan and pale blue curved motion streaks suggesting rapid repeated headbutts. Slim bright horns, energetic sweeping silhouette."
+    },
+    {
+      "file": "reach.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense upgrade menu icon. Style: polished painterly 3D game inventory artwork with Minecraft-like chunky cuboid geometry, beveled edges, strong readable silhouette, warm rim light, subtle material wear, matching a forest fantasy ballista icon set. Composition: a single centered emblem filling 80% of the square, three-quarter isometric view, generous safe margin. Background: dark desaturated forest-teal soft vignette. No text, letters, numbers, border, watermark, UI, or extra objects. Clear at 64 pixels. Subject: Long horns: two very long elegant ivory goat horns with chunky stepped facets, sweeping upward and outward from a small brown mount, gentle violet magic tracing their long tips. Strong elongated silhouette."
+    },
+    {
+      "file": "power.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense upgrade menu icon. Style: polished painterly 3D game inventory artwork with Minecraft-like chunky cuboid geometry, beveled edges, strong readable silhouette, warm rim light, subtle material wear, matching a forest fantasy ballista icon set. Composition: a single centered emblem filling 80% of the square, three-quarter isometric view, generous safe margin. Background: dark desaturated forest-teal soft vignette. No text, letters, numbers, border, watermark, UI, or extra objects. Clear at 64 pixels. Subject: Heavy horns: a stout pair of thick dark iron-armored goat horns with brass reinforcement bands and ivory points, striking a small orange-gold burst of impact sparks. Heavy broad angular silhouette."
+    },
+    {
+      "file": "craft.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense upgrade menu icon. Style: polished painterly 3D game inventory artwork with Minecraft-like chunky cuboid geometry, beveled edges, strong readable silhouette, warm rim light, subtle material wear, matching a forest fantasy ballista icon set. Composition: a single centered emblem filling 80% of the square, three-quarter isometric view, generous safe margin. Background: dark desaturated forest-teal soft vignette. No text, letters, numbers, border, watermark, UI, or extra objects. Clear at 64 pixels. Subject: Practiced builder: a chunky oak-handled iron mason hammer crossed with an iron pickaxe over two small stacked mossy stone voxel blocks. Warm golden glint on the hammer, sturdy construction emblem silhouette."
+    }
+  ]
+}

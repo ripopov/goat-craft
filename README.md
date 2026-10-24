@@ -32,6 +32,7 @@ js/highlights.js    Q character outlines, enemy range outlines and block placeme
 js/towers.js        ten detailed voxel cannons, animated mechanisms, pooled particles, atomic purchases, packing and swept projectile collisions
 js/strategy.js      live RTS camera, command workshop, tower inspection and placement previews
 assets/towers/      ten locally stored imagegen icons and their generation prompts
+assets/upgrades/    five locally stored voxel training icons and their generation prompts
 js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk streaming, exact voxel collision, block edits and debris
 js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
 js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning

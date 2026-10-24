@@ -408,6 +408,9 @@
   #upgrade-resources { font-size: 12px; font-variant-numeric: tabular-nums; color: #f2d58e; padding: 11px 14px; border: 1px solid #b6b97d33; background: #102318; border-radius: 8px; }
   #upgrade-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 17px; }
   .upgrade-card { min-width: 0; padding: 16px; background: #2a3d30; border: 1px solid #bfca9a26; border-radius: 11px; display: flex; flex-direction: column; }
+  .upgrade-card-heading { display: flex; align-items: center; gap: 12px; }
+  .upgrade-icon { display: block; flex: none; width: 64px; height: 64px; object-fit: cover; border: 1px solid #bda86c66; border-radius: 9px; background: #10251f; box-shadow: 0 3px 9px #071c1340; }
+  .upgrade-card-summary { flex: 1; min-width: 0; }
   .upgrade-card h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; margin: 0; }
   .upgrade-rank { color: #c7ceaa; font-size: 10px; font-weight: 400; white-space: nowrap; }
   .upgrade-pips { display: flex; gap: 4px; margin-top: 10px; }

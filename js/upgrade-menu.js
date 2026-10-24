@@ -3,6 +3,13 @@
   let dialog, target, nearby, previousFocus;
   const $ = function (id) { return document.getElementById(id); };
   const labels = { coins: 'coins', log: 'wood', stone: 'stone' };
+  const icons = {
+    move: 'assets/upgrades/move.png',
+    cadence: 'assets/upgrades/cadence.png',
+    reach: 'assets/upgrades/reach.png',
+    power: 'assets/upgrades/power.png',
+    craft: 'assets/upgrades/craft.png'
+  };
   function balance(kind) { return kind === 'coins' ? M.enemies.getState().coins : M.items.count(kind); }
   function render() {
     const isPlayer = target === M.upgrades.player;
@@ -19,12 +26,18 @@
     M.upgrades.keys(target).forEach(function (key) {
       const offer = M.upgrades.offer(target, key);
       const card = document.createElement('article'); card.className = 'upgrade-card';
+      const heading = document.createElement('div'); heading.className = 'upgrade-card-heading';
+      const icon = document.createElement('img'); icon.className = 'upgrade-icon';
+      icon.src = icons[key]; icon.alt = ''; icon.setAttribute('aria-hidden', 'true');
+      icon.width = 64; icon.height = 64; icon.draggable = false; icon.decoding = 'async';
+      heading.appendChild(icon);
+      const summary = document.createElement('div'); summary.className = 'upgrade-card-summary';
       const title = document.createElement('h3'); title.textContent = offer.name;
       const rank = document.createElement('span'); rank.className = 'upgrade-rank'; rank.textContent = offer.level + ' / 3';
-      title.appendChild(rank); card.appendChild(title);
+      title.appendChild(rank); summary.appendChild(title);
       const pips = document.createElement('div'); pips.className = 'upgrade-pips'; pips.setAttribute('aria-hidden', 'true');
       for (let i = 0; i < 3; i++) { const pip = document.createElement('i'); if (i < offer.level) pip.className = 'trained'; pips.appendChild(pip); }
-      card.appendChild(pips);
+      summary.appendChild(pips); heading.appendChild(summary); card.appendChild(heading);
       const description = document.createElement('p'); description.textContent = offer.description; card.appendChild(description);
       const effect = document.createElement('div'); effect.className = 'upgrade-effect';
       effect.textContent = offer.maxed ? offer.current + ' · Mastered' : offer.current + ' → ' + offer.next;

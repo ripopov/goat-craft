@@ -12,7 +12,7 @@ function game() {
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = 1;
-  load('js/world.js'); load('js/hearth-tree.js'); load('js/goat.js'); load('js/animals.js');
+  load('js/world.js'); load('js/hearth-tree.js'); load('js/goat.js'); load('js/animal-recovery.js'); load('js/animals.js');
   const scene = new THREE.Scene(), input = new THREE.Vector2();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } }); M.hearthTree.init(scene);
   const controls = { firstPerson: false, running: false, swimVertical: 0, getMovement: () => input,

@@ -33,11 +33,13 @@ js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/goat.js          goat rig, coat, gaits, swimming/buoyancy, physics, jumps, headbutt and hoof stomp
-js/animals.js       specialized sheep, cow and stag NPCs: zombie hunting, wall building, repairs and pit escape
+js/animal-recovery.js target-progress monitoring, jump/detour decisions, and dig/build escape target selection
+js/animals.js       specialized sheep, cow and stag NPCs: zombie hunting, wall building, repairs and physical recovery
 js/controls.js      pointer-lock mouse look, third-/first-person cameras, keyboard and touch input
 js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
 scripts/check-site.mjs  checks local asset references in the built site
+scripts/helpers/animal-game.mjs  reusable real-world fixtures with one independently controllable NPC
 scripts/test-collision.mjs corner escapes, wall seams, corridors, all herd species, bridges and root collision
 scripts/test-fluids.mjs source spreading, waterfalls, walls, tunnels, draining and bounded simulation work
 scripts/test-water.mjs  dependency-free terrain, bank leaks, swimming, collision, input and camera regression tests
@@ -45,6 +47,7 @@ scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice
 scripts/test-hearth-tree.mjs  landmark geometry, root collision, clearing terrain, player spawn, placement and reduced-motion checks
 scripts/test-enemies.mjs  routes, jumps, block chewing, tree damage, combat, spawning and persistent drops
 scripts/test-animals.mjs  herd roles, zombie combat, ten-block wall construction and repairs
+scripts/test-animal-recovery.mjs  isolated ledge, wall, pit, roof, crowd and hunter recovery scenarios
 .github/workflows/ci.yml    syntax, asset and served-page checks
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
@@ -92,7 +95,7 @@ A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) a
 
 The builders shave the top turf course around a flat site, one block at a time, and carry the load between their horns. Each project is a straight, two-block-high wall section ten blocks long, with every block at least ten blocks from the Hearth Tree. Every block is real and collides with the player and zombies. Builders revisit their completed sections and replace missing blocks before starting new ones, so walls damaged by zombies are repaired automatically.
 
-If an animal falls into a pit, it does not dig itself deeper: it breaks open the pit wall, builds or jumps onto a step, and keeps widening and climbing until it is back on the surface. The herd leaves ponds and player-placed blocks alone, and animal quarrying creates no competing item drops.
+NPC recovery measures progress toward the current walk, hunt, quarry, build, climb, or descent target. A blocked animal tries a validated jump, then a local detour, then digs a body-sized opening and uses the recovered blocks to build steps out. Recovery can dismantle placed blocks when physically necessary; ordinary quarrying still leaves player construction alone, and the Hearth Tree foundation remains protected. Solvable escapes happen through normal movement and block edits, with relocation reserved for a final failed-recovery fallback. `scripts/test-animal-recovery.mjs` runs each stuck scenario against one independently controlled NPC. Animal quarrying creates no competing item drops.
 
 All action sounds (hoofbeats, jump, landing, headbutt, stomp, pickup and breathing) are synthesized in-browser; there are no audio files.
 
@@ -100,6 +103,6 @@ Music and effects share a filtered, compressed output with volume headroom. Ever
 
 ## CI and hosting
 
-Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs scripts/test-enemies.mjs scripts/test-animals.mjs scripts/test-fluids.mjs scripts/test-collision.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs scripts/test-enemies.mjs scripts/test-animals.mjs scripts/test-animal-recovery.mjs scripts/test-fluids.mjs scripts/test-collision.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
 
 Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

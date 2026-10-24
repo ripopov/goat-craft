@@ -49,6 +49,9 @@ jobs:
       - name: Test herd combat and wall maintenance
         run: node --test scripts/test-animals.mjs
 
+      - name: Test isolated NPC stuck recovery
+        run: node --test scripts/test-animal-recovery.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

@@ -1,32 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
 import test from 'node:test';
-
-const root = new URL('../', import.meta.url);
-
-function game() {
-  const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
-  const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
-    document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
-  const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
-  for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
-  const M = context.window.Meadow, THREE = context.THREE;
-  M.config.renderRadius = 1;
-  for (const file of ['js/world.js', 'js/hearth-tree.js', 'js/goat.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/enemies.js']) load(file);
-  const scene = new THREE.Scene();
-  M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
-  M.hearthTree.init(scene);
-  const input = new THREE.Vector2();
-  const controls = { firstPerson: false, running: false, swimVertical: 0, getMovement: () => input,
-    getFacingYaw: () => 0, getSwimPitch: () => 0, noteActivity() {} };
-  const audio = new Proxy({}, { get: () => () => {} });
-  M.goat.init({ scene, camera: new THREE.PerspectiveCamera(), controls, world: M.world, audio, ui: { showBubble() {} } });
-  M.goat.state.manualHold = 1000;
-  M.animals.init({ scene, world: M.world, audio, goat: M.goat });
-  M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  return { M, THREE };
-}
+import { game } from './helpers/animal-game.mjs';
 
 function advanceAnimals(M, seconds) {
   for (let i = 0; i < Math.round(seconds / .05); i++) M.animals.update(.05, i * .05);

@@ -4,6 +4,7 @@
   const { clamp, rand, damp, turnToward } = M.utils;
   const BLOCK = 2;
   const physics = M.actorPhysics;
+  const recovery = M.animalRecovery;
   const GRAVITY = 24;
   const BODY_CLEARANCE = 0.06;
   const MAX_GRASS_BITS = 48;
@@ -813,9 +814,13 @@
   function moveStep(animal, nx, nz, yaw) {
     const p = animal.group.position;
     const s = animal.state;
-    const loose = s.mode === 'climbBuild' || s.mode === 'traverseTower';
+    const loose = s.mode === 'climbBuild';
 
     if (!canStandAt(animal, nx, nz, p.y, yaw, loose)) return false;
+    if (s.grounded && s.mode !== 'descend') {
+      const floor = physics.support(worldRef, { x: nx, y: p.y, z: nz }, p.y + BODY_CLEARANCE, bodyOf(animal));
+      if (p.y - floor > BLOCK + 0.25) return false;
+    }
 
     // Avoid stepping down into water, while allowing dry bridges over it.
     function wetAt(x, z) {
@@ -848,17 +853,9 @@
     const p = animal.group.position;
     if (!s.grounded || s.jumpCooldown > 0) return null;
 
-    const raised = worldRef.supportHeight(nx, nz, p.y + BLOCK + 0.1);
-    const rise = raised - p.y;
-    if (rise <= 0.12 || rise > BLOCK + 0.12) return null;
-    if (!canStandAt(animal, nx, nz, raised, yaw,
-      s.mode === 'climbBuild' || s.mode === 'traverseTower')) return null;
-
-    // Do not try to jump through a canopy, a low ceiling, or the underside of
-    // a tower. The animal needs room for its whole body above the new ledge.
-    const bodyH = animal.def.bodyHeight * animal.def.scale;
-    if (worldRef.blockedAt(p.x, p.z, p.y + bodyH - 0.08, raised + bodyH + 0.12)) return null;
-    return raised;
+    const ledge = recovery.findLedge(worldRef, p, bodyOf(animal), nx - p.x, nz - p.z,
+      function (x, z, top) { return canStandAt(animal, x, z, top); });
+    return ledge ? ledge.top : null;
   }
 
   function startJump(animal, reason) {
@@ -870,6 +867,7 @@
     s.jumpCooldown = JUMP_COOLDOWN;
     s.tuck = 0;
     s.jumpReason = reason || 'hop';
+    if (reason === 'ledge' || reason === 'stuck-ledge') s.recoveryJumps = (s.recoveryJumps || 0) + 1;
     if (goatRef && goatRef.group && audioRef && audioRef.jump) {
       const d = Math.hypot(p.x - goatRef.group.position.x, p.z - goatRef.group.position.z);
       if (d < 17) audioRef.jump();
@@ -878,6 +876,22 @@
   }
 
   function moveAnimal(animal, dx, dz, yaw) {
+    const s = animal.state;
+    const p = animal.group.position;
+    if (s.detourTarget && s.detourTime > 0) {
+      const tx = s.detourTarget.x - p.x;
+      const tz = s.detourTarget.z - p.z;
+      const distance = Math.hypot(tx, tz);
+      if (distance < 0.2) {
+        s.detourTarget = null;
+        s.detourTime = 0;
+      } else {
+        const amount = Math.hypot(dx, dz);
+        dx = tx / distance * amount;
+        dz = tz / distance * amount;
+        yaw = Math.atan2(tx, tz);
+      }
+    }
     let moved = false;
     const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.12));
     for (let i = 0; i < steps; i++) moved = moveAnimalStep(animal, dx / steps, dz / steps, yaw) || moved;
@@ -904,7 +918,7 @@
       const probe = 1.35 + animal.def.scale * 0.45;
       const px = x + (dx / len) * probe;
       const pz = z + (dz / len) * probe;
-      if (s.grounded && jumpSurfaceAt(animal, px, pz, yaw)) {
+      if ((s.recoveryJumps || 0) < 2 && s.grounded && jumpSurfaceAt(animal, px, pz, yaw)) {
         startJump(animal, 'ledge');
       }
 
@@ -1577,9 +1591,8 @@
 
     s.descendTime = (s.descendTime || 0) + dt;
     if (s.descendTime > 6.5) {
-      // A spiral stair can close around an animal that lands on a lower
-      // course. Rescue it to open ground rather than letting it pace inside
-      // the ring forever.
+      // Relocation is the final fallback after physical recovery and repeated
+      // descent attempts have failed.
       s.descendTime = 0;
       rescueAnimal(animal);
       return;
@@ -1631,148 +1644,6 @@
         s.mode = 'idle';
         s.wait = 0.4;
       } else {
-        startDescend(animal);
-      }
-    }
-  }
-
-  function startTraverseTower(animal) {
-    const s = animal.state;
-    const project = s.project;
-    if (!project || project.steps.length === 0) return false;
-    const p = animal.group.position;
-    let index = 0;
-    for (let i = 0; i < project.steps.length; i++) {
-      const step = project.steps[i];
-      if (Math.abs(p.y - step.top) < 0.16 &&
-          Math.hypot(p.x - step.x, p.z - step.z) < 1.45) {
-        index = i + 1;
-      }
-    }
-    s.mode = 'traverseTower';
-    s.traverseIndex = index;
-    s.traverseBest = index;
-    s.traverseTime = 0;
-    s.seekTime = 30;
-    s.stuck = 0;
-    s.speed = 0;
-    s.action = null;
-    s.pendingClimb = null;
-    s.gathering = false;
-    return true;
-  }
-
-  function updateTraverseTower(animal, dt) {
-    const s = animal.state;
-    const project = s.project;
-    const p = animal.group.position;
-    if (!project || project.steps.length === 0) {
-      s.mode = 'idle';
-      s.wait = 0.2;
-      return;
-    }
-    let index = Math.max(0, s.traverseIndex || 0);
-    const steps = project.steps;
-    s.traverseTime = (s.traverseTime || 0) + dt;
-    if (index > (s.traverseBest || 0)) {
-      s.traverseBest = index;
-      s.traverseTime = 0;
-    }
-    if (s.traverseTime > 32) {
-      s.traverseTime = 0;
-      s.traverseRescues = (s.traverseRescues || 0) + 1;
-      if (s.traverseRescues > 2) {
-        s.traverseRescues = 0;
-        abandonProject(animal, 'traverse');
-      } else {
-        rescueAnimal(animal);
-      }
-      return;
-    }
-    if (index >= steps.length) {
-      s.mode = 'idle';
-      s.wait = 0.12;
-      s.speed = 0;
-      return;
-    }
-
-    // If a hop missed and the animal ended up back on the ground, start the
-    // climb again from the bottom step.
-    if (s.grounded && index > 0 && p.y < steps[0].top - 0.3) {
-      index = 0;
-      s.traverseIndex = 0;
-    }
-
-    const step = steps[index];
-    const dx = step.x - p.x;
-    const dz = step.z - p.z;
-    const dist = Math.hypot(dx, dz);
-
-    if (s.grounded && Math.abs(p.y - step.top) < 0.16 && dist < 1.4) {
-      s.traverseIndex = index + 1;
-      s.stuck = 0;
-      s.seekTime = Math.max(s.seekTime, 4);
-      if (s.traverseIndex >= steps.length) {
-        s.mode = 'idle';
-        s.wait = 0.1;
-        s.speed = 0;
-      }
-      return;
-    }
-
-    if (!s.grounded && p.y >= step.top - 0.08 &&
-        s.vy <= 1.8 && dist < 3.2 &&
-        canStandAt(animal, step.x, step.z, step.top, s.yaw, true)) {
-      p.x = step.x;
-      p.z = step.z;
-      p.y = step.top;
-      s.vy = 0;
-      s.grounded = true;
-      s.landPulse = 1;
-      s.traverseIndex = index + 1;
-      s.traverseBest = index + 1;
-      s.traverseTime = 0;
-      s.stuck = 0;
-      if (s.traverseIndex >= steps.length) {
-        s.mode = 'idle';
-        s.wait = 0.1;
-        s.speed = 0;
-      }
-      return;
-    }
-
-    s.seekTime -= dt;
-    const yaw = Math.atan2(dx, dz);
-    s.yaw = turnToward(s.yaw, yaw, dt * 5.5);
-    if (s.grounded && step.top > p.y + 0.25 && dist < 3.2 &&
-        canStandAt(animal, step.x, step.z, step.top, s.yaw, true)) {
-      startJump(animal, 'traverse');
-    }
-    const speed = animal.def.walkSpeed * (s.grounded ? 1.15 : AIR_CONTROL);
-    s.speed = damp(s.speed, speed, 6, dt);
-    const moved = moveAnimal(
-      animal,
-      Math.sin(yaw) * s.speed * dt,
-      Math.cos(yaw) * s.speed * dt,
-      s.yaw
-    );
-    if (moved) {
-      s.walkPhase += s.speed * dt * 4.2;
-      s.stuck = 0;
-    } else if (s.grounded) {
-      s.stuck += dt;
-      if (s.stuck > 0.5) {
-        startJump(animal, 'traverse');
-        s.stuck = 0;
-      }
-    }
-
-    if (s.seekTime <= 0) {
-      s.traverseIndex = 0;
-      s.seekTime = 12;
-      s.stuck = 0;
-      if (p.y > project.site.groundY + 0.4 &&
-          Math.abs(p.y - project.site.groundY) > 30) {
         startDescend(animal);
       }
     }
@@ -1866,7 +1737,7 @@
       const target = action.target;
       const kind = worldRef.breakBlockAt(target.bx, target.by, target.bz, {
         drop: false,
-        protectPlaced: true
+        protectPlaced: !action.escape
       });
       if (kind) {
         addCarry(animal, kind, 1);
@@ -2095,48 +1966,8 @@
   function shouldEscape(animal) {
     const s = animal.state;
     if (!s.grounded || s.escape || s.action) return false;
-    if (s.mode === 'climbBuild' || s.mode === 'traverseTower' || s.mode === 'descend') return false;
+    if (s.mode === 'climbBuild' || s.mode === 'descend') return false;
     return pitStatus(animal).trapped;
-  }
-
-  function findEscapeStep(animal) {
-    const p = animal.group.position;
-    const bs = sizeOf();
-    const bx0 = Math.floor(p.x / bs);
-    const bz0 = Math.floor(p.z / bs);
-    const dir = escapeDirection(animal);
-    const targetTop = p.y + BLOCK;
-    let best = null;
-    let bestScore = Infinity;
-
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        const bx = bx0 + dx;
-        const bz = bz0 + dz;
-        const cx = (bx + 0.5) * bs;
-        const cz = (bz + 0.5) * bs;
-        const dist = Math.hypot(cx - p.x, cz - p.z);
-        if (dist < 1.15 || dist > 3.2) continue;
-        const top = worldRef.landingHeight(cx, cz, p.y + BLOCK * 2 + 0.08);
-        if (Math.abs(top - targetTop) > 0.12) continue;
-        if (!canStandAt(animal, cx, cz, top, p.yaw)) continue;
-        if (targetUnsafeForPlacement(animal, cx, cz)) {
-          // An animal standing on the only ledge is not a reason to give up
-          // escaping, but do not path straight through the player.
-          if (goatRef && goatRef.group) {
-            const g = goatRef.group.position;
-            if (Math.hypot(cx - g.x, cz - g.z) < 1.75) continue;
-          }
-        }
-        const dot = ((cx - p.x) / dist) * dir.x + ((cz - p.z) / dist) * dir.z;
-        const score = dist - dot * 1.1 + Math.abs(top - targetTop);
-        if (score < bestScore) {
-          bestScore = score;
-          best = { bx: bx, bz: bz, x: cx, z: cz, top: top };
-        }
-      }
-    }
-    return best;
   }
 
   function findEscapePlace(animal) {
@@ -2249,83 +2080,77 @@
     const s = animal.state;
     const p = animal.group.position;
     if (!s.escape) return;
-    if (s.escape.time > ESCAPE_TIMEOUT || s.escape.attempts > 12) {
+    if (s.escape.time > ESCAPE_TIMEOUT || s.escape.attempts > 16) {
       rescueAnimal(animal);
       return;
     }
     if (!s.grounded) return;
 
-    const status = pitStatus(animal);
     const rim = s.escape.rim !== undefined ? s.escape.rim : p.y;
     if (p.y >= rim - 0.25) {
       endEscape(animal);
       return;
     }
 
-    // First open the pit wall at the current body level. This is the part the
-    // animal visibly widens before it builds a stair out of the turf chunk.
-    if (!s.escape.dug) {
-      const wall = findEscapeWall(animal, status);
-      if (wall) {
-        s.action = {
-          kind: 'break',
-          target: wall,
-          approach: null,
-          time: 0,
-          duration: 0.58,
-          hit: false,
-          escape: true
-        };
-        s.mode = 'seekBreak';
-        s.seekTime = 1;
-        s.escape.attempts++;
-        beginAction(animal);
-        return;
-      }
-      s.escape.dug = true;
+    const preferred = s.escape.preferred;
+    if (s.escape.opened && !pitStatus(animal).trapped && preferred &&
+        !recovery.blockedAhead(worldRef, p, bodyOf(animal), preferred.x, preferred.z)) {
+      endEscape(animal);
+      return;
+    }
+    const wall = recovery.findDig(worldRef, p, bodyOf(animal), preferred);
+    if (wall) {
+      s.escape.stage = 'dig';
+      s.action = {
+        kind: 'break', target: wall, approach: null,
+        time: 0, duration: 0.58, hit: false, escape: true
+      };
+      s.mode = 'seekBreak';
+      s.seekTime = 2.5;
+      s.escape.attempts++;
+      beginAction(animal);
+      return;
     }
 
-    const step = findEscapeStep(animal);
+    const step = recovery.findStep(worldRef, p, bodyOf(animal), function (x, z, top) {
+      return canStandAt(animal, x, z, top) && actorSpotClear(animal, x, z, 0.1);
+    }, preferred);
     if (step) {
       startEscapeClimb(animal, step);
       return;
     }
 
     if (s.carryCount > 0) {
-      const place = findEscapePlace(animal);
+      const place = recovery.findPlacement(worldRef, p, bodyOf(animal),
+        function (bx, by, bz, x, z) {
+          return worldRef.canPlaceBlock(bx, by, bz) && !targetUnsafeForPlacement(animal, x, z);
+        }, preferred);
       if (place) {
+        s.escape.stage = 'build';
         s.action = {
-          kind: 'place',
-          target: place,
-          approach: null,
-          time: 0,
-          duration: 0.58,
-          hit: false,
-          escape: true,
-          escapePlace: true
+          kind: 'place', target: place, approach: null,
+          time: 0, duration: 0.58, hit: false, escape: true, escapePlace: true
         };
         s.mode = 'seekPlace';
-        s.seekTime = 1;
+        s.seekTime = 2.5;
         s.escape.attempts++;
         beginAction(animal);
         return;
       }
     }
 
-    // Enclosed by the player's blocks and with no spare turf: try a
-    // vertical hop, then let the timeout rescue handle pathological cases.
-    if (s.grounded) {
-      startJump(animal, 'escape');
-    }
+    if (s.grounded) startJump(animal, 'escape');
   }
 
-  function startEscape(animal) {
+  function startEscape(animal, preferred) {
     const s = animal.state;
     const p = animal.group.position;
     s.escape = {
       time: 0,
       attempts: 0,
       stage: 'choose',
+      preferred: preferred || null,
+      resumeMode: s.mode,
       opened: null,
       dug: false,
       noWall: false
@@ -2333,20 +2158,24 @@
     s.mode = 'escape';
     s.action = null;
     s.pendingClimb = null;
+    s.detourTarget = null;
+    s.detourTime = 0;
     s.gathering = false;
     s.speed = 0;
     s.stuck = 0;
     s.wait = 0;
     s.escapeCooldown = 1.2;
     const status = pitStatus(animal);
-    s.escape.rim = Math.max(status.rim || p.y, p.y + (status.walls >= 5 ? BLOCK : 0));
+    const solid = preferred && recovery.blockedAhead(worldRef, p, bodyOf(animal), preferred.x, preferred.z);
+    s.escape.rim = Math.max(status.rim || p.y, p.y + (solid || status.walls >= 5 ? BLOCK : 0));
   }
 
   function endEscape(animal) {
     const s = animal.state;
+    const resumeMode = s.escape && s.escape.resumeMode;
     s.escape = null;
     s.pendingClimb = null;
-    s.mode = 'idle';
+    s.mode = resumeMode === 'walk' || (resumeMode === 'hunt' && s.huntTarget) ? resumeMode : 'idle';
     s.wait = 0.25;
     s.speed = 0;
     s.gathering = false;
@@ -2410,9 +2239,13 @@
       s.escape = null;
       s.descendTarget = null;
       s.descendTime = 0;
-      s.traverseTime = 0;
       s.gathering = false;
       s.buriedTime = 0;
+      s.detourTarget = null;
+      s.detourTime = 0;
+      s.detourCount = 0;
+      s.recovery.rescues++;
+      recovery.reset(s.recovery);
     }
   }
 
@@ -2608,13 +2441,77 @@
       s.stuck = 0;
     } else if (s.grounded) {
       s.stuck += dt;
-      if (s.stuck > 2.0) {
-        s.huntTarget = null;
-        s.mode = 'idle';
-        s.wait = 0.5;
-        s.speed = 0;
-        s.stuck = 0;
+    }
+  }
+
+  function recoveryMotion(animal) {
+    const s = animal.state;
+    const p = animal.group.position;
+    let target = null;
+    if (s.mode === 'walk') target = s.target;
+    else if (s.mode === 'hunt' && s.huntTarget) target = s.huntTarget.position;
+    else if ((s.mode === 'seekBreak' || s.mode === 'seekPlace') && s.action) target = s.action.approach;
+    else if (s.mode === 'climbBuild') target = s.pendingClimb;
+    else if (s.mode === 'descend') target = s.descendTarget;
+    if (!target) return null;
+    const dx = target.x - p.x;
+    const dz = target.z - p.z;
+    if (Math.hypot(dx, dz) < 0.25) return null;
+    return { x: dx, z: dz, target: target };
+  }
+
+  function updateRecovery(animal, dt) {
+    const s = animal.state;
+    const p = animal.group.position;
+    const motion = recoveryMotion(animal);
+    if (s.detourTime > 0) {
+      s.detourTime -= dt;
+      if (s.detourTime <= 0) s.detourTarget = null;
+    }
+    const modeChanged = s.recovery.mode !== s.mode;
+    const stage = recovery.update(s.recovery, p, s.mode, !!motion, dt, motion && motion.target);
+    if (modeChanged) {
+      s.detourCount = 0;
+      s.recoveryJumps = 0;
+    }
+    if (!motion) return;
+
+    const solid = recovery.blockedAhead(worldRef, p, bodyOf(animal), motion.x, motion.z);
+    s.recovery.solid = solid;
+    s.recovery.detourCount = s.detourCount || 0;
+    if ((s.detourCount || 0) >= 2 && solid) {
+      startEscape(animal, motion);
+      recovery.reset(s.recovery);
+      return;
+    }
+    if (stage === 'clear') return;
+    if (stage === 'jump' && (s.recoveryJumps || 0) < 2 && s.grounded && s.jumpCooldown <= 0) {
+      const ledge = recovery.findLedge(worldRef, p, bodyOf(animal), motion.x, motion.z,
+        function (x, z, top) { return canStandAt(animal, x, z, top) && actorSpotClear(animal, x, z, 0.1); });
+      if (ledge) {
+        startJump(animal, 'stuck-ledge');
+        return;
       }
+    }
+
+    if ((stage === 'detour' || stage === 'escape') && !s.detourTarget && (s.detourCount || 0) < 2) {
+      const detour = recovery.findDetour(p, motion.x, motion.z, function (x, z) {
+        if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) return false;
+        return canStandAt(animal, x, z, p.y) && actorSpotClear(animal, x, z, 0.2);
+      });
+      if (detour) {
+        s.detourTarget = detour;
+        s.detourTime = 0.85;
+        s.detourCount = (s.detourCount || 0) + 1;
+        recovery.reset(s.recovery);
+        return;
+      }
+    }
+
+    const detoursFailed = (s.detourCount || 0) >= 2;
+    if ((stage === 'escape' || detoursFailed) && (solid || pitStatus(animal).trapped)) {
+      startEscape(animal, motion);
+      recovery.reset(s.recovery);
     }
   }
 
@@ -2640,8 +2537,7 @@
     }
 
     if (s.pitTimer <= 0 && s.escapeCooldown <= 0 && s.mode !== 'escape' &&
-        s.mode !== 'climbBuild' && s.mode !== 'traverseTower' &&
-        s.mode !== 'descend' && s.grounded) {
+        s.mode !== 'climbBuild' && s.mode !== 'descend' && s.grounded) {
       s.pitTimer = PIT_CHECK_INTERVAL;
       if (shouldEscape(animal)) {
         if (s.retired) rescueAnimal(animal);
@@ -2657,6 +2553,8 @@
         s.stuck = 0;
       }
     }
+
+    updateRecovery(animal, dt);
 
     if (s.mode === 'idle') {
       s.speed = damp(s.speed, 0, 5, dt);
@@ -2774,12 +2672,6 @@
           s.stuck = 0;
         } else if (s.grounded) {
           s.stuck += dt;
-          if (s.stuck > 0.8) {
-            s.mode = 'idle';
-            s.wait = rand(0.8, 1.8);
-            s.speed = 0;
-            s.stuck = 0;
-          }
         }
       }
     } else if (s.mode === 'graze') {
@@ -2800,8 +2692,6 @@
       updateAction(animal, dt);
     } else if (s.mode === 'climbBuild') {
       updateClimb(animal, dt);
-    } else if (s.mode === 'traverseTower') {
-      updateTraverseTower(animal, dt);
     } else if (s.mode === 'descend') {
       updateDescend(animal, dt);
     } else if (s.mode === 'escape') {
@@ -2927,6 +2817,11 @@
       grounded: true,
       vy: 0,
       stuck: 0,
+      recovery: recovery.create(),
+      detourTarget: null,
+      detourTime: 0,
+      detourCount: 0,
+      recoveryJumps: 0,
       seekTime: 0,
       action: null,
       actionTimer: options && Number.isFinite(options.actionTimer) ? options.actionTimer : rand(9, 18),
@@ -2951,10 +2846,6 @@
       blinkTimer: rand(1.5, 4),
       blink: 0,
       pendingClimb: null,
-      traverseIndex: 0,
-      traverseBest: 0,
-      traverseTime: 0,
-      traverseRescues: 0,
       descendTime: 0,
       descendTarget: null,
       escape: null,

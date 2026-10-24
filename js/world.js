@@ -1089,6 +1089,7 @@
   }
 
   function blockIcon(kind, size) {
+    if (M.towers && M.towers.itemDefinition(kind)) return 'assets/towers/' + M.towers.itemDefinition(kind).id + '.png';
     if (!blockAtlasCanvas) return '';
     const px = Math.max(32, Math.round(size || 64));
     const key = kind + ':' + px;
@@ -1121,6 +1122,11 @@
   }
 
   function makeBlockMesh(kind) {
+    if (M.towers && M.towers.itemDefinition(kind)) {
+      const tower = M.towers.model(M.towers.itemDefinition(kind).id);
+      tower.scale.setScalar(1 / M.towers.itemDefinition(kind).height);
+      return tower;
+    }
     const def = ITEM_TILES[kind] || ITEM_TILES.dirt;
     let geo = dropMeshGeometries[kind];
     if (!geo) {
@@ -1303,6 +1309,7 @@
     });
 
     faces.forEach(function (b) {
+      if (M.towers && M.towers.atCell(b.bx, b.by, b.bz)) return;
       function occupied(dx, dy, dz) {
         return blocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || isSolidBlock(b.bx + dx, b.by + dy, b.bz + dz);
       }
@@ -1724,6 +1731,11 @@
   function breakBlockAt(bx, by, bz, options) {
     if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz) || by < 0) return null;
     const opts = options || {};
+    const tower = M.towers && M.towers.atCell(bx, by, bz);
+    if (tower && !opts.towerInternal) {
+      if (opts.protectPlaced) return null;
+      return M.towers.dismantle(tower) ? 'tower_' + tower.id : null;
+    }
     const key = blockKey(bx, by, bz);
     const propKind = propKindAt(bx, by, bz);
 

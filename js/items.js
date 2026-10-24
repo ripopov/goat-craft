@@ -40,6 +40,7 @@
   let heldKind = null;
 
   function itemName(kind) {
+    if (M.towers && M.towers.itemDefinition(kind)) return M.towers.itemDefinition(kind).name;
     return ITEM_NAMES[kind] || (kind.charAt(0).toUpperCase() + kind.slice(1));
   }
 
@@ -84,6 +85,7 @@
   function placementTarget() {
     const kind = selectedBlockKind();
     if (!kind || !M.world || !M.goat || !M.goat.group) return null;
+    if (M.towers && M.towers.itemDefinition(kind)) return M.towers.localTarget(kind);
     const size = M.world.blockSize || 2;
     const hit = M.targeting && M.goat.aimCamera ? M.targeting.aim(M.goat.aimCamera, M.goat.group.position) : null;
     if (!hit) return null;
@@ -93,6 +95,9 @@
   }
   function placeSelectedBlock() {
     const target = placementTarget();
+    if (target && M.towers && M.towers.itemDefinition(target.kind)) {
+      return target.valid && !!M.towers.place(M.towers.itemDefinition(target.kind).id, target.bx, target.by, target.bz, true);
+    }
     if (!target || !target.valid || !M.world.placeBlock(target.kind, target.bx, target.by, target.bz)) return false;
 
     const item = slots[selectedSlot];

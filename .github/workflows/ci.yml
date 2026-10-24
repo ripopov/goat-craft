@@ -49,6 +49,9 @@ jobs:
       - name: Test training, purchases and collectible coins
         run: node --test scripts/test-upgrades.mjs
 
+      - name: Test strategic towers, purchases, relocation and combat
+        run: node --test scripts/test-towers.mjs scripts/test-strategy.mjs
+
       - name: Test cave geology, traversal and camera targeting
         run: node --test scripts/test-caves.mjs scripts/test-targeting.mjs
 

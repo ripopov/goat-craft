@@ -1736,7 +1736,9 @@
         protectPlaced: !action.escape
       });
       if (kind) {
-        addCarry(animal, kind, 1);
+        // A recovery dig can pack a cannon. Its one intact item stays on the
+        // ground; builders must not turn a second copy into wall material.
+        if (!(M.towers && M.towers.itemDefinition(kind))) addCarry(animal, kind, 1);
         if (action.escape && s.escape) {
           s.escape.opened = { bx: target.bx, by: target.by, bz: target.bz };
           s.escape.dug = true;

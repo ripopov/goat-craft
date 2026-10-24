@@ -343,7 +343,7 @@
       // rejected by navigation before the jump is attempted.
       zombie.vy = 10.6; zombie.grounded = false; zombie.jump = target;
     }
-    const step = Math.min(d, TYPES[zombie.type].speed * dt);
+    const step = Math.min(d, TYPES[zombie.type].speed * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
     const x = p.x + dx / d * step, z = p.z + dz / d * step;
     zombie.moving = physics.moveHorizontal(world, p, zombie.body, x - p.x, z - p.z);
     if (zombie.moving) zombie.phase += dt * (zombie.type === 'spider' ? 10 : 5);
@@ -465,7 +465,16 @@
     outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(outlineMesh);
     updateHud();
   }
-  M.enemies = { init: init, update: update, attack: attack, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
+  function damageEnemy(enemy, amount) {
+    const index = zombies.indexOf(enemy);
+    if (index < 0 || !Number.isFinite(amount) || amount <= 0 || tree.health <= 0) return false;
+    enemy.hp -= amount; enemy.flash = .15;
+    const killed = enemy.hp <= 0;
+    if (killed) removeEnemy(enemy, index, false);
+    updateHud();
+    return killed;
+  }
+  M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
     watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, typeForWave: typeForWave,
     addCoins: function (amount) { if (!Number.isInteger(amount) || amount <= 0) return false; coins += amount; updateHud(); return true; },
     spendCoins: function (amount) {

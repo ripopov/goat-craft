@@ -23,6 +23,11 @@
     blockOutline = box(0xf4d27f); blockOutline.name = 'Camera mining target'; scene.add(blockOutline);
   }
   function update() {
+    if (M.strategy && M.strategy.active) {
+      ghost.visible = blockOutline.visible = false;
+      if (target) shells(target).forEach(function (shell) { shell.visible = false; });
+      target = null; M.enemies.highlight(function () { return false; }); return;
+    }
     const next = M.upgrades.nearest();
     if (next !== target) {
       if (target) shells(target).forEach(function (shell) { shell.visible = false; });
@@ -39,7 +44,9 @@
     const placement = carrying ? M.items.placementTarget() : null;
     ghost.visible = !!placement;
     if (placement) {
-      ghost.position.set(placement.x, placement.y, placement.z);
+      const def = M.towers && M.towers.itemDefinition(placement.kind), height = def ? def.height : 1;
+      ghost.scale.set(1, height, 1);
+      ghost.position.set(placement.x, placement.y + (height - 1) * M.world.blockSize / 2, placement.z);
       ghost.material.color.setHex(placement.valid ? 0x94e3cf : 0xeb8e74);
     }
     const hit = carrying ? null : M.targeting.aim(M.goat.aimCamera, player);

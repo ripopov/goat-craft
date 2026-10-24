@@ -87,6 +87,16 @@ if (!existsSync(jsDir)) {
   }
 }
 
+// Tower artwork is referenced from classic scripts, so HTML/CSS scans alone
+// cannot catch an icon omitted from the offline / GitHub Pages package.
+const towersPath = path.join(jsDir, 'towers.js');
+if (existsSync(towersPath)) {
+  const source = readFileSync(towersPath, 'utf8');
+  for (const match of source.matchAll(/\bid: '([^']+)'/g)) {
+    if (checkReference(`assets/towers/${match[1]}.png`, root, 'js/towers.js')) checked++;
+  }
+}
+
 if (failures.length) {
   console.error('Static site check failed:');
   for (const failure of failures) console.error(`  - ${failure}`);

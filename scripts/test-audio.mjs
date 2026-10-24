@@ -93,6 +93,9 @@ function harness({ suspended = false } = {}) {
 }
 
 const effects = [
+  ...['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'].map(id => ['towerImpact', { x: 0, y: 0, z: 0 }, id]),
+  ['towerShot', { x: 0, y: 0, z: 0 }, 'shell'], ['towerShot', { x: 0, y: 0, z: 0 }, 'bolt'],
+  ['towerShot', { x: 0, y: 0, z: 0 }, 'crystal'], ['towerShot', { x: 0, y: 0, z: 0 }, 'coil'],
   ['enemyBurst', { x: 0, y: 0, z: 0 }],
   ['bleat'], ['thud'], ['step', false, 4.8], ['step', true, 9.6], ['jump'], ['whoosh'],
   ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1],

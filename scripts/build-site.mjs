@@ -6,7 +6,7 @@ const out = path.resolve('_site');
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-for (const entry of ['index.html', 'css', 'js', 'vendor']) {
+for (const entry of ['index.html', 'css', 'js', 'vendor', 'assets']) {
   cpSync(entry, path.join(out, entry), { recursive: true });
 }
 

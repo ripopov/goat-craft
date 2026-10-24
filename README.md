@@ -28,6 +28,9 @@ js/voxel-water.js   queued voxel fluid simulation, downward flow, spreading, con
 js/caves.js         deterministic tunnels, chambers, entrances and coal/copper/iron geology
 js/targeting.js     camera voxel ray traversal and physical reach checks
 js/highlights.js    Q character outlines, enemy range outlines and block placement/mining contours
+js/towers.js        ten voxel cannons, atomic resource purchases, collision, packing, swept projectile collisions and distinct attack animations
+js/strategy.js      live RTS camera, command workshop, tower inspection and placement previews
+assets/towers/      ten locally stored imagegen icons and their generation prompts
 js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk streaming, exact voxel collision, block edits and debris
 js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
 js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning
@@ -56,6 +59,8 @@ scripts/test-upgrades.mjs training, atomic purchases, individual NPC effects, li
 scripts/test-caves.mjs    geology, exposed ore, protected roofs and actual player descent/exit
 scripts/test-targeting.mjs camera mining in every direction, obstruction, preview/action agreement and outlines
 scripts/test-minimap.mjs  player-centered coordinates and exact range boundaries
+scripts/test-towers.mjs   blueprints, costs, packing, collection, delayed impacts, moving targets, splash, chains and piercing
+scripts/test-strategy.mjs view restoration, live goat AI, command input routing and camera movement
 scripts/test-animals.mjs  herd roles, zombie combat, ten-block wall construction and repairs
 scripts/test-animal-recovery.mjs  isolated ledge, wall, pit, roof, crowd and hunter recovery scenarios
 .github/workflows/ci.yml    syntax, asset and served-page checks
@@ -77,12 +82,50 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **1–9 / 0** — select hotbar slot (slot 1 is horns and hooves; broken blocks stack in the other slots)
 - Selected blocks ride on the goat's horns. A hollow mint contour previews placement; coral means the cell is blocked. A gold contour marks the aimed mining block. A gold animal outline shows which NPC Q will open, and subtle warm outlines mark enemies within melee range.
 - **P** — toggle between third-person and first-person (FPS) cameras
+- **T / Strategic view** — enter or leave the live RTS camera. Your goat roams with its own AI while the battle continues. Your previous FPS / third-person view returns when you leave.
+- In strategic view: **WASD / arrows / drag** pan, **Shift** pans faster, **scroll** zooms, **Space / Hearth** centers the objective, and **Find goat** centers on your goat. Select a cannon in the workshop or use **1–0**, then click dry, supported ground. A green tower ghost and ring show a valid site and attack range; red means blocked or unaffordable. **Shift-click** deploys repeatedly. **Right-click / Esc** cancels selection; Esc again returns to your goat.
+- Click a deployed tower to inspect its stats and kills, or **Pack tower into pickup**. You can also mine any tower block using your horns in FPS / third-person view. The whole cannon becomes one persistent item: walk your goat over it to collect it into the hotbar. Select that stack and place it like a block, or redeploy it from the RTS workshop at no resource cost. Full inventories leave the pickup on the ground. Towers also pack if their foundation is mined, and enemies can chew them when breaching defenses.
 - **Mouse look** (button / **F**) — capture the pointer and steer either camera with the mouse; **Esc** releases it
 - **Drag / pinch** — orbit and zoom while the pointer is free (drag and pinch are the touch fallback)
 - **Say hi** — bleat and jump
 - **Music** (top-right button) — toggle the generated folk soundtrack; enabled by default and starts with the first click or keypress permitted by the browser
 - **Sound** (top-right button) — mute/unmute effects independently of music; enabled by default
 - **? Controls** (bottom-left) — open the compact controls guide; Esc closes it
+
+### Cannon workshop
+
+Towers occupy one grid cell and are one to three blocks tall. Build within 50 meters of the Hearth, on solid, dry ground with clearance for the whole tower. Construction checks allies, enemies, the Hearth and every occupied cell before spending anything. Up to 80 towers can be deployed; their collision participates in the same enemy navigation and breach system as walls. Towers keep firing in both camera modes. Walls and terrain block shots and splash propagation.
+
+| Tower (shortcut) | Height | Attack | Price |
+| --- | --- | --- | --- |
+| Oak Ballista (1) | 1 block | 1 damage / 1.15s, 19m | 6 coins, 2 wood |
+| Iron Mortar (2) | 1 block | 1.5 splash / 2.5s, 22m | 14 coins, 4 stone, 1 iron |
+| Frost Spire (3) | 2 blocks | 0.5 / 1.3s, 17m; 45% slow | 12 coins, 3 stone |
+| Ember Cannon (4) | 2 blocks | 1 splash / 1.6s, 18m; burn | 18 coins, 3 stone, 2 coal |
+| Venom Idol (5) | 2 blocks | 0.3 / 1.2s, 18m; four-second poison | 15 coins, 3 wood, 3 soil |
+| Storm Coil (6) | 2 blocks | 1.2 / 1.8s, 19m; chain to 3 | 24 coins, 3 stone, 2 copper |
+| Watchman (7) | 3 blocks | 3.5 / 2.7s, 32m | 22 coins, 4 wood, 2 iron |
+| Earthshaker (8) | 1 block | 1.8 splash / 2.8s, 16m; 65% slow | 16 coins, 5 stone, 4 soil |
+| Arcane Prism (9) | 3 blocks | 0.8 / 0.45s, 20m | 32 coins, 4 stone, 3 copper |
+| Sunspire (0) | 3 blocks | 2.5 / 1.7s, 25m; pierce up to 3 | 45 coins, 5 stone, 3 iron, 2 coal |
+
+Wood uses oak logs; soil uses dirt; ores use their mined block stacks. Packed tower items are consumed before fresh construction costs. Attacks prioritize enemies nearest the Hearth; slows last 2.5 seconds, fire deals 0.5 damage/second and poison 0.7 damage/second for four seconds. Reapplying a type refreshes its effect instead of stacking it indefinitely. Kills leave collectible coins. Every shot deals damage only when its projectile collides with a live enemy. Physical shots lead walking targets and can miss; elemental homing shots follow their target. Fast shots use swept collision so they cannot pass through a body between simulation ticks. Walls built during flight block attacks. Splash victims are checked at impact, lightning jumps travel and hit in sequence, and Sunspire hits up to three bodies in flight order. Fired projectiles keep flying if their tower is packed. Reduced motion keeps the same visible projectiles and combat timing while suppressing recoil, spinning and decorative bursts. Projectiles and effects have separate budgets; shared geometry and materials are reused.
+
+
+Each cannon has its own visual attack signature:
+
+| Cannon | Firing, flight and impact |
+| --- | --- |
+| Oak Ballista | Bow kick, feathered wooden bolt, splinter sparks |
+| Iron Mortar | Barrel recoil, tumbling fused shell and smoke, explosive blast ring |
+| Frost Spire | Ice pulse, spinning three-shard spear, frost splinters and freezing ring |
+| Ember Cannon | Flame flare, rolling fireball and ember trail, fiery splash |
+| Venom Idol | Toxic drips, pulsing green glob, rising poison bubbles and pool ring |
+| Storm Coil | Electric discharge, flickering jagged bolt, sequential chain arcs and crackle |
+| Watchman | Sharp muzzle flash and recoil, fast golden dart and tracer, piercing sparks |
+| Earthshaker | Heavy kick, tumbling boulder and dust, stone fragments and broad shockwave |
+| Arcane Prism | Rotating rune pulse, orbiting violet shards, collapsing spiral burst |
+| Sunspire | Radiant flare, luminous lance with spinning halos, sun rays and a gold impact ring |
 
 The meadow has **winding rivers, coastal seas and blocky ponds**. Rivers run continuously across chunk boundaries and meet the seas at a common waterline. Terraced banks and shallow coastal shelves descend into sea beds more than ten world units deep. A river lies about 56 world units along +Z from the tree; seas lie farther east and west. A nearby pond sits west of the starting clearing at **(-54, 6)**, and other ponds are seeded deterministically on a 64-block lattice, away from the clearing, channels and coasts. Ponds have raised grassy banks, muddy swimming basins, transparent animated water, lily pads, and five to nine fish. Fish swim in stable elliptical shoals, wag their tails, and produce small surface ripples. The herd prefers to stay on dry ground.
 

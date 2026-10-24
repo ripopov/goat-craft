@@ -1,0 +1,46 @@
+{
+  "generator": "Built-in image_gen tool",
+  "preparation": "Copied generated originals into the project, downscaled to 256px with sips for inventory use.",
+  "prompts": [
+    {
+      "file": "ballista.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a compact oak-and-iron ballista cannon, wooden stock, twin steel bow arms, amber bolt. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "mortar.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a squat dark iron mortar cannon on heavy stone plinth, wide upward barrel, orange shell. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "frost.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: an icy cyan crystal cannon on a pale stone tower, frost runes and angular frozen muzzle. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "ember.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a red copper fire cannon tower, glowing orange furnace and flame-shaped barrel. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "venom.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: an eerie green poison cannon tower, glass toxin reservoir and emerald fumes. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "storm.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a blue copper lightning coil cannon tower, paired prongs and bright electric arc. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "sniper.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a slender tall timber marksman cannon tower, long steel barrel and brass scope. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "earth.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a chunky mossy earth cannon tower, brown stone pillars and jade boulder ammunition. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "arcane.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a violet arcane cannon tower, floating amethyst core between angular golden prongs. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    },
+    {
+      "file": "sun.png",
+      "prompt": "Use case: stylized-concept. Asset type: square fantasy voxel tower-defense inventory icon. Subject: a magnificent golden sun cannon tower, warm ivory stone and radiant gold crystal lens. Original Warcraft-era fantasy RTS spirit combined with Minecraft-like chunky voxel geometry. One isolated complete tower only, three-quarter isometric view, centered and filling 80% of the square. Painterly high quality game inventory art, crisp chunky silhouette, warm rim light, subtle material wear. Dark desaturated forest-teal background with a soft vignette. No text, no letters, no numbers, no border, no watermark, no extra objects. Consistent icon art direction across the set."
+    }
+  ]
+}

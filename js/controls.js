@@ -50,6 +50,7 @@
   }
 
   function getMovement(camera) {
+    if (M.strategy && M.strategy.active) { moveVec.set(0, 0); return moveVec; }
     const x = (held.d ? 1 : 0) - (held.a ? 1 : 0);
     const z = (held.w ? 1 : 0) - (held.s ? 1 : 0);
     if (x === 0 && z === 0) {
@@ -75,6 +76,7 @@
 
   // --------------------------------------------------------------- camera
   function updateCamera(dt, t, goat, state, world) {
+    if (M.strategy && M.strategy.active) { goat.visible = true; return; }
     if (held.w || held.a || held.s || held.d || held.space || held.ctrl) lastInteraction = performance.now();
     const elapsed = (performance.now() - lastInteraction) / 1000;
     const steering = held.w || held.a || held.s || held.d;
@@ -373,6 +375,7 @@
       if (e.key === 'Escape') { e.preventDefault(); M.upgradeMenu.close(); }
       return;
     }
+    if (M.strategy && M.strategy.active) return;
     if (e.key === 'Control') {
       held.ctrl = true;
       noteActivity();
@@ -519,11 +522,15 @@
     requestLook: requestLook,
     releaseLook: releaseLook,
     get lookActive() { return lookActive; },
-    get firstPerson() { return firstPerson; },
+    get firstPerson() { return firstPerson && !(M.strategy && M.strategy.active); },
+    resumeCamera: function () {
+      cameraRef.fov = firstPerson ? 70 : orbitFov; cameraRef.updateProjectionMatrix();
+      snapCamera = true; snapTo(M.goat.group.position);
+    },
     getFacingYaw: function () { return azimuth + Math.PI; },
     getMovement: getMovement,
     getSwimPitch: getSwimPitch,
-    get swimVertical() { return (held.space ? 1 : 0) - (held.ctrl ? 1 : 0); },
+    get swimVertical() { return M.strategy && M.strategy.active ? 0 : (held.space ? 1 : 0) - (held.ctrl ? 1 : 0); },
     noteActivity: noteActivity,
     snapTo: snapTo,
     stopSteering: stopSteering,

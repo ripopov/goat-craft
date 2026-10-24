@@ -40,7 +40,7 @@
       <p><b>WASD</b> Move <b>Shift</b> Gallop<br><b>Space</b> Jump / swim up <b>Ctrl</b> Dive</p>
       <p><b>E / click</b> Headbutt / place<br><b>Right click</b> Stomp <b>1–0</b> Items</p>
       <p><b>F</b> Mouse look <b>Esc</b> Release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
-      <p><b>Q</b> Train yourself / nearby animal</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
+      <p><b>Q</b> Train yourself / nearby animal<br><b>T</b> Strategic view / tower building</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
     </div>
   </details>
   <button id="upgrade-open" type="button" aria-haspopup="dialog" aria-controls="upgrade-menu"><span aria-hidden="true">↑</span> Upgrades <kbd>Q</kbd></button>
@@ -60,6 +60,16 @@
     </div>
   </dialog>
   <button id="hi" type="button"><span></span>Say hi</button>
+  <button id="strategy-toggle" type="button" aria-pressed="false" aria-controls="rts-hud"><i aria-hidden="true">⌘</i><span>Strategic view</span><kbd>T</kbd></button>
+  <section id="rts-hud" aria-label="Strategic command" hidden>
+    <header class="rts-banner"><div><span class="rts-live">● LIVE STRATEGY</span><strong>Defend the Hearth</strong><small>Your goat is roaming on autopilot</small></div><div class="rts-camera-actions"><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Find goat</button></div></header>
+    <div id="rts-resources" aria-label="Building resources"></div>
+    <div class="rts-dock">
+      <div class="rts-dock-top"><div><span class="rts-eyebrow">HEARTH ENGINEERING</span><h2>Cannon workshop <small id="rts-count">0 / 80 deployed</small></h2></div><p id="rts-message" role="status" aria-live="polite">Select a tower to begin</p><button id="rts-cancel" type="button">Cancel <kbd>Esc</kbd></button></div>
+      <div class="rts-workspace"><aside class="rts-detail"><img id="rts-detail-icon" alt="" hidden><div><h3 id="rts-detail-title">Build your defense</h3><p id="rts-detail-role">Ten towers. One living Hearth.</p><p id="rts-detail-stats"></p><p id="rts-detail-cost"></p><button id="rts-pack" type="button" hidden>Pack tower into pickup</button></div></aside><div id="rts-roster" role="group" aria-label="Tower blueprints"></div></div>
+      <footer class="rts-footer"><span><b>WASD / drag</b> Pan <b>Scroll</b> Zoom <b>1–0</b> Tower <b>Right click</b> Cancel</span><span>Click a deployed tower to inspect · Packed towers redeploy for free</span></footer>
+    </div>
+  </section>
   <div class="top-actions">
     <button id="look" type="button" aria-pressed="false" aria-label="Capture mouse for free look" title="Capture the pointer for mouse look (Esc releases)"><span class="mouse" aria-hidden="true">⌖</span><span class="label">Mouse look</span></button>
     <button id="effects" type="button" aria-pressed="true" aria-label="Mute sound effects" title="Sound effects"><svg class="speaker" width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 7h4l4-4v14l-4-4H3z"/><path class="sound-waves" d="M14 6c3 2 3 6 0 8m2-11c5 4 5 10 0 14"/><path class="sound-slash" d="m14 7 5 6m0-6-5 6"/></svg><span class="label">Sound</span></button>
@@ -93,6 +103,8 @@
 <script src="js/upgrade-menu.js"></script>
 <script src="js/minimap.js"></script>
 <script src="js/highlights.js"></script>
+<script src="js/towers.js"></script>
+<script src="js/strategy.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -352,6 +352,37 @@
     });
   }
 
+  function towerShot(point, style) {
+    nearby(point, 90, 'tower-' + style, .09, function (voice, when, level) {
+      if (style === 'shell') {
+        noise(voice, when, { frequency: 650, endFrequency: 180, duration: .24, level: level * .13, attack: .008 });
+        tone(voice, when, { type: 'triangle', frequency: 115, endFrequency: 55, duration: .2, level: level * .08 });
+      } else if (style === 'bolt') {
+        noise(voice, when, { frequency: 2100, endFrequency: 700, duration: .14, level: level * .07 });
+        tone(voice, when, { type: 'triangle', frequency: 310, endFrequency: 130, duration: .12, level: level * .035 });
+      } else {
+        tone(voice, when, { type: 'sine', frequency: style === 'coil' ? 820 : 620, endFrequency: 280, duration: .2, level: level * .045, attack: .012 });
+        noise(voice, when, { frequency: 3200, endFrequency: 1400, duration: .16, level: level * .035 });
+      }
+    });
+  }
+
+  function towerImpact(point, id) {
+    nearby(point, 90, 'impact-' + id, .08, function (voice, when, level) {
+      if (id === 'mortar' || id === 'earth' || id === 'ember') {
+        const earth = id === 'earth';
+        noise(voice, when, { frequency: earth ? 360 : 1200, endFrequency: 100, duration: .38, level: level * .12, attack: .008 });
+        tone(voice, when, { type: 'triangle', frequency: earth ? 85 : 145, endFrequency: 40, duration: .28, level: level * .07 });
+      } else if (id === 'ballista' || id === 'sniper') {
+        noise(voice, when, { frequency: id === 'sniper' ? 2400 : 1400, endFrequency: 350, duration: .13, level: level * .07 });
+      } else {
+        const pitch = { frost: 1100, venom: 290, storm: 1800, arcane: 740, sun: 1320 }[id] || 740;
+        tone(voice, when, { type: id === 'storm' ? 'triangle' : 'sine', frequency: pitch, endFrequency: pitch * .45, duration: .22, level: level * .045 });
+        noise(voice, when, { frequency: pitch * 2, endFrequency: pitch, duration: .12, level: level * .025 });
+      }
+    });
+  }
+
   function cue(kind) {
     nearby(null, 1, 'cue-' + kind, kind === 'damage' ? 1 : 0.5, function (voice, when) {
       const notes = kind === 'wave' ? [196, 246.94, 293.66] : kind === 'defeat' ? [196, 164.81, 130.81] : [220, 164.81];
@@ -402,6 +433,8 @@
     setEffectsEnabled: setEffectsEnabled,
     zombie: zombie,
     enemyBurst: enemyBurst,
+    towerShot: towerShot,
+    towerImpact: towerImpact,
     actorStep: actorStep,
     actorJump: actorJump,
     select: select,

@@ -73,6 +73,8 @@
   M.upgradeMenu.init();
   M.minimap.init();
   M.highlights.init(scene);
+  M.towers.init(scene);
+  M.strategy.init(scene, camera);
 
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
@@ -131,12 +133,14 @@
       elapsed += STEP;
       M.goat.update(STEP, elapsed);
       M.enemies.update(STEP, elapsed);
+      M.towers.update(STEP);
       M.items.update(STEP, elapsed, M.goat.group);
       M.animals.update(STEP, elapsed, M.goat.group);
       accumulator -= STEP;
     }
     M.world.update(M.goat.group.position, dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
+    M.strategy.update(dt);
     M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.environment.update(camera, M.goat.group, dt, elapsed);

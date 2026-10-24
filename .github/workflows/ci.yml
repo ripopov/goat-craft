@@ -31,6 +31,9 @@ jobs:
       - name: Test water generation and swimming
         run: node --test scripts/test-water.mjs
 
+      - name: Test audio scheduling and voice cleanup
+        run: node --test scripts/test-audio.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

@@ -7,7 +7,9 @@
   const STEP = 60 / BPM / 2; // eighth note
   const BAR_DUR = STEP * 8;
   const LOOP_STEPS = 64;
-  const MUSIC_LEVEL = 0.22;
+  const MUSIC_LEVEL = 0.3;
+  const SCHEDULE_LEAD = 0.04;
+  const LOOKAHEAD = 1.0;
 
   // D minor folk progression: Dm – Bb – F – C
   const CHORDS = [
@@ -39,6 +41,28 @@
   let loopCount = 0;
   let noiseLong = null;
   let noiseShort = null;
+  const voices = new Set();
+  let fade = { from: 0, to: 0, start: 0, end: 0 };
+
+  function fadeMaster(target, duration) {
+    const now = ctx.currentTime;
+    const k = fade.end > fade.start ? Math.min(1, Math.max(0, (now - fade.start) / (fade.end - fade.start))) : 1;
+    const current = fade.from + (fade.to - fade.from) * k;
+    // Preserve the in-flight ramp even on browsers without cancelAndHoldAtTime.
+    master.gain.cancelScheduledValues(now);
+    master.gain.setValueAtTime(current, now);
+    master.gain.linearRampToValueAtTime(target, now + duration);
+    fade = { from: current, to: target, start: now, end: now + duration };
+  }
+
+  function voiceAt(pan, reverb) {
+    const voice = M.audio.createVoice(master, pan);
+    if (!voice) return null;
+    if (reverb) voice.output.connect(reverbSend);
+    voices.add(voice);
+    voice.onended = function () { voices.delete(voice); };
+    return voice;
+  }
 
   function midiToFreq(midi) {
     return 440 * Math.pow(2, (midi - 69) / 12);
@@ -49,7 +73,11 @@
     const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const data = buffer.getChannelData(ch);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      for (let i = 0; i < data.length; i++) {
+        // Both ends meet at zero: the wind loop has no waveform discontinuity.
+        const edge = Math.min(1, i / (ctx.sampleRate * 0.03), (data.length - 1 - i) / (ctx.sampleRate * 0.03));
+        data[i] = (Math.random() * 2 - 1) * edge;
+      }
     }
     return buffer;
   }
@@ -60,200 +88,179 @@
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       const data = buffer.getChannelData(ch);
       for (let i = 0; i < data.length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, decay);
+        data[i] = (Math.random() * 2 - 1) * Math.min(1, i / (ctx.sampleRate * 0.012)) * Math.pow(1 - i / data.length, decay);
       }
     }
     return buffer;
   }
 
-  function connectOut(node, pan, sendToReverb) {
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = pan;
-    node.connect(panner);
-    panner.connect(master);
-    if (sendToReverb) panner.connect(reverbSend);
-  }
-
   function pluck(midi, when, level, pan) {
+    const voice = voiceAt(pan, true);
+    if (!voice) return;
     const f = midiToFreq(midi);
-    const osc = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
+    const osc = voice.create('Oscillator');
+    const osc2 = voice.create('Oscillator');
     osc.type = 'triangle';
     osc2.type = 'sine';
     osc.frequency.value = f;
     osc2.frequency.value = f * 2;
     osc.detune.value = rand(-4, 4);
 
-    const filter = ctx.createBiquadFilter();
+    const filter = voice.create('BiquadFilter');
     filter.type = 'lowpass';
     filter.Q.value = 0.8;
-    filter.frequency.setValueAtTime(2300, when);
+    filter.frequency.setValueAtTime(1900, when);
     filter.frequency.exponentialRampToValueAtTime(620, when + 1.0);
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(level, when + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + 1.35);
+    const gain = voice.create('Gain');
+    M.audio.envelope(gain.gain, when, 1.35, level, 0.012);
 
-    const second = ctx.createGain();
+    const second = voice.create('Gain');
     second.gain.value = 0.16;
 
     osc.connect(filter);
     osc2.connect(second);
     second.connect(filter);
     filter.connect(gain);
-    connectOut(gain, pan, true);
+    gain.connect(voice.input);
 
-    osc.start(when);
-    osc2.start(when);
-    osc.stop(when + 1.4);
-    osc2.stop(when + 1.4);
+    voice.start(osc, when, when + 1.4);
+    voice.start(osc2, when, when + 1.4);
   }
 
   function flute(midi, when, duration, level) {
+    const voice = voiceAt(0.08, true);
+    if (!voice) return;
     const f = midiToFreq(midi);
-    const osc = ctx.createOscillator();
-    const octave = ctx.createOscillator();
-    osc.type = 'triangle';
+    const osc = voice.create('Oscillator');
+    const octave = voice.create('Oscillator');
+    osc.type = 'sine';
     octave.type = 'sine';
     osc.frequency.value = f;
     octave.frequency.value = f * 2;
 
-    const vib = ctx.createOscillator();
+    const vib = voice.create('Oscillator');
     vib.type = 'sine';
     vib.frequency.value = 5.1;
-    const vibGain = ctx.createGain();
+    const vibGain = voice.create('Gain');
     vibGain.gain.value = f * 0.0035;
     vib.connect(vibGain);
     vibGain.connect(osc.frequency);
     vibGain.connect(octave.frequency);
 
-    const filter = ctx.createBiquadFilter();
+    const filter = voice.create('BiquadFilter');
     filter.type = 'lowpass';
     filter.frequency.value = 1700;
     filter.Q.value = 0.5;
 
-    const octaveGain = ctx.createGain();
-    octaveGain.gain.value = 0.13;
+    const octaveGain = voice.create('Gain');
+    octaveGain.gain.value = 0.1;
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(level, when + 0.06);
-    gain.gain.setValueAtTime(level, when + Math.max(0.08, duration - 0.25));
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration + 0.22);
+    const gain = voice.create('Gain');
+    M.audio.envelope(gain.gain, when, duration + 0.22, level, 0.08, Math.max(0.08, duration - 0.25));
 
     osc.connect(filter);
     octave.connect(octaveGain);
     octaveGain.connect(filter);
     filter.connect(gain);
-    connectOut(gain, 0.08, true);
+    gain.connect(voice.input);
 
-    osc.start(when);
-    octave.start(when);
-    vib.start(when);
-    osc.stop(when + duration + 0.3);
-    octave.stop(when + duration + 0.3);
-    vib.stop(when + duration + 0.3);
+    voice.start(osc, when, when + duration + 0.3);
+    voice.start(octave, when, when + duration + 0.3);
+    voice.start(vib, when, when + duration + 0.3);
   }
 
   function pad(midis, when) {
     for (let i = 0; i < midis.length; i++) {
-      const osc = ctx.createOscillator();
+      const voice = voiceAt(i === 0 ? -0.25 : i === 2 ? 0.25 : 0, true);
+      if (!voice) continue;
+      const osc = voice.create('Oscillator');
       osc.type = 'triangle';
       osc.frequency.value = midiToFreq(midis[i]);
       osc.detune.value = rand(-5, 5);
 
-      const filter = ctx.createBiquadFilter();
+      const filter = voice.create('BiquadFilter');
       filter.type = 'lowpass';
       filter.frequency.value = 720;
       filter.Q.value = 0.4;
 
-      const gain = ctx.createGain();
+      const gain = voice.create('Gain');
       const level = 0.0065;
-      gain.gain.setValueAtTime(0.0001, when);
-      gain.gain.exponentialRampToValueAtTime(level, when + 0.75);
-      gain.gain.setValueAtTime(level, when + BAR_DUR - 0.8);
-      gain.gain.exponentialRampToValueAtTime(0.0001, when + BAR_DUR + 0.1);
+      M.audio.envelope(gain.gain, when, BAR_DUR + 0.1, level, 0.75, BAR_DUR - 0.8);
 
       osc.connect(filter);
       filter.connect(gain);
-      connectOut(gain, i === 0 ? -0.25 : i === 2 ? 0.25 : 0, true);
+      gain.connect(voice.input);
 
-      osc.start(when);
-      osc.stop(when + BAR_DUR + 0.2);
+      voice.start(osc, when, when + BAR_DUR + 0.2);
     }
   }
 
   function bass(midi, when) {
-    const osc = ctx.createOscillator();
+    const voice = voiceAt(0, false);
+    if (!voice) return;
+    const osc = voice.create('Oscillator');
     osc.type = 'triangle';
     osc.frequency.value = midiToFreq(midi);
 
-    const filter = ctx.createBiquadFilter();
+    const filter = voice.create('BiquadFilter');
     filter.type = 'lowpass';
     filter.frequency.value = 240;
     filter.Q.value = 0.4;
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(0.045, when + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + 2.4);
+    const gain = voice.create('Gain');
+    M.audio.envelope(gain.gain, when, 2.4, 0.045, 0.035);
 
     osc.connect(filter);
     filter.connect(gain);
-    gain.connect(master);
+    gain.connect(voice.input);
 
-    osc.start(when);
-    osc.stop(when + 2.5);
+    voice.start(osc, when, when + 2.5);
   }
 
   function drum(when, strength) {
-    const osc = ctx.createOscillator();
+    const voice = voiceAt(0, false);
+    if (!voice) return;
+    const osc = voice.create('Oscillator');
     osc.type = 'sine';
     osc.frequency.setValueAtTime(84, when);
     osc.frequency.exponentialRampToValueAtTime(48, when + 0.16);
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(0.04 * strength, when + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.24);
+    const gain = voice.create('Gain');
+    M.audio.envelope(gain.gain, when, 0.28, 0.032 * strength, 0.012);
 
     osc.connect(gain);
-    gain.connect(master);
-    osc.start(when);
-    osc.stop(when + 0.26);
+    gain.connect(voice.input);
+    voice.start(osc, when, when + 0.3);
 
-    const noise = ctx.createBufferSource();
+    const noise = voice.create('BufferSource');
     noise.buffer = noiseShort;
-    const filter = ctx.createBiquadFilter();
+    const filter = voice.create('BiquadFilter');
     filter.type = 'lowpass';
     filter.frequency.value = 380;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(0.0001, when);
-    ng.gain.exponentialRampToValueAtTime(0.012 * strength, when + 0.004);
-    ng.gain.exponentialRampToValueAtTime(0.0001, when + 0.1);
+    const ng = voice.create('Gain');
+    M.audio.envelope(ng.gain, when, 0.14, 0.009 * strength, 0.012);
     noise.connect(filter);
     filter.connect(ng);
-    ng.connect(master);
-    noise.start(when);
-    noise.stop(when + 0.12);
+    ng.connect(voice.input);
+    voice.start(noise, when, when + 0.16);
   }
 
   function shaker(when, pan) {
-    const noise = ctx.createBufferSource();
+    const voice = voiceAt(pan, false);
+    if (!voice) return;
+    const noise = voice.create('BufferSource');
     noise.buffer = noiseShort;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 4200;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.exponentialRampToValueAtTime(0.0065, when + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.08);
+    const filter = voice.create('BiquadFilter');
+    filter.type = 'bandpass';
+    filter.frequency.value = 2800;
+    filter.Q.value = 0.6;
+    const gain = voice.create('Gain');
+    M.audio.envelope(gain.gain, when, 0.12, 0.004, 0.018);
     noise.connect(filter);
     filter.connect(gain);
-    connectOut(gain, pan, false);
-    noise.start(when);
-    noise.stop(when + 0.1);
+    gain.connect(voice.input);
+    voice.start(noise, when, when + 0.14);
   }
 
   function scheduleStep(index, when) {
@@ -293,8 +300,16 @@
 
   function scheduleAhead() {
     if (!playing) return;
-    if (nextTime < ctx.currentTime - 0.3) nextTime = ctx.currentTime + 0.1;
-    while (nextTime < ctx.currentTime + 0.7) {
+    if (ctx.state !== 'running') return;
+    const earliest = ctx.currentTime + SCHEDULE_LEAD;
+    if (nextTime < earliest) {
+      const skipped = Math.ceil((earliest - nextTime) / STEP);
+      const total = stepIndex + skipped;
+      loopCount += Math.floor(total / LOOP_STEPS);
+      stepIndex = total % LOOP_STEPS;
+      nextTime += skipped * STEP;
+    }
+    while (nextTime < ctx.currentTime + LOOKAHEAD) {
       scheduleStep(stepIndex, nextTime);
       nextTime += STEP;
       stepIndex++;
@@ -323,15 +338,15 @@
     compressor.release.value = 0.5;
 
     master = ctx.createGain();
-    master.gain.value = 0.0001;
+    master.gain.value = 0;
     master.connect(masterFilter);
     masterFilter.connect(compressor);
-    compressor.connect(ctx.destination);
+    compressor.connect(M.audio.getMusicInput());
 
     const convolver = ctx.createConvolver();
     convolver.buffer = makeImpulse(2.8, 2.7);
     const wet = ctx.createGain();
-    wet.gain.value = 0.34;
+    wet.gain.value = 0.24;
     reverbSend = ctx.createGain();
     reverbSend.gain.value = 1;
     reverbSend.connect(convolver);
@@ -415,20 +430,16 @@
   function start() {
     if (playing) return true;
     if (!ensureGraph()) return false;
-    if (ctx.state === 'suspended') ctx.resume();
 
     playing = true;
     stepIndex = 0;
     loopCount = 0;
     nextTime = ctx.currentTime + 0.18;
 
-    const now = ctx.currentTime;
-    master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), now);
-    master.gain.linearRampToValueAtTime(MUSIC_LEVEL, now + 2.0);
+    fadeMaster(MUSIC_LEVEL, 2.0);
 
     scheduleAhead();
-    timer = setInterval(scheduleAhead, 120);
+    timer = setInterval(scheduleAhead, 80);
     return true;
   }
 
@@ -440,10 +451,11 @@
       timer = null;
     }
     if (ctx) {
-      const now = ctx.currentTime;
-      master.gain.cancelScheduledValues(now);
-      master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), now);
-      master.gain.linearRampToValueAtTime(0.0001, now + 1.2);
+      fadeMaster(0, 0.8);
+      // Fade and cancel queued notes too, so a quick restart does not revive
+      // notes from the previous playback session.
+      for (const voice of voices) voice.stop(ctx.currentTime + 0.35);
+      voices.clear();
     }
     return false;
   }

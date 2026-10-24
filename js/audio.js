@@ -2,16 +2,41 @@
   'use strict';
 
   const { rand, clamp } = M.utils;
+  const LEAD = 0.025;
+  const MAX_VOICES = 96;
   let ctx = null;
+  let effects = null;
+  let music = null;
   let noiseBuffer = null;
   let stepSide = 1;
+  const voices = new Set();
 
-  function makeNoise(seconds) {
-    const length = Math.max(1, Math.floor(ctx.sampleRate * seconds));
-    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    return buffer;
+  function buildMixer() {
+    const high = ctx.createBiquadFilter();
+    high.type = 'highpass';
+    high.frequency.value = 25;
+    high.Q.value = 0.5;
+    const low = ctx.createBiquadFilter();
+    low.type = 'lowpass';
+    low.frequency.value = 10000;
+    low.Q.value = 0.5;
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -12;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 8;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.18;
+    const output = ctx.createGain();
+    output.gain.value = 0.8;
+    effects = ctx.createGain();
+    effects.gain.value = 0.75;
+    music = ctx.createGain();
+    effects.connect(high);
+    music.connect(high);
+    high.connect(low);
+    low.connect(compressor);
+    compressor.connect(output);
+    output.connect(ctx.destination);
   }
 
   function unlock() {
@@ -19,454 +44,232 @@
       if (!ctx) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return null;
-        ctx = new Ctx();
+        ctx = new Ctx({ latencyHint: 'interactive' });
+        buildMixer();
+        noiseBuffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * 1.5), ctx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
       }
-      if (ctx.state === 'suspended') ctx.resume();
-      if (!noiseBuffer) noiseBuffer = makeNoise(1.2);
+      if (ctx.state === 'suspended') {
+        const pending = ctx.resume();
+        if (pending && pending.catch) pending.catch(function () {});
+      }
       return ctx;
     } catch (err) {
       return null;
     }
   }
 
-  function out(pan) {
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = pan;
-    panner.connect(ctx.destination);
-    return panner;
+  // Every source enters and leaves at exact silence. Exponential releases
+  // approach zero; a final short linear tail reaches it before source.stop().
+  function envelope(param, when, duration, level, attack, hold) {
+    attack = attack === undefined ? 0.012 : attack;
+    hold = hold === undefined ? attack : hold;
+    param.value = 0;
+    param.setValueAtTime(0, when);
+    param.linearRampToValueAtTime(level, when + attack);
+    if (hold > attack) param.setValueAtTime(level, when + hold);
+    param.exponentialRampToValueAtTime(0.00001, when + duration - 0.012);
+    param.linearRampToValueAtTime(0, when + duration);
   }
 
-  function bleat() {
+  // A voice owns its whole graph, including its panner. Disconnect it after
+  // the last source ends, so long play sessions do not accumulate idle nodes.
+  function createVoice(destination, pan) {
+    if (!ctx || voices.size >= MAX_VOICES) return null;
+    const nodes = [];
+    const sources = [];
+    let pending = 0;
+    function create(type) {
+      const node = ctx['create' + type]();
+      nodes.push(node);
+      return node;
+    }
+    const input = create('StereoPanner');
+    input.pan.value = pan || 0;
+    const output = create('Gain');
+    input.connect(output);
+    output.connect(destination || effects);
+    const voice = {
+      input: input,
+      output: output,
+      create: create,
+      onended: null,
+      start: function (source, when, end, offset) {
+        sources.push(source);
+        pending++;
+        source.onended = function () {
+          pending--;
+          if (pending !== 0) return;
+          for (const node of nodes) node.disconnect();
+          voices.delete(voice);
+          if (voice.onended) voice.onended();
+        };
+        if (offset === undefined) source.start(when);
+        else source.start(when, offset);
+        source.stop(end);
+      },
+      stop: function (when) {
+        const now = ctx.currentTime;
+        output.gain.cancelScheduledValues(now);
+        output.gain.setValueAtTime(output.gain.value, now);
+        output.gain.linearRampToValueAtTime(0, Math.max(now + 0.02, when));
+        for (const source of sources) source.stop(Math.max(now + 0.03, when + 0.01));
+      }
+    };
+    voices.add(voice);
+    return voice;
+  }
+
+  function tone(voice, when, options) {
+    const duration = options.duration;
+    const osc = voice.create('Oscillator');
+    osc.type = options.type || 'sine';
+    osc.frequency.setValueAtTime(options.frequency, when);
+    if (options.endFrequency) osc.frequency.exponentialRampToValueAtTime(options.endFrequency, when + duration * 0.8);
+    const gain = voice.create('Gain');
+    envelope(gain.gain, when, duration, options.level, options.attack, options.hold);
+    osc.connect(gain);
+    gain.connect(voice.input);
+    voice.start(osc, when, when + duration + 0.02);
+  }
+
+  function noise(voice, when, options) {
+    const src = voice.create('BufferSource');
+    src.buffer = noiseBuffer;
+    src.playbackRate.value = options.rate || 1;
+    const filter = voice.create('BiquadFilter');
+    filter.type = options.type || 'bandpass';
+    filter.Q.value = options.q || 0.65;
+    filter.frequency.setValueAtTime(options.frequency, when);
+    if (options.endFrequency) filter.frequency.exponentialRampToValueAtTime(options.endFrequency, when + options.duration * 0.8);
+    const gain = voice.create('Gain');
+    envelope(gain.gain, when, options.duration, options.level, options.attack);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(voice.input);
+    voice.start(src, when, when + options.duration + 0.02, rand(0, 0.3));
+  }
+
+  function play(pan, wake, build) {
     try {
-      const audio = unlock();
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.01;
-      const dur = 0.55;
-      const base = rand(235, 285);
-
-      const osc = audio.createOscillator();
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(base, now);
-      osc.frequency.linearRampToValueAtTime(base * 1.14, now + 0.08);
-      osc.frequency.exponentialRampToValueAtTime(base * 0.62, now + dur);
-
-      const vib = audio.createOscillator();
-      vib.type = 'sine';
-      vib.frequency.value = rand(19, 26);
-      const vibGain = audio.createGain();
-      vibGain.gain.value = 22;
-      vib.connect(vibGain);
-      vibGain.connect(osc.frequency);
-
-      const filter = audio.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 1500;
-      filter.Q.value = 3;
-
-      const body = audio.createBiquadFilter();
-      body.type = 'peaking';
-      body.frequency.value = 850;
-      body.gain.value = 7;
-      body.Q.value = 1.4;
-
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.13, now + 0.03);
-      gain.gain.setValueAtTime(0.13, now + 0.17);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-
-      osc.connect(filter);
-      filter.connect(body);
-      body.connect(gain);
-      gain.connect(audio.destination);
-
-      osc.start(now);
-      vib.start(now);
-      osc.stop(now + dur + 0.05);
-      vib.stop(now + dur + 0.05);
+      const audio = wake ? unlock() : ctx;
+      if (!audio || audio.state === 'closed') return;
+      const voice = createVoice(effects, pan);
+      if (voice) build(voice, audio.currentTime + LEAD);
     } catch (err) { /* audio is a bonus, never fatal */ }
   }
 
-  function thud() {
-    try {
-      const audio = ctx;
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.005;
-      const dur = 0.16;
-
-      const buffer = audio.createBuffer(1, Math.max(1, Math.floor(audio.sampleRate * dur)), audio.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) {
-        const t = i / data.length;
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.4);
-      }
-
-      const src = audio.createBufferSource();
-      src.buffer = buffer;
-      const filter = audio.createBiquadFilter();
+  function bleat() {
+    play(0, true, function (voice, when) {
+      const base = rand(235, 275);
+      const osc = voice.create('Oscillator');
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(base, when);
+      osc.frequency.linearRampToValueAtTime(base * 1.12, when + 0.09);
+      osc.frequency.exponentialRampToValueAtTime(base * 0.65, when + 0.55);
+      const vib = voice.create('Oscillator');
+      vib.frequency.value = rand(18, 23);
+      const vibGain = voice.create('Gain');
+      vibGain.gain.value = 16;
+      vib.connect(vibGain);
+      vibGain.connect(osc.frequency);
+      const filter = voice.create('BiquadFilter');
       filter.type = 'lowpass';
-      filter.frequency.value = 800;
-      filter.Q.value = 0.7;
-      const gain = audio.createGain();
-      gain.gain.value = 0.08;
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(audio.destination);
-      src.start(now);
+      filter.frequency.value = 1350;
+      filter.Q.value = 0.9;
+      const body = voice.create('BiquadFilter');
+      body.type = 'peaking';
+      body.frequency.value = 800;
+      body.gain.value = 3;
+      body.Q.value = 1;
+      const gain = voice.create('Gain');
+      envelope(gain.gain, when, 0.6, 0.11, 0.04, 0.17);
+      osc.connect(filter);
+      filter.connect(body);
+      body.connect(gain);
+      gain.connect(voice.input);
+      voice.start(osc, when, when + 0.62);
+      voice.start(vib, when, when + 0.62);
+    });
+  }
 
-      const osc = audio.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(95, now);
-      osc.frequency.exponentialRampToValueAtTime(55, now + 0.12);
-      const og = audio.createGain();
-      og.gain.setValueAtTime(0.0001, now);
-      og.gain.exponentialRampToValueAtTime(0.11, now + 0.01);
-      og.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
-      osc.connect(og);
-      og.connect(audio.destination);
-      osc.start(now);
-      osc.stop(now + 0.16);
-
-      // short stony crack
-      const crackSrc = audio.createBufferSource();
-      crackSrc.buffer = noiseBuffer;
-      const crackFilter = audio.createBiquadFilter();
-      crackFilter.type = 'bandpass';
-      crackFilter.frequency.value = 1900;
-      crackFilter.Q.value = 1.1;
-      const crackGain = audio.createGain();
-      crackGain.gain.setValueAtTime(0.0001, now);
-      crackGain.gain.exponentialRampToValueAtTime(0.018, now + 0.004);
-      crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
-      crackSrc.connect(crackFilter);
-      crackFilter.connect(crackGain);
-      crackGain.connect(audio.destination);
-      crackSrc.start(now);
-      crackSrc.stop(now + 0.07);
-    } catch (err) { /* audio is a bonus */ }
+  function thud() {
+    play(0, false, function (voice, when) {
+      noise(voice, when, { type: 'lowpass', frequency: 700, duration: 0.18, level: 0.065 });
+      tone(voice, when, { frequency: 95, endFrequency: 55, duration: 0.19, level: 0.09 });
+      noise(voice, when, { frequency: 1250, duration: 0.09, level: 0.009 });
+    });
   }
 
   function step(running, speed) {
-    try {
-      const audio = ctx;
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.002;
-      const intensity = clamp(speed / 9.6, 0, 1);
-      const level = (running ? 0.038 : 0.026) * (0.75 + intensity * 0.4);
-      stepSide *= -1;
-      const dest = out(stepSide * (running ? 0.22 : 0.16));
-
-      // soft hoof body
-      const osc = audio.createOscillator();
-      osc.type = 'sine';
-      const f0 = running ? rand(84, 100) : rand(100, 120);
-      osc.frequency.setValueAtTime(f0, now);
-      osc.frequency.exponentialRampToValueAtTime(f0 * 0.55, now + 0.08);
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(level, now + 0.004);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start(now);
-      osc.stop(now + 0.11);
-
-      // grass rustle
-      const hiss = audio.createBufferSource();
-      hiss.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = rand(760, 1450);
-      filter.Q.value = 0.8;
-      const ng = audio.createGain();
-      ng.gain.setValueAtTime(0.0001, now);
-      ng.gain.exponentialRampToValueAtTime(level * 0.32, now + 0.005);
-      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
-      hiss.connect(filter);
-      filter.connect(ng);
-      ng.connect(dest);
-      hiss.start(now, rand(0, 0.42));
-      hiss.stop(now + 0.09);
-
-      // tiny hoof tick
-      const tick = audio.createBufferSource();
-      tick.buffer = noiseBuffer;
-      const high = audio.createBiquadFilter();
-      high.type = 'highpass';
-      high.frequency.value = 2800;
-      const tg = audio.createGain();
-      tg.gain.setValueAtTime(0.0001, now);
-      tg.gain.exponentialRampToValueAtTime(level * 0.12, now + 0.003);
-      tg.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-      tick.connect(high);
-      high.connect(tg);
-      tg.connect(dest);
-      tick.start(now, rand(0, 0.55));
-      tick.stop(now + 0.04);
-    } catch (err) { /* audio is a bonus */ }
+    stepSide *= -1;
+    play(stepSide * (running ? 0.2 : 0.14), false, function (voice, when) {
+      const level = (running ? 0.038 : 0.026) * (0.75 + clamp(speed / 9.6, 0, 1) * 0.4);
+      const frequency = running ? rand(84, 100) : rand(100, 120);
+      tone(voice, when, { frequency: frequency, endFrequency: frequency * 0.55, duration: 0.13, level: level, attack: 0.009 });
+      noise(voice, when, { frequency: rand(650, 1100), duration: 0.1, level: level * 0.3 });
+    });
   }
 
   function jump() {
-    try {
-      const audio = unlock();
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.002;
-      const dest = out(0.12);
-
-      const src = audio.createBufferSource();
-      src.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.Q.value = 1.1;
-      filter.frequency.setValueAtTime(520, now);
-      filter.frequency.exponentialRampToValueAtTime(1500, now + 0.1);
-      filter.frequency.exponentialRampToValueAtTime(580, now + 0.24);
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.014, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(dest);
-      src.start(now, rand(0, 0.3));
-      src.stop(now + 0.3);
-
-      const breath = audio.createOscillator();
-      breath.type = 'triangle';
-      breath.frequency.setValueAtTime(145, now);
-      breath.frequency.exponentialRampToValueAtTime(210, now + 0.12);
-      const bg = audio.createGain();
-      bg.gain.setValueAtTime(0.0001, now);
-      bg.gain.exponentialRampToValueAtTime(0.0045, now + 0.02);
-      bg.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
-      breath.connect(bg);
-      bg.connect(dest);
-      breath.start(now);
-      breath.stop(now + 0.15);
-    } catch (err) { /* audio is a bonus */ }
+    play(0.1, true, function (voice, when) {
+      noise(voice, when, { frequency: 520, endFrequency: 1000, duration: 0.3, level: 0.013, attack: 0.025 });
+      tone(voice, when, { type: 'triangle', frequency: 145, endFrequency: 210, duration: 0.17, level: 0.0045, attack: 0.025 });
+    });
   }
 
   function whoosh() {
-    try {
-      const audio = unlock();
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.002;
-      const dest = out(0.1);
-      const src = audio.createBufferSource();
-      src.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.Q.value = 1.4;
-      filter.frequency.setValueAtTime(340, now);
-      filter.frequency.exponentialRampToValueAtTime(1700, now + 0.1);
-      filter.frequency.exponentialRampToValueAtTime(420, now + 0.19);
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.018, now + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(dest);
-      src.start(now, rand(0, 0.4));
-      src.stop(now + 0.22);
-    } catch (err) { /* audio is a bonus */ }
+    play(0.1, true, function (voice, when) {
+      noise(voice, when, { frequency: 340, endFrequency: 1250, duration: 0.24, level: 0.016, attack: 0.03 });
+    });
   }
 
   function land(force) {
-    try {
-      const audio = ctx;
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.002;
+    play(0, false, function (voice, when) {
       const strength = clamp(force, 0.3, 1.2);
-      const dest = out(0);
-
-      const osc = audio.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(96, now);
-      osc.frequency.exponentialRampToValueAtTime(46, now + 0.15);
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.05 * strength, now + 0.006);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start(now);
-      osc.stop(now + 0.22);
-
-      const hiss = audio.createBufferSource();
-      hiss.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 560;
-      filter.Q.value = 0.8;
-      const ng = audio.createGain();
-      ng.gain.setValueAtTime(0.0001, now);
-      ng.gain.exponentialRampToValueAtTime(0.014 * strength, now + 0.008);
-      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
-      hiss.connect(filter);
-      filter.connect(ng);
-      ng.connect(dest);
-      hiss.start(now, rand(0, 0.45));
-      hiss.stop(now + 0.16);
-    } catch (err) { /* audio is a bonus */ }
+      tone(voice, when, { frequency: 96, endFrequency: 46, duration: 0.24, level: 0.05 * strength });
+      noise(voice, when, { frequency: 560, duration: 0.18, level: 0.014 * strength });
+    });
   }
 
   function stomp(broke) {
-    try {
-      const audio = unlock();
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.002;
-      const dest = out(0);
-
-      // heavy hoof hitting packed earth
-      const osc = audio.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(86, now);
-      osc.frequency.exponentialRampToValueAtTime(42, now + 0.18);
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.07, now + 0.005);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
-      osc.connect(gain);
-      gain.connect(dest);
-      osc.start(now);
-      osc.stop(now + 0.26);
-
-      const hiss = audio.createBufferSource();
-      hiss.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 420;
-      filter.Q.value = 0.7;
-      const ng = audio.createGain();
-      ng.gain.setValueAtTime(0.0001, now);
-      ng.gain.exponentialRampToValueAtTime(0.024, now + 0.006);
-      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.17);
-      hiss.connect(filter);
-      filter.connect(ng);
-      ng.connect(dest);
-      hiss.start(now, rand(0, 0.45));
-      hiss.stop(now + 0.19);
-
+    play(0, true, function (voice, when) {
+      tone(voice, when, { frequency: 86, endFrequency: 42, duration: 0.28, level: 0.07 });
+      noise(voice, when, { frequency: 420, duration: 0.21, level: 0.024 });
       if (broke) {
-        const crack = audio.createBufferSource();
-        crack.buffer = noiseBuffer;
-        const crackFilter = audio.createBiquadFilter();
-        crackFilter.type = 'bandpass';
-        crackFilter.frequency.value = 1750;
-        crackFilter.Q.value = 1.2;
-        const crackGain = audio.createGain();
-        crackGain.gain.setValueAtTime(0.0001, now);
-        crackGain.gain.exponentialRampToValueAtTime(0.022, now + 0.004);
-        crackGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
-        crack.connect(crackFilter);
-        crackFilter.connect(crackGain);
-        crackGain.connect(dest);
-        crack.start(now, rand(0, 0.5));
-        crack.stop(now + 0.09);
-
-        const scatter = audio.createBufferSource();
-        scatter.buffer = noiseBuffer;
-        const scatterFilter = audio.createBiquadFilter();
-        scatterFilter.type = 'highpass';
-        scatterFilter.frequency.value = 950;
-        const scatterGain = audio.createGain();
-        scatterGain.gain.setValueAtTime(0.0001, now + 0.01);
-        scatterGain.gain.exponentialRampToValueAtTime(0.011, now + 0.025);
-        scatterGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-        scatter.connect(scatterFilter);
-        scatterFilter.connect(scatterGain);
-        scatterGain.connect(dest);
-        scatter.start(now + 0.01, rand(0, 0.4));
-        scatter.stop(now + 0.18);
+        noise(voice, when, { frequency: 1300, duration: 0.12, level: 0.014 });
+        noise(voice, when + 0.015, { frequency: 850, duration: 0.2, level: 0.008, attack: 0.025 });
       }
-    } catch (err) { /* audio is a bonus */ }
+    });
   }
 
   function pickup() {
-    try {
-      const audio = unlock();
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.01;
-      const dest = out(rand(-0.18, 0.18));
-      const notes = [rand(600, 680), rand(880, 980)];
-
-      for (let i = 0; i < notes.length; i++) {
-        const start = now + i * 0.055;
-        const osc = audio.createOscillator();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(notes[i], start);
-        const gain = audio.createGain();
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(0.035, start + 0.012);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.17);
-        osc.connect(gain);
-        gain.connect(dest);
-        osc.start(start);
-        osc.stop(start + 0.2);
-      }
-    } catch (err) { /* audio is a bonus */ }
+    play(rand(-0.15, 0.15), true, function (voice, when) {
+      // A stable perfect fifth is gentler than two independently random pitches.
+      const root = 659.255 * rand(0.998, 1.002);
+      tone(voice, when, { type: 'sine', frequency: root, duration: 0.24, level: 0.03, attack: 0.016 });
+      tone(voice, when + 0.07, { type: 'sine', frequency: root * 1.5, duration: 0.28, level: 0.024, attack: 0.018 });
+    });
   }
 
   function breath() {
-    try {
-      const audio = ctx;
-      if (!audio) return;
-
-      const now = audio.currentTime + 0.02;
-      const dest = out(rand(-0.12, 0.12));
-      const src = audio.createBufferSource();
-      src.buffer = noiseBuffer;
-      const filter = audio.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 620;
-      filter.Q.value = 0.4;
-      const gain = audio.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.0045, now + 0.28);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(dest);
-      src.start(now, rand(0, 0.2));
-      src.stop(now + 0.8);
-    } catch (err) { /* audio is a bonus */ }
+    play(rand(-0.1, 0.1), false, function (voice, when) {
+      noise(voice, when, { type: 'lowpass', frequency: 580, duration: 0.8, level: 0.004, attack: 0.28 });
+    });
   }
 
   function splash(strength) {
-    try {
-      if (!ctx || !noiseBuffer) return;
-      const now = ctx.currentTime + 0.005;
-      const src = ctx.createBufferSource();
-      src.buffer = noiseBuffer;
-      src.playbackRate.value = 0.72 + Math.random() * 0.2;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(1100, now);
-      filter.frequency.exponentialRampToValueAtTime(340, now + 0.3);
-      filter.Q.value = 0.55;
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.075 * clamp(strength, 0.05, 1), now + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      src.start(now, Math.random() * 0.3);
-      src.stop(now + 0.4);
-    } catch (err) { /* audio is a bonus */ }
+    play(rand(-0.12, 0.12), false, function (voice, when) {
+      noise(voice, when, { frequency: 1000, endFrequency: 340, duration: 0.42, level: 0.065 * clamp(strength, 0.05, 1), rate: rand(0.72, 0.92), attack: 0.03 });
+    });
   }
 
   M.audio = {
     unlock: unlock,
+    createVoice: createVoice,
+    envelope: envelope,
+    getMusicInput: function () { return music; },
     bleat: bleat,
     thud: thud,
     step: step,

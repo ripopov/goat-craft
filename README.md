@@ -19,7 +19,7 @@ index.html          markup only
 css/style.css       page + HUD styling
 vendor/three.min.js three.js r149 (classic UMD build)
 js/core.js          shared config, math helpers, material helper
-js/audio.js         WebAudio bleat, hoofbeats, jump/land, headbutt/stomp, pickup, breath and splash sounds
+js/audio.js         shared WebAudio mixer, smooth sound envelopes, voice cleanup, bleat, hoofbeats, jump/land, headbutt/stomp, pickup, breath and splash sounds
 js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
 js/items.js         ten-slot hotbar, block drops, pickup and item stacking
@@ -34,6 +34,7 @@ js/main.js          bootstraps the scene and owns the render loop
 scripts/build-site.mjs  copies the playable files into _site/
 scripts/check-site.mjs  checks local asset references in the built site
 scripts/test-water.mjs  dependency-free terrain, swimming, input and camera regression tests
+scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
 .github/workflows/ci.yml    syntax, asset and served-page checks
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
@@ -71,8 +72,10 @@ If an animal falls into a pit, it does not dig itself deeper: it breaks open the
 
 All action sounds (hoofbeats, jump, landing, headbutt, stomp, pickup and breathing) are synthesized in-browser; there are no audio files.
 
+Music and effects share a filtered, compressed output with volume headroom. Every note and effect fades in and ends at exact silence, and finished voices release their audio nodes. The wind loop has smooth endpoints; late music timers skip missed beats instead of playing a burst of overdue notes. Rapid music toggles preserve the current fade level and cancel notes queued by the previous playback.
+
 ## CI and hosting
 
-Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera.
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
 
 Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

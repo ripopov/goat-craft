@@ -41,13 +41,13 @@
       <p><b>E / click</b> Mine / place (attacks are automatic)<br><b>1–0</b> Items</p>
       <p><b>F</b> Mouse look <b>Esc</b> Release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
       <p><b>Q</b> Train yourself / nearby animal<br><b>T</b> Strategic view / tower building</p>
-      <p><b>/</b> Console — press again to close <small>Esc also closes</small></p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
+      <p><b>/</b> Console — press again to close</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
     </div>
   </details>
   <button id="upgrade-open" type="button" aria-haspopup="dialog" aria-controls="upgrade-menu"><span aria-hidden="true">↑</span> Upgrades <kbd>Q</kbd></button>
   <dialog id="upgrade-menu" aria-labelledby="upgrade-title" aria-describedby="upgrade-pause">
     <div class="upgrade-shell">
-      <div class="upgrade-topline"><span>HEARTH TRAINING</span><button id="upgrade-close" type="button" aria-label="Close upgrades">Close <kbd>Esc</kbd></button></div>
+      <div class="upgrade-topline"><span>HEARTH TRAINING</span><button id="upgrade-close" type="button" aria-label="Close upgrades">Close <kbd>Q</kbd></button></div>
       <nav class="upgrade-tabs" aria-label="Train a character">
         <button id="upgrade-player-tab" type="button" aria-pressed="true">Your goat</button>
         <button id="upgrade-animal-tab" type="button" aria-pressed="false" hidden>Nearby animal</button>
@@ -57,7 +57,7 @@
       <div id="upgrade-resources" aria-label="Available resources"></div>
       <div id="upgrade-cards"></div>
       <p id="upgrade-message" role="status" aria-live="polite"></p>
-      <footer><span id="upgrade-pause">Game paused · Q or Esc to return</span><span>Stone: dig two blocks down or visit the cyan cave marker.</span></footer>
+      <footer><span id="upgrade-pause">Game paused · Q to return</span><span>Stone: dig two blocks down or visit the cyan cave marker.</span></footer>
     </div>
   </dialog>
   <button id="hi" type="button"><span></span>Say hi</button>
@@ -79,7 +79,7 @@
 
   <div id="dev-console" hidden>
     <section id="dev-console-panel" role="dialog" aria-modal="false" aria-labelledby="dev-console-title">
-      <div id="dev-console-head"><strong id="dev-console-title">Console</strong><span><kbd>/</kbd> open / close · <kbd>Esc</kbd> close</span></div>
+      <div id="dev-console-head"><strong id="dev-console-title">Console</strong><span><kbd>/</kbd> open / close</span></div>
       <div id="dev-console-log" role="log" aria-live="polite"></div>
       <form id="dev-console-form" autocomplete="off">
         <span class="dev-console-prompt" aria-hidden="true">&gt;</span>

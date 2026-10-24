@@ -82,7 +82,7 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **W / S + mouse look** — swim along the view pitch; A / D strafe horizontally. Space / Ctrl override vertical steering.
 - **Left click / tap / E** — mine the block under the center reticle (up to 5.5 units away, aimed in any direction from the camera), or place the selected block on the aimed face instead. Attacks are never bound to input here: the goat fights automatically. P gives an unobstructed first-person view for precise mining.
 - **Right click** — same mine / place action
-- **Q / Upgrades** — open training; selects a visible animal within 5.5 units, otherwise your goat. Switch to your goat using its tab. Q / Esc closes the menu. The world pauses while training.
+- **Q / Upgrades** — open training; selects a visible animal within 5.5 units, otherwise your goat. Switch to your goat using its tab. Q toggles the menu open and closed. The world pauses while training.
 - **1–9 / 0** — select hotbar slot (slot 1 is horns and hooves; broken blocks stack in the other slots)
 - Selected blocks ride on the goat's horns. A hollow mint contour previews placement; coral means the cell is blocked. A gold contour marks the aimed mining block, and a gold animal outline shows which NPC Q will open. Enemies are never outlined for combat: attacks are automatic.
 - **P** — toggle between third-person and first-person (FPS) cameras
@@ -95,7 +95,7 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Music** (top-right button) — toggle the generated folk soundtrack; enabled by default and starts with the first click or keypress permitted by the browser
 - **Sound** (top-right button) — mute/unmute effects independently of music; enabled by default
 - **? Controls** (bottom-left) — open the compact controls guide; Esc closes it
-- **/ — Console** — open a developer console; **/** again (or Esc) closes it, mirroring how Q toggles the upgrades menu and T toggles the strategic view. `money` grants 1000 coins and 1000 of every tower resource; `spawn` starts the next enemy wave immediately; `spawn 10` jumps directly to wave 10 (and lower levels work too). Enter runs a command, and Up / Down recalls history.
+- **/ — Console** — open a developer console; **/** again closes it, mirroring how Q toggles the upgrades menu and T toggles the strategic view. `money` grants 1000 coins and 1000 of every tower resource; `spawn` starts the next enemy wave immediately; `spawn 10` jumps directly to wave 10 (and lower levels work too). Enter runs a command, and Up / Down recalls history.
 
 ### Cannon workshop
 

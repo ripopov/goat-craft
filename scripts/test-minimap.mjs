@@ -40,3 +40,26 @@ test('strategic view can hide the minimap and restore it without invalid canvas 
   canvas.clientWidth = 180; map.update(.2);
   assert.ok(arcs > before); assert.equal(canvas.width, 360);
 });
+
+test('approach warnings appear during preparation and queued spawns, then disappear', () => {
+  let warnings = 0;
+  const drawing = new Proxy({}, { get: (_, key) => key === 'fillText' ? text => { if (text === '!') warnings++; } : () => {} });
+  const canvas = { clientWidth: 132, getContext: () => drawing, setAttribute() {} };
+  const position = { x: 0, z: 0 };
+  const state = { phase: 'prepare', pending: 0, defeated: false, spawnLanes: [{ x: 40, z: 0 }, { x: -40, z: 0 }] };
+  const context = vm.createContext({ window: { devicePixelRatio: 1, Meadow: {
+    goat: { group: { position }, state: { yaw: 0 } }, enemies: { zombies: [], getState: () => state },
+    animals: { list: [] }, hearthTree: { position }
+  } }, document: { getElementById: () => canvas } });
+  vm.runInContext(readFileSync(new URL('../js/minimap.js', import.meta.url), 'utf8'), context);
+  const map = context.window.Meadow.minimap;
+  map.init(); assert.equal(warnings, 2);
+  state.phase = 'combat'; state.pending = 3;
+  map.update(.2); assert.equal(warnings, 4);
+  state.pending = 0;
+  map.update(.2); assert.equal(warnings, 4, 'no warnings after the last squad arrives');
+  state.phase = 'intermission';
+  map.update(.2); assert.equal(warnings, 6, 'next approaches are visible during the build break');
+  state.defeated = true;
+  map.update(.2); assert.equal(warnings, 6, 'defeat stops warning of incoming spawns');
+});

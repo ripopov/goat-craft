@@ -9,12 +9,23 @@
     skeleton: { name: 'Skeleton', unlock: 5, hp: 3, speed: 1.9, reward: 2, bite: 2.6, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
     brute: { name: 'Stone brute', unlock: 8, hp: 7, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 }
   };
-  function waveSize(level) { return Math.min(MAX_ENEMIES, 1 + level * 3); }
+  function waveSize(level) { return Math.min(MAX_ENEMIES, 2 + level * 4); }
+  // Pressure comes from coordinated arrivals before it comes from stat growth.
+  // Short squad gaps leave recovery time without feeding hunters single targets.
+  function wavePlan(level) {
+    const radius = 36 + Math.min(8, Math.max(0, level - 3));
+    // Separate larger squads and new fronts from species introductions (3/5/8).
+    return { size: waveSize(level), squadSize: level < 4 ? 3 : level < 9 ? 4 : 5,
+      memberInterval: Math.max(0.3, 0.6 - (level - 1) * 0.02),
+      squadInterval: Math.max(2.4, 4.2 - (level - 1) * 0.15),
+      lanes: level === 1 ? 1 : level < 6 ? 2 : 3, minRadius: radius, maxRadius: radius + 8 };
+  }
   // Higher waves toughen enemies: health climbs toward 5x and speed toward 3x
   // of their level-1 values, easing in quickly at first and capping slowly.
   function waveDifficulty(wave) {
-    const t = wave <= 1 ? 0 : 1 - Math.exp(-(wave - 1) / 30);
-    return { hp: 1 + 4 * t, speed: 1 + 2 * t };
+    const health = 1 - Math.exp(-Math.max(0, wave - 3) / 30);
+    const speed = 1 - Math.exp(-Math.max(0, wave - 1) / 45);
+    return { hp: 1 + 4 * health, speed: 1 + 2 * speed };
   }
   // Deterministic slots introduce a readable mix and bound the durable units.
   function typeForWave(level, slot) {
@@ -28,6 +39,7 @@
   const zombies = [], fallen = [];
   let scene, world, tree, navigation, mesh, outlineMesh;
   let elapsed = 0, wave = 0, nextWave = 10, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
+  let plan = wavePlan(1), spawnLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
@@ -361,7 +373,7 @@
 
   function updateHud() {
     const state = getState();
-    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated].join('/');
+    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated, state.approaches, state.nextSquad].join('/');
     if (key === hudKey) return;
     hudKey = key;
     if (M.ui && M.ui.setDefense) M.ui.setDefense(state);
@@ -369,11 +381,43 @@
   function getState() {
     return { health: tree ? tree.health : 100, maxHealth: 100, coins: coins, count: zombies.length,
       wave: wave, pending: pending, phase: nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
+      maxEnemies: MAX_ENEMIES, approaches: spawnLanes.map(function (lane) { return lane.label; }).join(' / '),
+      spawnLanes: spawnLanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
+      nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
       nextWave: Number.isFinite(nextWave) ? Math.ceil(Math.max(0, nextWave - elapsed)) : 0, defeated: !!tree && tree.health <= 0 };
+  }
+  function angleTo(node) { return Math.atan2(node.x - tree.position.x, node.z - tree.position.z); }
+  function angleDistance(a, b) { return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))); }
+  function ringNodes() {
+    return navigation.nodes.filter(function (node) {
+      const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
+      return d >= plan.minRadius && d <= plan.maxRadius && world.waterDepthAt(node.x, node.z) < 0.9;
+    });
+  }
+  function prepareSpawns(level) {
+    plan = wavePlan(level);
+    const candidates = ringNodes(), reachable = candidates.filter(function (node) { return Number.isFinite(node.distance); });
+    const pool = reachable.length ? reachable : candidates;
+    spawnLanes = [];
+    for (let i = 0; i < plan.lanes && pool.length; i++) {
+      // The opening comes from the goat's side of the meadow. Later waves
+      // rotate the front and alternate squads between widely separated flanks.
+      const angle = (level - 1) * 2.3999632297 + i * Math.PI * 2 / plan.lanes;
+      let anchor = pool[0];
+      pool.forEach(function (node) {
+        if (angleDistance(angleTo(node), angle) < angleDistance(angleTo(anchor), angle)) anchor = node;
+      });
+      const heading = angleTo(anchor);
+      if (spawnLanes.some(function (lane) { return angleDistance(lane.angle, heading) < 0.6; })) continue;
+      const labels = ['S', 'SE', 'E', 'NE', 'N', 'NW', 'W', 'SW'];
+      const label = labels[(Math.round(heading / (Math.PI / 4)) + 8) % 8];
+      spawnLanes.push({ x: anchor.x, z: anchor.z, angle: heading, label: label });
+    }
   }
   function beginWave(level) {
     wave = level === undefined ? wave + 1 : level;
     pending = waveSize(wave); waveSpawned = 0; nextWave = Infinity;
+    prepareSpawns(wave);
     spawnTimer = 0;
     if (M.audio && M.audio.cue) M.audio.cue('wave');
     if (M.ui) M.ui.showBubble('Wave ' + wave + (wave === 3 ? ' — spiders incoming!' : wave === 5 ? ' — skeletons incoming!' : wave === 8 ? ' — stone brutes incoming!' : ' — protect the Hearth!'));
@@ -409,18 +453,28 @@
     return zombie;
   }
   function spawn() {
-    const candidates = navigation.nodes.filter(function (node) {
-      const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
-      return d >= 54 && d <= 72 && world.waterDepthAt(node.x, node.z) < 0.9 &&
-        !zombies.some(function (z) { return z.position.distanceToSquared(node) < 2.25; });
+    const candidates = ringNodes().filter(function (node) {
+      return !zombies.some(function (z) { return z.position.distanceToSquared(node) < 2.25; });
     });
+    if (!candidates.length) return false;
     // Canopies can be isolated high above the ground. Prefer proven routes so
     // a last enemy on a treetop cannot lock a clear-to-advance wave forever.
     const reachable = candidates.filter(function (node) { return Number.isFinite(node.distance); });
-    if (reachable.length) return !!spawnAt(reachable[Math.floor(Math.random() * reachable.length)], typeForWave(wave, waveSpawned));
+    const pool = reachable.length ? reachable : candidates;
+    const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
+    const heading = lane ? lane.angle : (wave - 1) * 2.3999632297;
+    let closest = Math.PI;
+    pool.forEach(function (node) { closest = Math.min(closest, angleDistance(angleTo(node), heading)); });
+    const local = pool.filter(function (node) { return angleDistance(angleTo(node), heading) <= closest + 0.16; });
+    // Favor comparable route lengths so squad members reach the battle together.
+    if (reachable.length) {
+      const shortest = Math.min.apply(null, local.map(function (node) { return node.distance; }));
+      const group = local.filter(function (node) { return node.distance <= shortest + 4; });
+      return !!spawnAt(group[Math.floor(Math.random() * group.length)], typeForWave(wave, waveSpawned));
+    }
     // A sealed defense must still receive enemies that can chew a real breach.
-    for (let attempt = 0; candidates.length && attempt < 6; attempt++) {
-      const index = Math.floor(Math.random() * candidates.length), node = candidates.splice(index, 1)[0];
+    for (let attempt = 0; local.length && attempt < 6; attempt++) {
+      const index = Math.floor(Math.random() * local.length), node = local.splice(index, 1)[0];
       const path = navigation.breach(node);
       if (!path.length) continue;
       const enemy = spawnAt(node, typeForWave(wave, waveSpawned));
@@ -654,8 +708,10 @@
     if (elapsed >= nextWave) beginWave();
     spawnTimer -= dt;
     if (pending > 0 && spawnTimer <= 0 && zombies.length < MAX_ENEMIES) {
-      if (spawn()) { pending--; waveSpawned++; }
-      spawnTimer = Math.max(0.7, 3.2 - wave * 0.22);
+      if (spawn()) {
+        pending--; waveSpawned++;
+        spawnTimer = waveSpawned % plan.squadSize === 0 ? plan.squadInterval : plan.memberInterval;
+      } else spawnTimer = 0.5; // Retry without consuming a member or skipping a flank.
     }
     zombies.forEach(function (zombie) {
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
@@ -701,7 +757,8 @@
     });
     if (wave > 0 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
       const bonus = Math.min(24, 4 + wave * 2);
-      coins += bonus; nextWave = elapsed + 12;
+      coins += bonus; nextWave = elapsed + 10;
+      prepareSpawns(wave + 1);
       if (M.audio && M.audio.cue) M.audio.cue('clear');
       if (M.ui) M.ui.showBubble('Wave cleared! +' + bonus + ' coins · Q to upgrade');
     }
@@ -713,6 +770,7 @@
     // The shared field must clear the widest species as well as the walkers.
     navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44 });
     navigation.rebuild();
+    prepareSpawns(1);
     mesh = new THREE.InstancedMesh(beveledVoxelGeometry(), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * maxParts);
     mesh.name = 'Enemy horde'; mesh.count = 0; mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.castShadow = true; mesh.receiveShadow = true;
@@ -736,7 +794,7 @@
   }
   M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
     spellTargets: spellTargets, spellHit: spellHit, spellBlast: spellBlast,
-    watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
+    watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, wavePlan: wavePlan, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
     startNextWave: startNextWave,
     startWave: startWave,
     addCoins: function (amount) { if (!Number.isInteger(amount) || amount <= 0) return false; coins += amount; updateHud(); return true; },

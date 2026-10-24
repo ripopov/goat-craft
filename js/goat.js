@@ -227,26 +227,52 @@
     headPivot.add(nostril);
   });
 
-  const eyes = [];
+  const eyes = [], eyeParts = [];
+  // Unlit catchlights stay crisp at night; the iris retains its dark pupil.
+  const eyeShineMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   [-1, 1].forEach(function (sign) {
     const eye = new THREE.Group();
+    eye.name = sign < 0 ? 'goat-eye-left' : 'goat-eye-right';
     eye.position.set(sign * 0.2, 0.065, 0.18);
     eye.rotation.y = sign * 0.62;
     headPivot.add(eye);
 
     const ball = ellipsoid(eyeMat, 0.082, 0.098, 0.056, 12, 10);
+    ball.name = 'eye-iris';
     ball.castShadow = false;
     eye.add(ball);
 
     const pupil = ellipsoid(pupilMat, 0.053, 0.022, 0.016, 10, 7);
+    pupil.name = 'eye-pupil';
     pupil.position.set(0, 0.003, 0.049);
     pupil.castShadow = false;
     eye.add(pupil);
 
     const glint = ellipsoid(furLight, 0.013, 0.013, 0.009, 6, 5);
+    glint.name = 'eye-catchlight';
     glint.position.set(0.019, 0.03, 0.056);
     glint.castShadow = false;
     eye.add(glint);
+
+    const extraShine = [];
+    for (let i = 0; i < 2; i++) {
+      const shine = ellipsoid(eyeShineMat, 0.007 - i * 0.002, 0.007 - i * 0.002, 0.005, 6, 5);
+      shine.position.set(i === 0 ? -0.022 : 0.032, i === 0 ? -0.021 : -0.01, 0.061);
+      shine.castShadow = shine.receiveShadow = false;
+      shine.visible = false;
+      eye.add(shine);
+      extraShine.push(shine);
+    }
+    const star = new THREE.Group();
+    star.name = 'eye-star-shine';
+    star.position.set(0.019, 0.03, 0.067);
+    for (let i = 0; i < 2; i++) {
+      const ray = new THREE.Mesh(new THREE.BoxGeometry(0.043, 0.005, 0.003), eyeShineMat);
+      ray.rotation.z = i * Math.PI / 2;
+      star.add(ray);
+    }
+    star.visible = false;
+    eye.add(star);
 
     const brow = ellipsoid(earFur, 0.09, 0.025, 0.035, 10, 6);
     brow.position.set(0, 0.095, 0.027);
@@ -257,6 +283,7 @@
     eye.add(cheek);
 
     eyes.push(eye);
+    eyeParts.push({ iris: ball, pupil: pupil, glint: glint, extraShine: extraShine, star: star });
   });
 
   // ears
@@ -397,6 +424,7 @@
   // gait for a cartoon wheel spin.
   const speedFx = M.styleFx.makeSpeedStyle(THREE);
   const hornFx = M.styleFx.makeHornStyle(THREE);
+  const neckFx = M.styleFx.makeNeckStyle(THREE);
   const HORN_TIP = new THREE.Vector3(0, 0.26, -0.37); // far end of makeHorn's curve
   const GOAT_HORN_BAND = new THREE.Vector3(0, 0.07, -0.03);
   function applySpeedStyle(level) {
@@ -406,6 +434,26 @@
     const ctx = { horns: [], defaultMat: hornMat, scale: 1 };
     for (let i = 0; i < horns.length; i++) ctx.horns.push({ mesh: horns[i], tip: HORN_TIP, band: GOAT_HORN_BAND });
     hornFx.apply(level, ctx);
+  }
+  function applyNeckStyle(level) {
+    neckFx.apply(level, { neck: neck, headPivot: headPivot });
+    // Quick strikes changes the goat's gaze alongside its neck: teal, gold,
+    // then violet, with increasingly glossy irises and more catchlights.
+    const tier = neckFx.level, style = M.styleFx.neckStyle[tier];
+    eyeMat.color.setHex(style ? style.color : 0xe8c078);
+    eyeMat.emissive.setHex(style ? style.color : 0x000000);
+    eyeMat.emissiveIntensity = tier * tier * 0.1;
+    eyeMat.roughness = tier ? 0.28 - tier * 0.06 : 0.35;
+    for (let i = 0; i < eyeParts.length; i++) {
+      const eye = eyeParts[i];
+      eye.iris.scale.set(0.082 * (1 + tier * 0.035), 0.098 * (1 + tier * 0.025), 0.056);
+      eye.pupil.scale.set(0.053 * (1 - tier * 0.07), 0.022 * (1 - tier * 0.06), 0.016);
+      eye.glint.material = tier ? eyeShineMat : furLight;
+      eye.glint.scale.set(0.013 * (1 + tier * 0.18), 0.013 * (1 + tier * 0.18), 0.009);
+      eye.extraShine[0].visible = tier >= 2;
+      eye.extraShine[1].visible = tier >= 3;
+      eye.star.visible = tier >= 3;
+    }
   }
 
   // Damping toward a gait pose normally keeps hips in a small arc. After a long
@@ -880,6 +928,13 @@
       }
     }
 
+    // Headbutts take priority when both automatic attacks overlap. Stomps
+    // use their own impact clock once the headbutt animation finishes.
+    const neckAttack = s.headbutt >= 0
+      ? neckFx.animate(s.headbutt, 0.12, 0.34, M.config.reducedMotion)
+      : neckFx.animate(s.stomp, STOMP_IMPACT, STOMP_END, M.config.reducedMotion);
+    if (neckFx.level > 0) buttPose = neckAttack.lunge;
+
     s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
     s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
@@ -974,7 +1029,10 @@
     const headBob = (walkHeadBob * (1 - run) + runHeadBob * run) * (1 - swim) + Math.sin(s.swimPhase * 2 + 0.4) * 0.018 * swim;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
     headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0) - speedLevel * 0.03, 10, dt);
-    neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16 - speedLevel * 0.04, 8, dt);
+    const neckResponse = neckFx.level > 0 ? 22 + neckFx.level * 6 : 8;
+    neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16 - speedLevel * 0.04, neckResponse, dt);
+    neckPivot.rotation.y = damp(neckPivot.rotation.y, neckAttack.yaw, neckResponse, dt);
+    neckPivot.rotation.z = damp(neckPivot.rotation.z, neckAttack.roll, neckResponse, dt);
 
     // Automatic lunges only fight; mining and placing live on the click action.
     if (headbuttPending) {
@@ -1167,8 +1225,10 @@
     greet: greet,
     applySpeedStyle: applySpeedStyle,
     applyHornStyle: applyHornStyle,
+    applyNeckStyle: applyNeckStyle,
     get speedStyle() { return speedFx.level; },
     get hornStyle() { return hornFx.level; },
+    get neckStyle() { return neckFx.level; },
     castSpellAt: castSpellAt,
     advanceSpellFx: updateSpellFx,
     intersectsBlock: intersectsBlock,

@@ -2336,7 +2336,9 @@
     // rims at tier 3, and charging elemental horns that pulse.
     const speedLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'move') : 0;
     const hornLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
+    const cadenceLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'cadence') : 0;
     if (animal.speedFx) animal.speedFx.apply(speedLevel, animal.speedCtx);
+    if (animal.neckFx) animal.neckFx.apply(cadenceLevel, animal.neckCtx);
     if (animal.hornFx) {
       animal.hornFx.apply(hornLevel, animal.hornCtx);
       animal.hornFx.pulse(t);
@@ -2355,9 +2357,10 @@
     parts.chest.scale.x = parts.chest.userData.restScale * breath;
 
     const walkLift = moving ? Math.sin(s.walkPhase * 2) * 0.04 * stride : 0;
+    const neckAttack = animal.neckFx ? animal.neckFx.animate(s.strikeTime, 0.16, 0.45, M.config.reducedMotion) : null;
     const actionLunge = (s.mode === 'break' || s.mode === 'place') && s.action
       ? actionPose(s.action.time, 0.22, s.action.duration)
-      : s.strikeTime >= 0 ? actionPose(s.strikeTime, 0.16, 0.45) : 0;
+      : neckAttack ? neckAttack.lunge : s.strikeTime >= 0 ? actionPose(s.strikeTime, 0.16, 0.45) : 0;
     parts.rig.position.z = actionLunge * 0.13;
     const terrainGrab = s.action && s.action.kind === 'break' && s.action.target.type === 'terrain'
       ? actionLunge
@@ -2377,7 +2380,10 @@
       parts.neckBaseY - grazePose * def.grazeDrop, 5.5, dt);
     parts.neckPivot.position.z = damp(parts.neckPivot.position.z,
       parts.neckBaseZ + grazePose * 0.1, 5.5, dt);
-    parts.neckPivot.rotation.x = damp(parts.neckPivot.rotation.x, neckTarget, 8, dt);
+    const neckResponse = cadenceLevel > 0 ? 22 + cadenceLevel * 6 : 8;
+    parts.neckPivot.rotation.x = damp(parts.neckPivot.rotation.x, neckTarget, neckResponse, dt);
+    parts.neckPivot.rotation.y = damp(parts.neckPivot.rotation.y, neckAttack ? neckAttack.yaw : 0, neckResponse, dt);
+    parts.neckPivot.rotation.z = damp(parts.neckPivot.rotation.z, neckAttack ? neckAttack.roll : 0, neckResponse, dt);
 
     let headYaw = moving ? Math.sin(t * 0.9 + animal.seed) * 0.04 : Math.sin(t * 0.5 + animal.seed) * 0.1;
     headYaw += headSway;
@@ -2945,6 +2951,7 @@
       seed: rand(0, Math.PI * 2),
       speedFx: M.styleFx ? M.styleFx.makeSpeedStyle(THREE) : null,
       hornFx: M.styleFx ? M.styleFx.makeHornStyle(THREE) : null,
+      neckFx: M.styleFx ? M.styleFx.makeNeckStyle(THREE) : null,
       speedCtx: null,
       hornCtx: null,
       state: null
@@ -2952,6 +2959,7 @@
     const styleScale = STYLE_SCALES[animal.species] || { leg: 0.9, horn: 0.6 };
     animal.speedCtx = { legs: parts.legs, tailPivot: parts.tailPivot, scale: styleScale.leg };
     animal.hornCtx = { horns: parts.horns, defaultMat: parts.mats.horn, scale: styleScale.horn };
+    animal.neckCtx = { neck: parts.neck, headPivot: parts.headPivot };
 
     animal.state = {
       mode: 'idle',

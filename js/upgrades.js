@@ -6,7 +6,7 @@
   const MAX_LEVEL = 3, TALK_RANGE = 5.5;
   const definitions = {
     move: { name: 'Fleet hooves', description: 'Walk, gallop and swim faster.', material: 'log', coins: [8, 20, 36], blocks: [2, 4, 6] },
-    cadence: { name: 'Quick strikes', description: 'Recover faster between headbutts and stomps.', material: 'stone', coins: [10, 24, 42], blocks: [2, 4, 6] },
+    cadence: { name: 'Quick strikes', description: 'Refit your neck: braced jab, spring snap, then plated piston strike. Faster windup and recovery at every tier.', material: 'stone', coins: [10, 24, 42], blocks: [2, 4, 6] },
     reach: { name: 'Long horns', description: 'Reach enemies farther away. Walls still stop attacks.', material: 'log', coins: [8, 20, 36], blocks: [2, 4, 6] },
     power: { name: 'Heavy horns', description: 'Deal more damage with every strike.', material: 'stone', coins: [12, 28, 48], blocks: [3, 5, 8] },
     craft: { name: 'Practiced builder', description: 'Quarry, place and prepare the next job faster.', material: 'stone', coins: [8, 18, 32], blocks: [2, 4, 6] }
@@ -32,7 +32,8 @@
   }
   function effect(target, key, rank) {
     if (key === 'move') return '+' + Math.round(rank * 100 / 3) + '% movement';
-    if (key === 'cadence') return '+' + Math.round(rank * 100 / 3) + '% attack speed';
+    if (key === 'cadence') return '+' + Math.round(rank * 100 / 3) + '% attack speed' +
+      (rank > 0 ? ' · ' + M.styleFx.neckStyle[rank].name : '');
     if (key === 'reach') {
       if (rank <= 0) return 'melee headbutts';
       if (rank === 1) return 'electric bolt · 9 blocks, nearest enemy';
@@ -69,6 +70,10 @@
     }
     if (target === player && key === 'reach' && M.goat && M.goat.applyHornStyle) {
       M.goat.applyHornStyle(levels[key]);
+    }
+    if (key === 'cadence') {
+      if (target === player && M.goat && M.goat.applyNeckStyle) M.goat.applyNeckStyle(levels[key]);
+      else if (target.neckFx) target.neckFx.apply(levels[key], target.neckCtx);
     }
     if (M.audio && M.audio.pickup) M.audio.pickup();
     return true;

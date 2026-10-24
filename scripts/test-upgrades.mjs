@@ -230,6 +230,116 @@ test('trained animals wear the same visible upgrades as the player goat', () => 
   assert.equal(builder.hornFx.level, 0, 'builders never train horns and keep plain antlers');
 });
 
+test('each Quick strikes purchase immediately refits only the trained neck and releases old fittings', () => {
+  const { M, THREE } = training(); supplies(M);
+  const goatNeck = M.goat.headPivot.parent.children.find(node => node.geometry?.type === 'CylinderGeometry');
+  const hunters = M.animals.list.filter(animal => animal.role === 'hunter');
+  const models = [{ neck: goatNeck, head: M.goat.headPivot, target: M.upgrades.player },
+    ...hunters.map(animal => ({ neck: animal.parts.neck, head: animal.parts.headPivot, target: animal }))];
+  const builder = M.animals.list.find(animal => animal.role === 'builder');
+  const builderScale = builder.parts.neck.scale.clone();
+  const goatEyes = ['goat-eye-left', 'goat-eye-right'].map(name => M.goat.headPivot.getObjectByName(name));
+  let previousShine = 0;
+  for (const { neck, head, target } of models) {
+    let previousLength = head.position.y;
+    for (let tier = 1; tier <= 3; tier++) {
+      const oldFittings = neck.getObjectByName('quick-strikes-' + (tier - 1));
+      let disposed = 0, owned = 0;
+      oldFittings?.traverse(node => {
+        if (node.geometry) { owned++; node.geometry.addEventListener('dispose', () => disposed++); }
+        if (node.material) { owned++; node.material.addEventListener('dispose', () => disposed++); }
+      });
+      train(M, target, 'cadence', 1);
+      assert.equal(target === M.upgrades.player ? M.goat.neckStyle : target.neckFx.level, tier);
+      assert.ok(neck.getObjectByName('quick-strikes-' + tier), 'new fittings appear before the next simulation tick');
+      assert.ok(head.position.y > previousLength, 'every tier changes the actual neck silhouette');
+      assert.ok(neck.scale.x > 1 && neck.scale.y > 1);
+      if (oldFittings) { assert.equal(oldFittings.parent, null); assert.equal(disposed, owned); }
+      assert.match(M.upgrades.offer(target, 'cadence').current, new RegExp(M.styleFx.neckStyle[tier].name));
+      if (target === M.upgrades.player) {
+        for (const eye of goatEyes) {
+          const iris = eye.getObjectByName('eye-iris');
+          assert.ok(iris.material.color.equals(new THREE.Color(M.styleFx.neckStyle[tier].color)), 'eyes match the neck tier immediately');
+          assert.ok(iris.material.emissiveIntensity > previousShine, 'each tier adds more shine');
+          assert.equal(eye.getObjectByName('eye-catchlight').material.type, 'MeshBasicMaterial', 'catchlights shine even at night');
+          assert.equal(eye.getObjectByName('eye-star-shine').visible, tier === 3);
+          assert.equal(eye.getObjectByName('eye-pupil').material.emissive.getHex(), 0, 'the pupil stays dark and readable');
+        }
+        previousShine = goatEyes[0].getObjectByName('eye-iris').material.emissiveIntensity;
+      }
+      previousLength = head.position.y;
+    }
+  }
+  assert.ok(builder.parts.neck.scale.equals(builderScale), 'builders keep their original neck');
+  assert.equal(builder.neckFx.level, 0);
+  assert.equal(M.upgrades.buy(builder, 'cadence'), false);
+});
+
+test('Quick strikes tiers have distinct normalized motion, synchronized impacts and bounded recovery', () => {
+  const { M, THREE } = training();
+  const profiles = [];
+  for (let tier = 1; tier <= 3; tier++) {
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(.17, .26, .58), M.std(0xffffff));
+    neck.position.y = .25;
+    const headPivot = new THREE.Group(); headPivot.position.y = .55;
+    const fx = M.styleFx.makeNeckStyle(THREE);
+    fx.apply(tier, { neck, headPivot });
+    const restLength = headPivot.position.y;
+    // The player headbutt, stomp and NPC hunter use different combat clocks.
+    for (const [impact, end] of [[.12, .34], [.36, .54], [.16, .45]]) {
+      const windup = { ...fx.animate(impact * .5, impact, end, false) };
+      assert.equal(fx.animate(impact, impact, end, false).lunge, 1, 'the strongest pose coincides with damage');
+      const extended = headPivot.position.y;
+      fx.animate(impact, impact, end, true);
+      assert.ok(Math.abs(headPivot.position.y - restLength) < Math.abs(extended - restLength), 'reduced motion limits extension');
+      const quiet = fx.animate(impact * .5, impact, end, true);
+      assert.ok(quiet.yaw === 0 && quiet.roll === 0, 'reduced motion removes sideways twists');
+      const recovery = { ...fx.animate(impact + (end - impact) * .125, impact, end, false) };
+      if (impact === .12) profiles.push([windup.lunge, windup.yaw, recovery.lunge, recovery.roll]);
+      for (let i = 0; i <= 120; i++) {
+        fx.animate(end * i / 120, impact, end, false);
+        assert.ok(Number.isFinite(neck.scale.x + neck.scale.y + headPivot.position.y));
+        assert.ok(headPivot.position.y > .4 && headPivot.position.y < 1, 'extension stays within the rig');
+        assert.ok(Math.abs(headPivot.position.y / .55 - neck.position.y / .25) < 1e-9, 'head stays attached to the extending neck');
+      }
+      fx.animate(-1, impact, end, false);
+      assert.equal(headPivot.position.y, restLength, 'no drift after recovery');
+    }
+    fx.dispose();
+    assert.equal(headPivot.position.y, .55);
+    assert.equal(neck.scale.y, 1);
+  }
+  assert.equal(new Set(profiles.map(profile => JSON.stringify(profile))).size, 3, 'tiers change the motion shape, beyond playing faster');
+});
+
+test('player headbutts, stomps and both hunter species drive their upgraded neck rigs', () => {
+  const { M, controls } = training(); supplies(M); controls.firstPerson = true;
+  M.goat.group.position.set(15, 14, 15);
+  for (let tier = 1; tier <= 3; tier++) {
+    train(M, M.upgrades.player, 'cadence', 1);
+    const rate = M.upgrades.stats().rate, rest = M.goat.headPivot.position.y;
+    Object.assign(M.goat.state, { headbutt: .06 - .001 * rate, stomp: -1, headbuttCooldown: 10, stompCooldown: 10 });
+    M.goat.update(.001, 0);
+    const jab = M.goat.headPivot.position.y;
+    assert.notEqual(jab, rest, 'headbutt animates neck extension');
+    Object.assign(M.goat.state, { headbutt: -1, stomp: .18 - .001 * rate });
+    M.goat.update(.001, 0);
+    assert.equal(M.goat.headPivot.position.y, jab, 'stomp windup uses the same tier motion on its own clock');
+  }
+  M.goat.group.position.set(-20, 14, -20);
+  for (const hunter of M.animals.list.filter(animal => animal.role === 'hunter')) {
+    const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 18 });
+    for (let tier = 1; tier <= 3; tier++) {
+      train(M, hunter, 'cadence', 1);
+      const rest = hunter.parts.headPivot.position.y, rate = M.upgrades.stats(hunter).rate;
+      hunter.group.position.set(15, 14, 15);
+      Object.assign(hunter.state, { mode: 'hunt', huntTarget: zombie, strikeTime: .08 - .001 * rate, attackCooldown: 10 });
+      M.animals.update(.001, 0);
+      assert.notEqual(hunter.parts.headPivot.position.y, rest, hunter.species + ' animates its trained neck');
+    }
+  }
+});
+
 test('builder work training accelerates the actual action and its block edit', () => {
   const { M, animal } = training(isolatedAnimal()); supplies(M); train(M, animal, 'craft');
   animal.group.position.set(15, 14, 15);

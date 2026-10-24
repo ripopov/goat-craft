@@ -34,20 +34,10 @@
       target = next;
       if (target) shells(target).forEach(function (shell) { shell.visible = true; });
     }
-    const player = M.goat.group.position, stats = M.upgrades.stats(), carrying = M.items.hasSelectedBlock();
-    const levelOk = typeof M.upgrades.level === 'function';
-    const reachLevel = levelOk ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
-    // Elemental tiers highlight every enemy the current strike would catch,
-    // with no aiming cone; untrained tiers keep the melee arc highlight.
-    const spellTargets = reachLevel >= 1 && M.enemies.spellTargets
-      ? M.enemies.spellTargets(player, stats.reach, Infinity) : null;
-    const direction = new THREE.Vector3(); M.goat.aimCamera.getWorldDirection(direction);
-    const yaw = Math.atan2(direction.x, direction.z);
-    M.enemies.highlight(function (enemy) {
-      if (spellTargets) return spellTargets.includes(enemy);
-      return (!carrying && M.enemies.canHit(enemy, player, yaw, false, 2.8)) ||
-        (M.goat.state.grounded && M.enemies.canHit(enemy, player, yaw, true, 3.1));
-    });
+    const player = M.goat.group.position, carrying = M.items.hasSelectedBlock();
+    // Attacks are fully automatic, so no enemy is ever highlighted for combat;
+    // the outline pool still exists for the shared placement and mining HUD.
+    M.enemies.highlight(function () { return false; });
     const placement = carrying ? M.items.placementTarget() : null;
     ghost.visible = !!placement;
     if (placement) {

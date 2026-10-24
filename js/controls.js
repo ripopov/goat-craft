@@ -300,7 +300,7 @@
     const hint = document.getElementById('hint');
     if (!hint) return;
     hint.innerHTML = active
-      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click</b> headbutt / place &nbsp;·&nbsp; <b>right click</b> stomp &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>Esc</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click / E</b> mine or place &nbsp;·&nbsp; attacks fire automatically &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
       : defaultHint;
   }
 

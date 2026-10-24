@@ -643,18 +643,18 @@
   // aimed spell finds no enemies (which lets mining and placing still work).
   function castSpell(reachLevel) {
     if (!M.enemies || !M.enemies.spellTargets || !M.enemies.spellHit) return false;
-    const stats = M.upgrades ? M.upgrades.stats() : { damage: 0 };
+    const stats = M.upgrades ? M.upgrades.stats() : { damage: 0, reach: 0 };
     const dmg = 1 + stats.damage;
+    const range = stats.reach; // player reach is the spell range: 9 / 12 / 30
     const p = goat.position;
     if (reachLevel >= 3) {
-      const targets = M.enemies.spellTargets(p, 10, 1);
+      const targets = M.enemies.spellTargets(p, range, 1);
       if (!targets.length) return false;
       const aim = new THREE.Vector3().copy(targets[0].position); aim.y += 0.8;
       spawnFireball(muzzlePos(), aim, dmg);
       if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'shell');
       return true;
     }
-    const range = reachLevel === 1 ? 3 : 4;
     const targets = M.enemies.spellTargets(p, range, reachLevel === 1 ? 1 : 3);
     if (!targets.length) return false;
     let from = muzzlePos();
@@ -668,6 +668,31 @@
     }
     if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'bolt');
     return true;
+  }
+  // Returns the nearest enemy the goat could actually hit within range; this
+  // is the trigger for automatic attacks and works for melee and spells alike.
+  function autoTarget(range) {
+    if (!M.enemies || !M.enemies.spellTargets || !range) return null;
+    const targets = M.enemies.spellTargets(goat.position, range, 1);
+    return targets.length ? targets[0] : null;
+  }
+  // Player-held action: clicks and E only interact with blocks now. Carrying a
+  // selected block places it; otherwise mine the aimed voxel (or the block
+  // dead ahead), exactly like the old headbutt fallback but without the lunge.
+  function mine() {
+    const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
+    if (carrying) {
+      if (M.items.placeSelectedBlock()) recoverOverlap();
+      return;
+    }
+    if (M.targeting) {
+      const hit = M.targeting.aim(cameraRef, goat.position);
+      if (hit) {
+        worldRef.breakBlockAt(hit.bx, hit.by, hit.bz);
+        return;
+      }
+    }
+    if (worldRef && worldRef.breakBlockInFront) worldRef.breakBlockInFront(headPivot);
   }
   function updateSpellFx(dt, t) {
     for (let i = spellFx.length - 1; i >= 0; i--) {
@@ -713,6 +738,9 @@
   }
 
   const GRAVITY = 26;
+  // All attack ranges are tripled (2.8 headbutt, 3.1 stomp). The player never
+  // aims a lunge anymore: attacks fire themselves at whatever is in reach.
+  const MELEE_RANGE = 8.4, STOMP_RANGE = 9.3;
   const JUMP_SPEED = 12.2;
   const MAX_JUMPS = 3;
   const STEP_CLEARANCE = 0.06;
@@ -945,6 +973,29 @@
       if (s.stomp > STOMP_END) s.stomp = -1;
     }
 
+    // ---- automatic attacks ----
+    // The goat fights by itself (Vampire Survivors / Megabonk style) whenever
+    // an enemy is in reach, but it never steers the player: bolts and fireballs
+    // auto-aim at the nearest enemy, and melee stomps strike around your own
+    // facing, which stays fully mouse-controlled. Holding a block to place
+    // keeps the goat out of a fight.
+    const holdsBlock = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
+    if (!holdsBlock && !(M.strategy && M.strategy.active)) {
+      const headbuttRange = reachLevel >= 1 ? upgrades.reach : MELEE_RANGE;
+      if (s.headbutt < 0 && s.headbuttCooldown <= 0) {
+        const target = autoTarget(headbuttRange);
+        const projectile = reachLevel >= 1; // elemental strikes aim themselves
+        // Melee headbutts only swing at enemies inside the facing arc; the
+        // player decides direction by looking, never by the goat turning.
+        const aimed = target && (projectile || M.enemies.canHit(target, goat.position, s.yaw, false, headbuttRange));
+        if (aimed) startHeadbutt();
+      }
+      if (s.stomp < 0 && s.stompCooldown <= 0 && s.grounded) {
+        // The stomp pounds everything in range all around; it needs no aim.
+        if (autoTarget(STOMP_RANGE)) startStomp();
+      }
+    }
+
     s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
     s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
@@ -1041,7 +1092,7 @@
     headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0) - speedLevel * 0.03, 10, dt);
     neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16 - speedLevel * 0.04, 8, dt);
 
-    // With a block on the horns, the same lunge places it instead of smashing.
+    // Automatic lunges only fight; mining and placing live on the click action.
     if (headbuttPending) {
       s.headbuttHit = true;
       const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
@@ -1051,20 +1102,16 @@
         }
       } else if (reachLevel >= 1 && castSpell(reachLevel)) {
         // Long horns channel an elemental strike instead of a melee lunge.
-      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: 2.8, damage: 1 + upgrades.damage, maxTargets: 3 })) {
+      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: MELEE_RANGE, damage: 1 + upgrades.damage, maxTargets: 3 })) {
         audioRef.thud();
-      } else if (M.targeting) {
-        const hit = M.targeting.aim(cameraRef, goat.position);
-        if (hit) worldRef.breakBlockAt(hit.bx, hit.by, hit.bz);
-      } else { worldRef.breakBlockInFront(headPivot); }
+      }
     }
 
     if (stompPending) {
       s.stompHit = true;
-      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true, { range: 3.1, damage: 2 + upgrades.damage, maxTargets: 8 });
-      const broke = !hit && s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
-      audioRef.stomp(broke || hit);
-      if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
+      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true, { range: STOMP_RANGE, damage: 2 + upgrades.damage, maxTargets: 8 });
+      // Stomps are automatic too, so they never chew the ground they miss.
+      audioRef.stomp(hit);
     }
 
     // Soft footfalls while moving, and a quiet breath while resting.
@@ -1234,6 +1281,7 @@
     init: init,
     update: updateGoat,
     jump: jump,
+    mine: mine,
     startHeadbutt: startHeadbutt,
     startStomp: startStomp,
     greet: greet,

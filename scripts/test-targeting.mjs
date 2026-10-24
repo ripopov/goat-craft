@@ -11,19 +11,19 @@ function fixture() {
 }
 function advance(M, seconds) { for (let i = 0; i < Math.round(seconds * 60); i++) M.goat.update(1 / 60, i / 60); }
 
-test('camera aims and the real headbutt mines in four directions, above and below', () => {
+test('camera aims and the mine action destroys blocks in four directions, above and below', () => {
   const { M, camera } = fixture(), w = M.world;
   for (const [bx,by,bz] of [[9,7,7],[5,7,7],[7,7,9],[7,7,5],[7,9,7]]) {
     assert.ok(w.placeBlock('stone', bx,by,bz));
     camera.lookAt((bx+.5)*2,(by+.5)*2,(bz+.5)*2);
     const hit = M.targeting.aim(camera,M.goat.group.position);
     assert.ok(hit); assert.deepEqual([hit.bx,hit.by,hit.bz],[bx,by,bz]);
-    M.goat.startHeadbutt(); advance(M,.6);
+    M.goat.mine();
     assert.equal(w.blockInfoAt(bx,by,bz),null, 'the aimed voxel was destroyed');
   }
   camera.lookAt(15,10,15);
   assert.equal(M.targeting.aim(camera,M.goat.group.position).by,6);
-  M.goat.startHeadbutt(); advance(M,.2);
+  M.goat.mine();
   assert.equal(w.blockInfoAt(7,6,7),null, 'look down to mine the floor');
 });
 
@@ -50,16 +50,16 @@ test('mining cannot reach distant blocks or pass through an intervening wall', (
   assert.equal(hit.bz,8,'nearest wall intercepts the ray');
 });
 
-test('Q outline selects exactly the animal that opens for upgrades, and enemies use combat range checks', () => {
+test('Q outline selects exactly the animal that opens for upgrades; combat targets are never highlighted', () => {
   const { M, camera, scene } = fixture(), p=M.goat.group.position;
   M.animals.list.forEach((a,i)=>a.group.position.set(-20+i*3,14,-18));
   const animal=M.animals.list[0]; animal.group.position.set(18,14,15);
   camera.lookAt(15,15,25);
-  const enemy=M.enemies.spawnAt({x:15,y:14,z:17}); M.enemies.update(0);
+  const enemy = M.enemies.spawnAt({x:15,y:14,z:17}); M.enemies.update(0);
   M.highlights.update(); assert.equal(M.highlights.animal,M.upgrades.nearest());
   const shells=[]; animal.group.traverse(node=>{if(node.name==='Q upgrade target')shells.push(node);});
   assert.ok(shells.length>0&&shells.every(node=>node.visible));
-  assert.ok(scene.getObjectByName('Enemies in attack range').count>0);
+  assert.equal(scene.getObjectByName('Enemies in attack range').count,0,'attacks are automatic: no enemy is outlined for combat');
   enemy.position.set(25,14,25); animal.group.position.set(30,14,15); M.enemies.update(0); M.highlights.update();
   assert.equal(M.highlights.animal,null); assert.ok(shells.every(node=>!node.visible));
   assert.equal(scene.getObjectByName('Enemies in attack range').count,0);

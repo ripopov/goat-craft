@@ -14,12 +14,12 @@
   function valid(target) { return target === player || !!(M.animals && M.animals.list.includes(target)); }
   function keys(target) { return target !== player && target.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']; }
   function level(target, key) { const levels = training.get(target); return levels ? levels[key] || 0 : 0; }
-  // At tier 3: movement and attack speed double, headbutt damage triples (1
-  // base). Attack reach is replaced for the player by elemental strikes with
-  // fixed ranges: tier 1 an electric bolt, tier 2 a chaining arc, tier 3 a
-  // fireball. Hunters keep the old melee reach (2.8 base headbutt range).
-  const REACH_BASE = 2.8, DAMAGE_BASE = 1;
-  const SPELL_RANGES = [0, 3, 4, 10];
+  // All attack ranges are tripled: the default headbutt reaches 2.8*3 and the
+  // spell tiers are 3/4/10 blocks scaled to 9/12/30. Heavy horns still add
+  // damage to every hit; hunters keep their melee reach (base 2.8 headbutt
+  // range, also tripled).
+  const REACH_BASE = 8.4, DAMAGE_BASE = 1;
+  const SPELL_RANGES = [0, 9, 12, 30];
   const SPELL_DESCRIPTION = 'Your horns channel elemental strikes: an electric bolt, then a chaining arc, then a fireball. ' +
     'Walls stop the bolt; the fireball bursts on impact with a 3-block blast.';
   function stats(target) {
@@ -36,9 +36,9 @@
     if (key === 'reach') {
       if (target === player) {
         if (rank <= 0) return 'melee headbutts';
-        if (rank === 1) return 'electric bolt · 3 blocks, nearest enemy';
-        if (rank === 2) return 'electric chain · 4 blocks, up to 3 foes';
-        return 'fireball · 10 blocks, 3-block blast';
+        if (rank === 1) return 'electric bolt · 9 blocks, nearest enemy';
+        if (rank === 2) return 'electric chain · 12 blocks, up to 3 foes';
+        return 'fireball · 30 blocks, 3-block blast';
       }
       return '+' + (rank * REACH_BASE * 2 / 3).toFixed(1) + ' reach';
     }

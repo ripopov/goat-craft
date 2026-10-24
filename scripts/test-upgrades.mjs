@@ -79,17 +79,17 @@ test('movement and cadence upgrades change the real player controller and timed 
   const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 17 });
   M.goat.startHeadbutt(); advancePlayer(M, .1);
   assert.equal(zombie.hp, 1, 'faster windup deals its impact before the base 120ms');
-  advancePlayer(M, .27); assert.equal(M.goat.state.headbuttCooldown, 0, 'faster recovery permits another strike');
+  advancePlayer(M, .27); assert.equal(zombie.hp, 0, 'the automatic follow-up strike lands after the faster recovery');
 });
 
 test('reach and damage upgrades scale real electric strikes', () => {
   const { M, controls } = training(); supplies(M);
   controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
-  const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 18.5 });
+  const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 25 });
   M.goat.startHeadbutt(); advancePlayer(M, .6); assert.equal(zombie.hp, 2, 'out of base reach');
   train(M, M.upgrades.player, 'reach', 2); train(M, M.upgrades.player, 'power', 2);
   M.goat.startHeadbutt(); advancePlayer(M, .2);
-  assert.equal(M.enemies.zombies.includes(zombie), false, 'the 4-block electric chain kills in one strike');
+  assert.equal(M.enemies.zombies.includes(zombie), false, 'the 12-block electric chain kills in one strike');
   assert.equal(M.enemies.getState().coins, 1000 - 8 - 20 - 12 - 28, 'kill is only a physical pickup');
   assert.equal(M.items.drops.filter(drop => drop.userData.drop.kind === 'coin').length, 1);
 });
@@ -99,7 +99,7 @@ test('electric bolt targets the nearest enemy in range from any direction, one z
   controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
   const behind = M.enemies.spawnAt({ x: 15, y: 14, z: 12.4 });  // 2.6 away, behind the goat
   const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 17.8 });   // 2.8 away, ahead
-  train(M, M.upgrades.player, 'reach', 1); // tier 1: 3 blocks, nearest, single target
+  train(M, M.upgrades.player, 'reach', 1); // tier 1: 9 blocks, nearest, single target
   M.goat.startHeadbutt(); advancePlayer(M, .2);
   assert.equal(behind.hp, 1, 'the nearest enemy is struck even though the goat faces away');
   assert.equal(ahead.hp, 2, 'tier 1 strikes exactly one enemy');
@@ -118,17 +118,51 @@ test('tier 2 electric chain hits up to three enemies inside four blocks', () => 
   assert.equal(far.hp, 2, 'beyond four blocks is untouched');
 });
 
-test('tier 3 fireball reaches ten blocks and blasts everything in a 3-block radius', () => {
+test('tier 3 fireball reaches far and blasts everything in a 3-block radius', () => {
   const { M, controls } = training(); supplies(M);
   controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
-  const main = M.enemies.spawnAt({ x: 15, y: 14, z: 23.2 });   // 8.2 blocks, the nearest target
-  const friend = M.enemies.spawnAt({ x: 15, y: 14, z: 24.4 }); // ~1.2 from impact, in the blast
-  const far = M.enemies.spawnAt({ x: 15, y: 14, z: 27 });      // out of target range and blast radius
+  const main = M.enemies.spawnAt({ x: 15, y: 14, z: 26 });    // 11 away: far beyond melee and stomp
+  const friend = M.enemies.spawnAt({ x: 15, y: 14, z: 27.4 }); // ~1.4 from impact, in the blast
+  const far = M.enemies.spawnAt({ x: 15, y: 14, z: 30 });      // out of blast radius
   train(M, M.upgrades.player, 'reach', 3);
-  M.goat.startHeadbutt(); advancePlayer(M, .9); // windup + ~0.5s flight
-  assert.equal(main.hp, 1, 'fireball flies up to ten blocks to the nearest enemy');
+  M.goat.startHeadbutt(); advancePlayer(M, .9); // windup + ~0.7s flight
+  assert.equal(main.hp, 1, 'fireball flies far to the nearest enemy');
   assert.equal(friend.hp, 1, 'blast radius swallows nearby enemies');
   assert.equal(far.hp, 2, 'enemies beyond the blast radius are safe');
+});
+
+test('automatic attacks never rotate the player; the facing stays mouse-controlled', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true;
+  const p = M.goat.group.position; p.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
+  const behind = M.enemies.spawnAt({ x: 15, y: 14, z: 9 }); // 6 units behind the goat
+  advancePlayer(M, .2);
+  assert.equal(M.goat.state.yaw, 0, 'the goat never turns toward a target');
+  assert.equal(behind.hp, 2, 'melee does not reach behind; the player directs where the horns swing');
+  advancePlayer(M, .3); // stomp impact at 0.36s pounds all around without any aiming
+  assert.equal(behind.hp, 0, 'the automatic stomp still clears enemies behind without turning the goat');
+});
+
+test('enemies straight ahead are headbutted automatically with no input', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true;
+  const p = M.goat.group.position; p.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
+  const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 21 }); // 6 units ahead, inside tripled melee 8.4
+  advancePlayer(M, .2);
+  assert.equal(ahead.hp, 1, 'the automatic headbutt lands on what the player faces');
+  assert.equal(M.goat.state.yaw, 0, 'the player direction is untouched');
+});
+
+test('automatic attacks idle without enemies and never mine anything', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true;
+  M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
+  advancePlayer(M, .6);
+  assert.equal(M.goat.state.headbutt, -1, 'no enemy, no lunge');
+  assert.equal(M.goat.state.stomp, -1, 'no enemy, no stomp');
+  assert.equal(M.world.placeBlock('stone', 7, 8, 9), true); // three voxels ahead, above the goat's head
+  advancePlayer(M, .6);
+  assert.ok(M.world.blockInfoAt(7, 8, 9), 'standing near blocks never mines them automatically');
 });
 
 test('spell targeting respects range and walls, and the blast burns around impact', () => {

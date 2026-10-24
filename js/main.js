@@ -84,16 +84,17 @@
     M.goat.jump();
   };
 
+  // Attacks are fully automatic; clicks and E only interact with blocks.
   M.controls.onHeadbutt = function () {
-    M.goat.startHeadbutt();
+    M.goat.mine();
   };
 
   M.controls.onStomp = function () {
-    M.goat.startStomp();
+    M.goat.mine();
   };
 
   M.controls.onTap = function () {
-    M.goat.startHeadbutt();
+    M.goat.mine();
   };
 
   M.controls.onSelectSlot = function (index) {

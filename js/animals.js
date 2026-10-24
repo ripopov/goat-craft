@@ -2465,13 +2465,13 @@
     if (s.strikeTime >= 0) {
       const before = s.strikeTime;
       s.strikeTime += dt * upgrades.rate;
-      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 2.65 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
-        if (M.enemies.attack(p, s.yaw, false, { range: 2.8 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 1 })) s.happy = 1;
+      if (before < 0.16 && s.strikeTime >= 0.16 && distance <= 7.95 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
+        if (M.enemies.attack(p, s.yaw, false, { range: 8.4 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 1 })) s.happy = 1;
       }
       if (s.strikeTime >= 0.45) s.strikeTime = -1;
     }
 
-    if (distance <= 2.45 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
+    if (distance <= 7.35 + upgrades.reach && Math.abs(q.y - p.y) <= 2.8) {
       s.speed = damp(s.speed, 0, 10, dt);
       s.stuck = 0;
       if (s.attackCooldown <= 0 && Math.abs(angleDelta(s.yaw, yaw)) < 0.35) {

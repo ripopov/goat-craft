@@ -5,7 +5,7 @@
 
 **Play online: [ripopov.github.io/goat-craft](https://ripopov.github.io/goat-craft/)**
 
-An endless blocky meadow with a procedural goat, winding rivers, deep seas, ponds full of fish, a wandering herd of animals, and a one-minute day/night cycle, built with three.js.
+An endless blocky meadow with a procedural goat, winding rivers, deep seas, ponds full of fish, a wandering herd of animals, a one-minute day/night cycle, and growing zombie waves that attack a living Hearth Tree, built with three.js.
 
 
 ## Run it
@@ -24,7 +24,9 @@ js/music.js         procedural atmospheric folk soundtrack (WebAudio)
 js/ui.js            hint, speech bubble and "Say hi" button
 js/items.js         ten-slot hotbar, block drops, pickup and item stacking
 js/world.js         procedural terrain, rivers, seas and ponds, chunk streaming, block removal, drops and debris
-js/hearth-tree.js    detailed voxel landmark near spawn, amber heart, lanterns, embers and persistent collision
+js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
+js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning
+js/enemies.js       instanced voxel zombies, staggered waves, bites, combat, coins and defeat
 js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
 js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
@@ -37,6 +39,7 @@ scripts/check-site.mjs  checks local asset references in the built site
 scripts/test-water.mjs  dependency-free terrain, swimming, input and camera regression tests
 scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
 scripts/test-hearth-tree.mjs  landmark geometry, root collision, placement, foundation protection and reduced-motion checks
+scripts/test-enemies.mjs  routes, jumps, block chewing, tree damage, combat, spawning and persistent drops
 .github/workflows/ci.yml    syntax, asset and served-page checks
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
@@ -50,8 +53,8 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 - **Space** — jump (up to three times in the air); hold to swim toward the surface
 - **Ctrl** — hold to dive deeper; WASD still works while Ctrl is held
 - **W / S + mouse look** — swim along the view pitch; A / D strafe horizontally. Space / Ctrl override vertical steering.
-- **Left click / tap / E** — headbutt a block the head/horns actually touch; with a block selected, place it instead
-- **Right click** — stomp the block beneath the goat
+- **Left click / tap / E** — headbutt nearby zombies (two hits to kill) or a block the head/horns actually touch; with a block selected, place it instead
+- **Right click** — stomp nearby zombies (one hit to kill), or the block beneath the goat
 - **1–9 / 0** — select hotbar slot (slot 1 is horns and hooves; broken blocks stack in the other slots)
 - Selected blocks ride on the goat's horns and are set down by the headbutt lunge.
 - **P** — toggle between third-person and first-person (FPS) cameras
@@ -64,7 +67,13 @@ The meadow has **winding rivers, coastal seas and blocky ponds**. Rivers run con
 
 The goat wades in shallows and automatically **swims when its body is immersed**. Swimming uses buoyancy and water drag instead of walking on the bed, with a smoothly blended, alternating four-leg paddle, body roll, and a raised head. Hold Space to rise or Ctrl to dive; a surface swimmer can scramble over a one-block bank. Swimming resets air jumps without consuming them. Mouse look, free-pointer dragging and zoom all work underwater, and forward/backward swimming follows the camera pitch. The camera follows dives, retracts around solid banks and blocks, and gains blue distance fog underwater. Wakes, rising bubbles and synthesized splashes provide water feedback. Terrain edits change the measured water depth; water is procedural rather than a full Minecraft block-fluid simulation.
 
-An ancient **Hearth Tree** stands on the dry bank beyond the starter pond, at world coordinates **(-8, -26)**, about 28 units from spawn. Its half-unit voxels form a forked oak, a layered green-and-gold crown, and mossy roots fitted to the terrain. An inset amber heart, golden sap seams, hanging lanterns, and slowly drifting embers make it a warm landmark after dark. The trunk, roots, and canopy have persistent collision; the foundation is protected from mining and herd construction. The heart is a visual landmark for now; waves, objective health, and upgrades are not yet implemented.
+An ancient **Hearth Tree** stands on the dry bank beyond the starter pond, at world coordinates **(-8, -26)**, about 28 units from spawn. Its half-unit voxels form a forked oak, a layered green-and-gold crown, and mossy roots fitted to the terrain. An inset amber heart, golden sap seams, hanging lanterns, and slowly drifting embers make it a warm landmark after dark. The trunk, roots, and canopy have persistent collision; the foundation is protected from mining and herd construction. The tree starts with **100 HP**, shown alongside the coin balance and living zombie count in the defense HUD. Its glow fades as its health falls.
+
+After **10 seconds** of preparation, the first wave sends four zombies. A new wave arrives every **35 seconds**, with three more zombies than the previous wave; they enter individually, increasingly quickly. There are never more than **50 living zombies**. Each zombie follows the terrain toward the tree and eats **1 HP every 3 seconds** while in contact with its trunk or roots. At zero HP, attacks and spawning stop and **Defend again** restarts the game.
+
+Zombies walk around high walls and hills, jump up **one block**, and cannot jump up two. Shared navigation covers the defense arena, 56 world units in each direction from the tree, and updates locally when blocks change. If no walking route exists, zombies plan a breach and chew each obstructing block for **10 seconds**. Terrain can be tunneled and player-built walls can be dismantled. Every chewed block becomes a **persistent collectible drop**; nearby matching materials stack and can be collected and placed again. The tree's protected foundation remains intact, and the arena stays loaded while the goat explores elsewhere.
+
+Select **Horns & Hooves** to fight: two headbutts or one stomp kill a zombie, earning exactly **one coin**. Walls block player attacks. Coins are counted in the HUD; spending and tree upgrades are not yet implemented.
 
 The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long.
 
@@ -80,6 +89,6 @@ Music and effects share a filtered, compressed output with volume headroom. Ever
 
 ## CI and hosting
 
-Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
+Every push and pull request runs the CI workflow: it checks every classic-script module with `node --check`, runs `node --test scripts/test-water.mjs scripts/test-audio.mjs scripts/test-hearth-tree.mjs scripts/test-enemies.mjs`, builds the playable `_site/` artifact, verifies all local asset references, and smoke-tests the result over a local HTTP server. The water tests cover river continuity, generation-cache eviction, terrain edits, swimming and diving, bed/ceiling collisions, shore exits, frame-rate stability, held-key combinations and the underwater camera. The audio tests cover silent envelope endpoints, shared mixing, wind-loop seams, delayed timers, suspended contexts, rapid music toggles, bounded polyphony and node cleanup during long playback.
 
 Pushes to `main` also run the Pages workflow, which rebuilds and checks the same artifact and deploys it with the official GitHub Pages Actions. The published game is served from **[https://ripopov.github.io/goat-craft/](https://ripopov.github.io/goat-craft/)**.

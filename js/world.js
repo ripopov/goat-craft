@@ -375,6 +375,18 @@
   const removedBlocks = new Set();
   const removedPropBlocks = new Set();
   const placedBlocks = new Map();
+  let revision = 0;
+  const navigationChanges = [];
+  function recordChange(bx, bz) {
+    revision++;
+    navigationChanges.push({ revision: revision, bx: bx, bz: bz });
+    if (navigationChanges.length > 256) navigationChanges.shift();
+  }
+  function navigationChangesSince(since) {
+    if (since === revision) return [];
+    if (!navigationChanges.length || since < navigationChanges[0].revision - 1) return null;
+    return navigationChanges.filter(function (change) { return change.revision > since; });
+  }
 
   function blockKey(bx, by, bz) {
     return bx + ',' + by + ',' + bz;
@@ -526,6 +538,35 @@
       }
     }
     return landmarkTop;
+  }
+
+  // Exact voxel collision for zombie navigation, including mined tunnels.
+  // The goat's surface-based movement remains independent of this query.
+  function navigationBlockedAt(x, z, minY, maxY, includeTree) {
+    const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
+    const first = Math.floor((minY + 0.001) / BLOCK);
+    const last = Math.floor((maxY - 0.001) / BLOCK);
+    for (let by = first; by <= last; by++) {
+      if (solidKindAt(bx, by, bz)) return true;
+    }
+    return includeTree !== false && M.hearthTree && M.hearthTree.blockedAt(x, z, minY, maxY);
+  }
+
+  function navigationSurfaces(bx, bz) {
+    const floors = [];
+    const ground = heightBlocks(bx, bz) * BLOCK;
+    // Includes placed walls, natural props and any exposed floors in tunnels.
+    for (let by = 0; by <= ground / BLOCK + 16; by++) {
+      if (solidKindAt(bx, by, bz) && !solidKindAt(bx, by + 1, bz)) floors.push((by + 1) * BLOCK);
+    }
+    if (M.hearthTree) {
+      const x = (bx + 0.5) * BLOCK, z = (bz + 0.5) * BLOCK;
+      for (let y = ground; y <= ground + 6; y += 0.5) {
+        const top = M.hearthTree.supportHeight(x, z, y);
+        if (top > 0 && floors.indexOf(top) < 0) floors.push(top);
+      }
+    }
+    return floors;
   }
 
   function mulberry32(a) {
@@ -1367,7 +1408,11 @@
     }
 
     chunks.forEach(function (ch, key) {
-      if (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1) {
+      // Keep the defense arena simulated even when the goat explores away.
+      const home = M.hearthTree && M.hearthTree.position;
+      const retained = home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
+        Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
+      if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
         worldGroup.remove(ch.group);
         ch.terrain.geometry.dispose();
         if (ch.props) ch.props.geometry.dispose();
@@ -1447,6 +1492,7 @@
 
   function removePropBlock(bx, by, bz) {
     const key = blockKey(bx, by, bz);
+    recordChange(bx, bz);
     if (placedBlocks.has(key)) {
       placedBlocks.delete(key);
     } else {
@@ -1469,6 +1515,7 @@
 
     const key = blockKey(bx, by, bz);
     placedBlocks.set(key, kind);
+    recordChange(bx, bz);
     rebuildChunkProps(
       Math.floor(bx / CHUNK_BLOCKS),
       Math.floor(bz / CHUNK_BLOCKS)
@@ -1485,13 +1532,14 @@
   const debrisLogMat = std(0x6e5233, 1);
   const debrisLeafMat = std(0x4f7a35, 1);
 
-  function spawnBlockDrop(bx, by, bz, kind) {
+  function spawnBlockDrop(bx, by, bz, kind, persistent) {
     if (M.items && M.items.dropBlock) {
       M.items.dropBlock(
         kind,
         bx * BLOCK + BLOCK / 2,
         by * BLOCK + BLOCK / 2,
-        bz * BLOCK + BLOCK / 2
+        bz * BLOCK + BLOCK / 2,
+        { persistent: !!persistent }
       );
     }
   }
@@ -1606,7 +1654,7 @@
         Math.floor(bz / CHUNK_BLOCKS)
       );
       spawnBlockDebris(bx, by, bz, propKind);
-      if (opts.drop !== false) spawnBlockDrop(bx, by, bz, propKind);
+      if (opts.drop !== false) spawnBlockDrop(bx, by, bz, propKind, opts.persistentDrop);
       return propKind;
     }
 
@@ -1614,9 +1662,10 @@
     const wasTop = by === heightBlocks(bx, bz) - 1;
     const kind = wasTop ? 'grass' : 'dirt';
     removedBlocks.add(key);
+    recordChange(bx, bz);
     rebuildTerrainAround(bx, bz);
     spawnBlockDebris(bx, by, bz, kind);
-    if (opts.drop !== false) spawnBlockDrop(bx, by, bz, kind);
+    if (opts.drop !== false) spawnBlockDrop(bx, by, bz, kind, opts.persistentDrop);
     return kind;
   }
 
@@ -1842,6 +1891,10 @@
     placeBlock: placeBlock,
     blockIcon: blockIcon,
     makeBlockMesh: makeBlockMesh,
+    navigationChangesSince: navigationChangesSince,
+    navigationBlockedAt: navigationBlockedAt,
+    navigationSurfaces: navigationSurfaces,
+    get revision() { return revision; },
     blockSize: BLOCK
   };
 })(window.Meadow = window.Meadow || {});

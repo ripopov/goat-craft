@@ -18,6 +18,8 @@
     0x31251f, 0xff9c36, 0xffc35b, 0xffe6a2
   ].map(function (hex) { return new THREE.Color(hex); });
   let group = null;
+  let health = 100;
+  let damageFlash = 0;
   let baseY = 0;
   let heartMaterial = null;
   let light = null;
@@ -324,10 +326,12 @@
 
   function update(dt, time) {
     if (!group) return;
+    damageFlash = Math.max(0, damageFlash - dt);
+    const vitality = 0.18 + 0.82 * health / 100;
     const t = reducedMotion ? 0 : time;
     const pulse = Math.sin(t * 1.35) * 0.09 + Math.sin(t * 0.57) * 0.04;
-    heartMaterial.emissiveIntensity = 0.9 + pulse;
-    light.intensity = 2.8 + pulse * 1.5;
+    heartMaterial.emissiveIntensity = (0.9 + pulse) * vitality + damageFlash;
+    light.intensity = (2.8 + pulse * 1.5) * vitality;
     moteSeeds.forEach(function (seed, i) {
       const phase = (seed.phase + t * 0.035) % 1;
       const angle = seed.angle + t * 0.07;
@@ -386,6 +390,11 @@
     init: init, update: update, blockedAt: blockedAt, supportHeight: supportHeight,
     intersectsBlock: intersectsBlock,
     isReserved: function (x, z, margin) { return Math.hypot(x - X, z - Z) < 7.5 + (margin || 0); },
+    damage: function (amount) {
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      health = Math.max(0, health - amount); damageFlash = reducedMotion ? 0 : 0.35;
+    },
+    get health() { return health; }, maxHealth: 100,
     position: { x: X, z: Z }, group: null
   };
 })(window.Meadow = window.Meadow || {});

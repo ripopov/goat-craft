@@ -7,17 +7,30 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that graze, jump, quarry turf and build spiral sky stairs. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to headbutt (or place the carried block), right click to stomp the block beneath the goat, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
+  <canvas id="scene" aria-label="An animated goat in an endless blocky meadow with rivers, seas and ponds full of fish, and a herd of sheep, a cow and a stag that graze, jump, quarry turf and build spiral sky stairs. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to headbutt zombies or blocks (or place the carried block), right click to stomp nearby zombies or the block beneath the goat, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (Esc releases it). Drag still orbits on touch or when the pointer is free."></canvas>
   <div id="vignette"></div>
   <div id="water-overlay" aria-hidden="true"></div>
   <div id="water-status" role="status" hidden></div>
 
   <header class="hud">
-    <p class="eyebrow">an endless three.js wanderer</p>
+    <p class="eyebrow">defend the living heart</p>
     <h1>Meadow Goat</h1>
     <div class="rule"></div>
   </header>
 
+  <aside id="defense-hud" aria-label="Hearth Tree defense">
+    <div class="defense-heading"><span class="hearth-symbol" aria-hidden="true">♥</span><strong>Hearth Tree</strong><span id="tree-hp">100 / 100 HP</span></div>
+    <div id="tree-health" role="progressbar" aria-label="Hearth Tree health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="tree-health-fill"></div></div>
+    <div class="defense-stats"><span><i class="coin-symbol" aria-hidden="true"></i><b id="defense-coins">0</b> coins</span><span>Zombies <b id="defense-enemies">0 / 50</b></span></div>
+    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First zombies in 10s</span></div>
+    <p class="defense-tip">Horns: 2 hits · Stomp: 1 hit · +1 coin per zombie</p>
+  </aside>
+  <div id="defeat" role="dialog" aria-modal="false" aria-labelledby="defeat-title" hidden>
+    <span class="defeat-ember" aria-hidden="true">♥</span>
+    <h2 id="defeat-title">The Hearth has fallen</h2>
+    <p>Build your walls, hold the line, and let it glow again.</p>
+    <button id="defense-retry" type="button">Defend again</button>
+  </div>
   <div id="bubble" aria-hidden="true">maa!</div>
   <div id="inventory">
     <div id="item-name" aria-live="polite">Horns &amp; Hooves</div>
@@ -40,6 +53,8 @@
 <script src="js/items.js"></script>
 <script src="js/world.js"></script>
 <script src="js/hearth-tree.js"></script>
+<script src="js/zombie-navigation.js"></script>
+<script src="js/enemies.js"></script>
 <script src="js/fish.js"></script>
 <script src="js/water.js"></script>
 <script src="js/environment.js"></script>

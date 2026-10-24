@@ -288,7 +288,8 @@
     renderSelection();
   }
 
-  function addItem(kind) {
+  function addItem(kind, count) {
+    count = Math.max(1, Math.floor(count || 1));
     let target = -1;
 
     // A matching stack always wins over opening a new slot.
@@ -300,7 +301,7 @@
     }
 
     if (target >= 0) {
-      slots[target].count++;
+      slots[target].count += count;
     } else {
       for (let i = 1; i < SLOT_COUNT; i++) {
         if (!slots[i]) {
@@ -309,7 +310,7 @@
         }
       }
       if (target < 0) return -1;
-      slots[target] = { kind: kind, name: itemName(kind), count: 1 };
+      slots[target] = { kind: kind, name: itemName(kind), count: count };
     }
 
     renderSlot(target);
@@ -319,8 +320,17 @@
   }
 
   // ------------------------------------------------------------------- drops
-  function dropBlock(kind, x, y, z) {
+  function dropBlock(kind, x, y, z, options) {
     if (!dropGroup || !M.world || !M.world.makeBlockMesh) return;
+    const persistent = !!(options && options.persistent);
+    // Chewed materials persist. Nearby matching drops stack to keep long
+    // sieges inexpensive without discarding the player's building supplies.
+    if (persistent) {
+      const nearby = drops.find(function (drop) {
+        return drop.userData.drop.kind === kind && Math.hypot(drop.position.x - x, drop.position.z - z) < 4 && Math.abs(drop.position.y - y) < 5;
+      });
+      if (nearby) { nearby.userData.drop.count++; nearby.userData.drop.persistent = true; return; }
+    }
     const mesh = M.world.makeBlockMesh(kind);
     mesh.scale.setScalar(DROP_SCALE);
     mesh.position.set(x + rand(-0.16, 0.16), y, z + rand(-0.16, 0.16));
@@ -330,6 +340,8 @@
 
     mesh.userData.drop = {
       kind: kind,
+      count: 1,
+      persistent: persistent,
       vy: rand(1.7, 3.3),
       landed: false,
       baseY: y,
@@ -340,14 +352,14 @@
     drops.push(mesh);
 
     if (drops.length > MAX_DROPS) {
-      const oldest = drops.shift();
-      dropGroup.remove(oldest);
+      const disposable = drops.findIndex(function (drop) { return !drop.userData.drop.persistent; });
+      if (disposable >= 0) dropGroup.remove(drops.splice(disposable, 1)[0]);
     }
   }
 
   function collect(mesh, index) {
     const kind = mesh.userData.drop.kind;
-    const slot = addItem(kind);
+    const slot = addItem(kind, mesh.userData.drop.count);
     if (slot < 0) return false;
 
     dropGroup.remove(mesh);

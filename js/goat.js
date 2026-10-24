@@ -729,6 +729,8 @@
           makeRoomAfterPlacement();
           audioRef.thud();
         }
+      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false)) {
+        audioRef.thud();
       } else if (worldRef.breakBlockInFront(headPivot)) {
         audioRef.thud();
       }
@@ -736,8 +738,9 @@
 
     if (stompPending) {
       s.stompHit = true;
-      const broke = s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
-      audioRef.stomp(broke);
+      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true);
+      const broke = !hit && s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
+      audioRef.stomp(broke || hit);
       if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
     }
 

@@ -4,6 +4,7 @@
   const { clamp } = M.utils;
   let bubbleEl = null;
   let bubbleTime = 0;
+  let defenseEls = null;
 
   function showBubble(text) {
     if (!bubbleEl) return;
@@ -38,6 +39,12 @@
 
   function init() {
     bubbleEl = document.getElementById('bubble');
+    defenseEls = {};
+    ['tree-hp', 'tree-health', 'tree-health-fill', 'defense-coins', 'defense-enemies', 'defense-wave', 'defense-status', 'defeat'].forEach(function (id) {
+      defenseEls[id] = document.getElementById(id);
+    });
+    const retry = document.getElementById('defense-retry');
+    if (retry) retry.addEventListener('click', function () { window.location.reload(); });
 
     const greetButton = document.getElementById('hi');
     if (greetButton) {
@@ -69,11 +76,30 @@
     if (label) label.textContent = on ? 'Music on' : 'Music';
   }
 
+  function setDefense(state) {
+    if (!defenseEls) return;
+    function text(id, value) { if (defenseEls[id]) defenseEls[id].textContent = value; }
+    text('tree-hp', state.health + ' / ' + state.maxHealth + ' HP');
+    text('defense-coins', state.coins);
+    text('defense-enemies', state.count + ' / 50');
+    text('defense-wave', state.wave ? 'Wave ' + state.wave : 'Prepare your defenses');
+    text('defense-status', state.defeated ? 'The Hearth has fallen' :
+      state.wave ? 'Next wave in ' + state.nextWave + 's' : 'First zombies in ' + state.nextWave + 's');
+    const bar = defenseEls['tree-health'];
+    if (bar) {
+      bar.setAttribute('aria-valuenow', state.health);
+      bar.classList.toggle('critical', state.health <= 25);
+    }
+    if (defenseEls['tree-health-fill']) defenseEls['tree-health-fill'].style.width = state.health + '%';
+    if (defenseEls.defeat) defenseEls.defeat.hidden = !state.defeated;
+  }
+
   M.ui = {
     init: init,
     showBubble: showBubble,
     updateBubble: updateBubble,
     setMusic: setMusic,
+    setDefense: setDefense,
     onGreet: null,
     onMusicToggle: null
   };

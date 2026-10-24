@@ -37,6 +37,9 @@ jobs:
       - name: Test Hearth Tree collision and protection
         run: node --test scripts/test-hearth-tree.mjs
 
+      - name: Test zombie defense gameplay
+        run: node --test scripts/test-enemies.mjs
+
       - name: Build static site
         run: node scripts/build-site.mjs
 

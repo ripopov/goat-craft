@@ -65,6 +65,8 @@
     world: M.world
   });
 
+  M.enemies.init({ scene: scene, world: M.world, tree: M.hearthTree });
+
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
 
@@ -115,6 +117,7 @@
     M.goat.update(dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.world.update(M.goat.group.position, dt, elapsed);
+    M.enemies.update(dt, elapsed);
     M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.items.update(dt, elapsed, M.goat.group);

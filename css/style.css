@@ -374,3 +374,56 @@
   @media (pointer: coarse) {
     #look { display: none; }
   }
+
+  #defense-hud {
+    position: fixed;
+    left: clamp(20px, 4vw, 48px);
+    top: clamp(122px, 12vw, 150px);
+    z-index: 3;
+    width: 276px;
+    padding: 16px 18px 12px;
+    border: 1px solid rgba(245, 228, 175, .45);
+    border-radius: 13px;
+    background: linear-gradient(140deg, rgba(31, 49, 36, .91), rgba(34, 49, 34, .79));
+    box-shadow: 0 12px 32px rgba(24, 38, 25, .2), inset 0 1px rgba(255, 255, 255, .06);
+    backdrop-filter: blur(10px);
+    color: #f4ecd7;
+    pointer-events: none;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .defense-heading { display: flex; gap: 8px; align-items: center; }
+  .defense-heading strong { font-size: 13px; font-weight: 600; }
+  #tree-hp { margin-left: auto; font-size: 10px; color: #e5d5a8; }
+  .hearth-symbol { color: #e9b955; text-shadow: 0 0 12px rgba(242, 169, 58, .45); }
+  #tree-health { height: 7px; margin: 11px 0 12px; overflow: hidden; border-radius: 2px; background: #18271e; box-shadow: inset 0 1px 3px #142119; }
+  #tree-health-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #819c59, #d1cb76); transition: width .25s ease; }
+  #tree-health.critical #tree-health-fill { background: linear-gradient(90deg, #b3543e, #e8a158); }
+  .defense-stats { display: flex; justify-content: space-between; color: #b9c6ad; }
+  .defense-stats b { color: #f4ecd7; font-weight: 600; }
+  .coin-symbol { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border: 2px solid #e9bd58; background: #a87931; box-shadow: inset 0 0 0 1px #ce9c3d; vertical-align: -1px; }
+  .defense-wave { display: flex; flex-direction: column; gap: 4px; margin-top: 13px; padding-top: 11px; border-top: 1px solid rgba(220, 228, 196, .13); }
+  .defense-wave strong { font-size: 11px; font-weight: 600; letter-spacing: .025em; }
+  #defense-status { font-size: 10px; color: #bac5ab; }
+  .defense-tip { font-size: 9px; color: #a8b79d; margin: 10px 0 0; }
+  #defeat { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 8; width: min(400px, calc(100vw - 32px)); padding: 32px; text-align: center; color: #f4ecd7; border: 1px solid #8d895e; border-radius: 16px; background: rgba(30, 43, 32, .95); box-shadow: 0 20px 100px #18271e88; backdrop-filter: blur(12px); }
+  #defeat[hidden] { display: none; }
+  #defeat h2 { font: 26px Georgia, serif; margin: 16px 0 12px; }
+  #defeat p { font-size: 13px; line-height: 1.6; color: #c4c8af; }
+  .defeat-ember { font-size: 30px; color: #ae7847; }
+  #defense-retry { cursor: pointer; margin-top: 10px; border: 1px solid #d9c282; border-radius: 7px; padding: 11px 20px; background: #e3c780; color: #293e2a; font: 600 13px system-ui, sans-serif; }
+  #defense-retry:focus-visible { outline: 2px solid #fff6d7; outline-offset: 4px; }
+  @media (max-width: 680px) {
+    #defense-hud { top: 114px; left: 16px; width: 236px; padding: 12px 14px 10px; }
+    .defense-heading strong { font-size: 12px; }
+    .defense-wave { margin-top: 9px; padding-top: 8px; }
+    .defense-tip { font-size: 8px; }
+  }
+  @media (max-height: 600px) {
+    #defense-hud { top: 82px; padding: 10px 12px; width: 228px; }
+    .hud .eyebrow, .hud .rule, .defense-tip { display: none; }
+    .defense-wave { margin-top: 7px; padding-top: 6px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #tree-health-fill { transition: none; }
+  }

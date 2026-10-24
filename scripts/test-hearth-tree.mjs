@@ -87,6 +87,51 @@ test('trunk, roots, placement and terrain protection agree with the world', () =
   assert.equal(w.canPlaceBlock(bx, y / 2, bz), false);
 });
 
+test('root meshes omit buried faces and caps coplanar with the protected lawn', () => {
+  const { M } = meadow();
+  const tree = M.hearthTree.group;
+  const wood = tree.getObjectByName('Hearth Tree wood');
+  const positions = wood.geometry.attributes.position;
+  const normals = wood.geometry.attributes.normal;
+  let groundEdges = 0, rootTops = 0;
+  for (let i = 0; i < positions.count; i += 4) {
+    const heights = Array.from({ length: 4 }, (_, j) => positions.getY(i + j));
+    assert.ok(heights.some(y => y > 0), 'no face is covered by or coplanar with the lawn');
+    if (heights.includes(0)) groundEdges++;
+    if (normals.getY(i) === 1 && heights[0] <= 1.5) rootTops++;
+  }
+  assert.ok(groundEdges > 0, 'exposed bark still meets the lawn without a gap');
+  assert.ok(rootTops > 0, 'above-ground root steps remain visible');
+  const base = tree.position.y;
+  assert.ok(M.hearthTree.blockedAt(0, 0, base - 0.4, base - 0.1), 'buried collision remains intact');
+});
+
+test('rocks embedded in terrain steps do not duplicate the terrain surface', () => {
+  const { M, THREE, scene } = meadow();
+  const player = new THREE.Vector3(50, 14, -218);
+  for (let i = 0; i < 10; i++) M.world.update(player, 0, 0);
+  assert.equal(M.world.blockInfoAt(25, 5, -109).kind, 'stone', 'seeded rock overlaps a slope voxel');
+  assert.equal(M.world.surfaceHeight(51, -217), 12, 'terrain occupies the same voxel');
+  const world = scene.children.find(object => object.isGroup && object !== M.hearthTree.group);
+  const chunk = world.children.find(object => object.position.x === 32 && object.position.z === -224);
+  const meshes = chunk.children.filter(object => object.material.vertexColors && !object.material.transparent);
+  assert.equal(meshes.length, 2);
+  function faces(mesh) {
+    const positions = mesh.geometry.attributes.position, normals = mesh.geometry.attributes.normal;
+    const result = new Set();
+    for (let i = 0; i < positions.count; i += 4) {
+      const center = new THREE.Vector3();
+      for (let j = 0; j < 4; j++) center.add(new THREE.Vector3().fromBufferAttribute(positions, i + j));
+      center.multiplyScalar(0.25);
+      result.add(center.toArray().join(',') + '/' + new THREE.Vector3().fromBufferAttribute(normals, i).toArray().join(','));
+    }
+    return result;
+  }
+  const terrain = faces(meshes[0]), props = faces(meshes[1]);
+  assert.ok(props.size > 0, 'exposed props still render');
+  for (const face of props) assert.ok(!terrain.has(face), 'terrain and props never draw the same outward face: ' + face);
+});
+
 test('mobile embers stay bounded and respect reduced motion', () => {
   const { M } = meadow({ coarse: true, reducedMotion: true });
   const tree = M.hearthTree.group;

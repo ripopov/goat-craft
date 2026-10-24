@@ -178,6 +178,11 @@
       if (v.kind !== kind) return;
       faces.forEach(function (face) {
         if (cells.has(key(v.x + face.d[0], v.y + face.d[1], v.z + face.d[2]))) return;
+        // The flat, protected foundation covers everything at or below the
+        // tree's origin. In particular, buried root caps at y = 0 would share
+        // the lawn's exact plane and flicker against its grass. Keep these
+        // voxels for collision, but don't upload their covered faces.
+        if (face.c.every(function (corner) { return v.y + corner[1] <= 0; })) return;
         const offset = p.length / 3;
         face.c.forEach(function (corner, i) {
           p.push((v.x + corner[0]) * VOXEL, (v.y + corner[1]) * VOXEL, (v.z + corner[2]) * VOXEL);

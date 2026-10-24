@@ -1310,6 +1310,9 @@
 
     faces.forEach(function (b) {
       if (M.towers && M.towers.atCell(b.bx, b.by, b.bz)) return;
+      // A rock or canopy can extend into a higher terrain step. The terrain
+      // owns that voxel; drawing the prop too duplicates its exposed faces.
+      if (isSolidBlock(b.bx, b.by, b.bz)) return;
       function occupied(dx, dy, dz) {
         return blocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || isSolidBlock(b.bx + dx, b.by + dy, b.bz + dz);
       }

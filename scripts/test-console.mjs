@@ -172,9 +172,11 @@ test('spawn with a level switches directly, including to lower waves', () => {
 
   type('spawn 0');
   type('spawn nope');
+  type('spawn 5 extra');
   log = elements.get('dev-console-log').children.map(child => child.textContent).join('\n');
   assert.match(log, /Wave level must be 1 or greater/);
   assert.match(log, /Wave level must be a whole number/);
+  assert.match(log, /Spawn expects at most one wave level/);
   assert.equal(calls.filter(value => value.startsWith('wave:')).length, 2, 'invalid levels never reach the wave controller');
 });
 

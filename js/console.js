@@ -51,16 +51,23 @@
       if (M.items.addItem(kind, AMOUNT) < 0) full.push(kind);
       else added.push(kind);
     });
-    if (added.length) line('Granted ' + AMOUNT + ' coins and ' + AMOUNT + ' each of ' + resourceNames(added) + '.', 'ok');
+    line('Granted ' + AMOUNT + ' coins' +
+      (added.length ? ' and ' + AMOUNT + ' each of ' + resourceNames(added) : '') + '.', 'ok');
     if (full.length) line('No hotbar space for ' + resourceNames(full) + '.', 'warn');
-    return added.length > 0;
+    return true;
   }
 
-  function spawnWave(argument) {
+  function spawnWave(args) {
     if (!M.enemies || typeof M.enemies.startNextWave !== 'function') {
       line('Wave control is unavailable right now.', 'warn');
       return false;
     }
+    args = Array.isArray(args) ? args : [];
+    if (args.length > 1) {
+      line('Spawn expects at most one wave level.', 'warn');
+      return false;
+    }
+    const argument = args[0];
     const hasLevel = argument !== undefined && argument !== '';
     let level;
     if (hasLevel) {
@@ -73,9 +80,12 @@
         line('Wave level must be 1 or greater.', 'warn');
         return false;
       }
+      if (typeof M.enemies.startWave !== 'function') {
+        line('Exact wave control is unavailable right now.', 'warn');
+        return false;
+      }
     }
-    const started = hasLevel && typeof M.enemies.startWave === 'function' ?
-      M.enemies.startWave(level) : M.enemies.startNextWave();
+    const started = hasLevel ? M.enemies.startWave(level) : M.enemies.startNextWave();
     if (!started) {
       line('Cannot start a wave while the Hearth has fallen.', 'warn');
       return false;
@@ -95,7 +105,7 @@
     const command = tokens[0];
     line('> ' + tokens.join(' '), 'command');
     if (command === 'money') return giveMoney();
-    if (command === 'spawn') return spawnWave(tokens[1]);
+    if (command === 'spawn') return spawnWave(tokens.slice(1));
     if (command === 'clear') { clearLog(); return true; }
     line('Unknown command "' + tokens.join(' ') + '".', 'warn');
     return false;
@@ -135,7 +145,6 @@
       M.controls.suspendLook();
     }
     root.hidden = false;
-    document.body.classList.add('console-open');
     historyIndex = history.length;
     draft = '';
     input.value = '';
@@ -146,7 +155,6 @@
     if (!open) return;
     open = false;
     root.hidden = true;
-    document.body.classList.remove('console-open');
     if (typeof input.blur === 'function') input.blur();
     if (M.controls) {
       M.controls.noteActivity();
@@ -161,6 +169,7 @@
   }
 
   function keydown(event) {
+    if (event.isComposing) return;
     if (!open) {
       const slash = event.code === 'Slash' || event.code === 'NumpadDivide' || event.key === '/';
       if (!slash || event.metaKey || event.ctrlKey || event.altKey || event.repeat || editable(event.target)) return;
@@ -212,10 +221,12 @@
       submit();
     });
     root.addEventListener('pointerdown', function (event) {
-      if (event.target === root) {
-        event.preventDefault();
-        closeConsole();
-      }
+      if (event.target !== root && event.target !== input && typeof input.focus === 'function') input.focus();
+    });
+    root.addEventListener('click', function (event) {
+      if (event.target !== root) return;
+      event.preventDefault();
+      closeConsole();
     });
     window.addEventListener('keydown', keydown, true);
   }

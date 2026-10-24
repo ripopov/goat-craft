@@ -378,6 +378,8 @@
     beginWave();
     return true;
   }
+  // Developer shortcut: jump to an exact wave level, forwards or backwards.
+  // Living enemies stay in the world; only queued spawns are replaced.
   function startWave(level) {
     if (!mesh || !tree || tree.health <= 0 || !Number.isSafeInteger(level) || level < 1) return false;
     beginWave(level);

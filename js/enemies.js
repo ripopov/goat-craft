@@ -444,6 +444,46 @@
     if (!stomp && distance > .1 && (dx * Math.sin(yaw) + dz * Math.cos(yaw)) / distance < .25) return false;
     return lineClear(origin, p);
   }
+  // Elemental strikes pick the nearest enemy anywhere around the goat, no
+  // aiming cone; walls still block the bolt, exactly like melee attacks.
+  function canHitSpell(enemy, origin, range) {
+    const p = enemy.position;
+    if (Math.hypot(p.x - origin.x, p.z - origin.z) > range || Math.abs(p.y - origin.y) > 2.8) return false;
+    return lineClear(origin, p);
+  }
+  function spellTargets(origin, range, maxTargets) {
+    if (maxTargets <= 0) return [];
+    const list = [];
+    zombies.slice().sort(function (a, b) {
+      return a.position.distanceToSquared(origin) - b.position.distanceToSquared(origin);
+    }).forEach(function (zombie) {
+      if (list.length >= maxTargets) return;
+      if (canHitSpell(zombie, origin, range)) list.push(zombie);
+    });
+    return list;
+  }
+  function spellHit(enemy, damage) {
+    const index = zombies.indexOf(enemy);
+    if (index < 0 || tree.health <= 0) return false;
+    enemy.bite = 0; enemy.blockBite = 0;
+    const killed = damageEnemy(enemy, damage);
+    if (M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
+    updateHud(); render(elapsed);
+    return killed;
+  }
+  // Fireball blast: everything in the radius splats, corners count a little.
+  function spellBlast(point, radius, damage) {
+    if (tree.health <= 0) return [];
+    const hits = [];
+    zombies.slice().forEach(function (zombie) {
+      const p = zombie.position, distance = Math.hypot(p.x - point.x, p.z - point.z);
+      if (distance > radius || Math.abs(p.y - point.y) > 2.5) return;
+      if (distance > 1.5 && !lineClear(point, p)) return;
+      hits.push(zombie);
+    });
+    hits.forEach(function (zombie) { spellHit(zombie, damage); });
+    return hits;
+  }
   const outlineMatrix = new THREE.Matrix4(), outlineScale = new THREE.Vector3(1.065, 1.065, 1.065);
   function highlight(predicate) {
     if (!outlineMesh) return;
@@ -694,6 +734,7 @@
     return killed;
   }
   M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
+    spellTargets: spellTargets, spellHit: spellHit, spellBlast: spellBlast,
     watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
     startNextWave: startNextWave,
     startWave: startWave,

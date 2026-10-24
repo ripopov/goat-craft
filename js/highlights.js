@@ -35,11 +35,18 @@
       if (target) shells(target).forEach(function (shell) { shell.visible = true; });
     }
     const player = M.goat.group.position, stats = M.upgrades.stats(), carrying = M.items.hasSelectedBlock();
+    const levelOk = typeof M.upgrades.level === 'function';
+    const reachLevel = levelOk ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
+    // Elemental tiers highlight every enemy the current strike would catch,
+    // with no aiming cone; untrained tiers keep the melee arc highlight.
+    const spellTargets = reachLevel >= 1 && M.enemies.spellTargets
+      ? M.enemies.spellTargets(player, stats.reach, Infinity) : null;
     const direction = new THREE.Vector3(); M.goat.aimCamera.getWorldDirection(direction);
     const yaw = Math.atan2(direction.x, direction.z);
     M.enemies.highlight(function (enemy) {
-      return (!carrying && M.enemies.canHit(enemy, player, yaw, false, 2.8 + stats.reach)) ||
-        (M.goat.state.grounded && M.enemies.canHit(enemy, player, yaw, true, 3.1 + stats.reach));
+      if (spellTargets) return spellTargets.includes(enemy);
+      return (!carrying && M.enemies.canHit(enemy, player, yaw, false, 2.8)) ||
+        (M.goat.state.grounded && M.enemies.canHit(enemy, player, yaw, true, 3.1));
     });
     const placement = carrying ? M.items.placementTarget() : null;
     ghost.visible = !!placement;

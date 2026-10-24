@@ -82,16 +82,71 @@ test('movement and cadence upgrades change the real player controller and timed 
   advancePlayer(M, .27); assert.equal(M.goat.state.headbuttCooldown, 0, 'faster recovery permits another strike');
 });
 
-test('reach and damage upgrades affect real attacks without hitting through walls', () => {
+test('reach and damage upgrades scale real electric strikes', () => {
   const { M, controls } = training(); supplies(M);
   controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
   const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 18.5 });
   M.goat.startHeadbutt(); advancePlayer(M, .6); assert.equal(zombie.hp, 2, 'out of base reach');
   train(M, M.upgrades.player, 'reach', 2); train(M, M.upgrades.player, 'power', 2);
   M.goat.startHeadbutt(); advancePlayer(M, .2);
-  assert.equal(M.enemies.zombies.includes(zombie), false, 'extended, two-and-a-third-damage horns kill in one strike');
+  assert.equal(M.enemies.zombies.includes(zombie), false, 'the 4-block electric chain kills in one strike');
   assert.equal(M.enemies.getState().coins, 1000 - 8 - 20 - 12 - 28, 'kill is only a physical pickup');
   assert.equal(M.items.drops.filter(drop => drop.userData.drop.kind === 'coin').length, 1);
+});
+
+test('electric bolt targets the nearest enemy in range from any direction, one zap at tier 1', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
+  const behind = M.enemies.spawnAt({ x: 15, y: 14, z: 12.4 });  // 2.6 away, behind the goat
+  const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 17.8 });   // 2.8 away, ahead
+  train(M, M.upgrades.player, 'reach', 1); // tier 1: 3 blocks, nearest, single target
+  M.goat.startHeadbutt(); advancePlayer(M, .2);
+  assert.equal(behind.hp, 1, 'the nearest enemy is struck even though the goat faces away');
+  assert.equal(ahead.hp, 2, 'tier 1 strikes exactly one enemy');
+});
+
+test('tier 2 electric chain hits up to three enemies inside four blocks', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
+  const first = M.enemies.spawnAt({ x: 15, y: 14, z: 18.2 });
+  const second = M.enemies.spawnAt({ x: 15, y: 14, z: 18.6 });
+  const third = M.enemies.spawnAt({ x: 15, y: 14, z: 19.0 });
+  const far = M.enemies.spawnAt({ x: 15, y: 14, z: 19.5 });
+  train(M, M.upgrades.player, 'reach', 2);
+  M.goat.startHeadbutt(); advancePlayer(M, .2);
+  for (const enemy of [first, second, third]) assert.equal(enemy.hp, 1, 'chained inside the 4-block span');
+  assert.equal(far.hp, 2, 'beyond four blocks is untouched');
+});
+
+test('tier 3 fireball reaches ten blocks and blasts everything in a 3-block radius', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true; M.goat.group.position.set(15, 14, 15); M.goat.state.yaw = 0;
+  const main = M.enemies.spawnAt({ x: 15, y: 14, z: 23.2 });   // 8.2 blocks, the nearest target
+  const friend = M.enemies.spawnAt({ x: 15, y: 14, z: 24.4 }); // ~1.2 from impact, in the blast
+  const far = M.enemies.spawnAt({ x: 15, y: 14, z: 27 });      // out of target range and blast radius
+  train(M, M.upgrades.player, 'reach', 3);
+  M.goat.startHeadbutt(); advancePlayer(M, .9); // windup + ~0.5s flight
+  assert.equal(main.hp, 1, 'fireball flies up to ten blocks to the nearest enemy');
+  assert.equal(friend.hp, 1, 'blast radius swallows nearby enemies');
+  assert.equal(far.hp, 2, 'enemies beyond the blast radius are safe');
+});
+
+test('spell targeting respects range and walls, and the blast burns around impact', () => {
+  const { M } = training();
+  const origin = { x: 15, y: 14, z: 15 };
+  M.enemies.spawnAt({ x: 15, y: 14, z: 20.5 });  // 5.5 blocks: out of electro range and blast radius
+  assert.equal(M.world.placeBlock('stone', 7, 7, 8), true, 'wall placed'); // spans z 16..18
+  const close = M.enemies.spawnAt({ x: 15, y: 14, z: 18.6 }); // 3.6 away, behind the wall
+  assert.equal(M.enemies.spellTargets(origin, 4, 3).length, 0, 'walls stop the bolt');
+  M.world.breakBlockAt(7, 7, 8);
+  const found = [...M.enemies.spellTargets(origin, 4, 3).map(e => e.position.z)];
+  assert.deepEqual(found, [18.6], 'bolt finds the enemy in line');
+  assert.equal(M.enemies.spellTargets(origin, 2, 3).length, 0, 'range limits the strike');
+  // Blast: 3-block radius around the impact point, corners count somewhat.
+  M.enemies.spellBlast({ x: 15, y: 14, z: 17 }, 3, 2);
+  assert.equal(close.hp, 0, 'impact damage lands on the primary');
+  assert.equal(M.enemies.zombies.length, 1, 'both enemies are gone: close via blast, far untouched');
+  assert.equal(M.enemies.zombies[0].position.z, 20.5, 'the far enemy never entered target range');
 });
 
 test('hunter reach, damage and cadence training changes real NPC strikes', () => {

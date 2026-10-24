@@ -285,10 +285,12 @@
   headPivot.add(mouth);
 
   // horns
+  const horns = [];
   [-1, 1].forEach(function (sign) {
     const horn = makeHorn(sign);
     horn.position.set(sign * 0.095, 0.225, 0.0);
     headPivot.add(horn);
+    horns.push(horn);
   });
 
   // beard
@@ -459,11 +461,256 @@
     addComet(color);
   }
 
+  // ----------------------------------------------------------------- horn style
+  // Long horns training re-forges the goat's horns for each elemental tier: an
+  // energized cyan tint with sparking tips, a gold overcharge banded at the
+  // base, then molten fire horns for the capstone fireball. Colors and pulse
+  // rates encode the spell about to be thrown.
+  const HORN_STYLE = [
+    null,
+    { tint: 0x4fd8ff, tips: 0.05, base: 0.5, swing: 0.14, pulse: 3.4 },
+    { tint: 0xffc13d, tips: 0.06, base: 0.6, swing: 0.18, pulse: 5.2 },
+    { tint: 0xff7a2a, tips: 0.085, base: 0.8, swing: 0.24, pulse: 8 }
+  ];
+  const hornStyle = { level: 0, mats: [] };
+  const hornNodes = [];
+  const HORN_TIP = new THREE.Vector3(0, 0.26, -0.37); // far end of makeHorn's curve
+
+  function disposeHornNodes() {
+    for (let i = 0; i < hornNodes.length; i++) {
+      const node = hornNodes[i];
+      if (node.parent) node.parent.remove(node);
+      node.traverse(function (o) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const list = Array.isArray(o.material) ? o.material : [o.material];
+          for (let j = 0; j < list.length; j++) list[j].dispose();
+        }
+      });
+    }
+    hornNodes.length = 0;
+  }
+  function hornTip(horn, color, size) {
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), glowMaterial(color));
+    tip.position.copy(HORN_TIP);
+    horn.add(tip);
+    hornNodes.push(tip);
+  }
+  function applyHornStyle(level) {
+    level = clamp(level || 0, 0, 3);
+    if (level === hornStyle.level || !headPivot) return;
+    hornStyle.level = level;
+    disposeHornNodes();
+    for (let i = 0; i < hornStyle.mats.length; i++) hornStyle.mats[i].dispose();
+    hornStyle.mats = [];
+    const style = HORN_STYLE[level];
+    for (let i = 0; i < horns.length; i++) {
+      const horn = horns[i];
+      if (style) {
+        const mat = horn.material === hornMat ? hornMat.clone() : horn.material;
+        mat.emissive = new THREE.Color(style.tint);
+        mat.emissiveIntensity = style.base;
+        horn.material = mat;
+        hornStyle.mats.push(mat);
+        hornTip(horn, style.tint, style.tips);
+        if (level >= 2) {
+          const bandR = level >= 3 ? 0.082 : 0.072;
+          const band = new THREE.Mesh(new THREE.TorusGeometry(bandR, 0.022, 8, 20), glowMaterial(style.tint));
+          band.rotation.x = Math.PI / 2;
+          band.position.set(0, 0.07, -0.03);
+          horn.add(band);
+          hornNodes.push(band);
+        }
+        if (level >= 3) {
+          const halo = new THREE.Mesh(new THREE.SphereGeometry(style.tips * 1.7, 10, 8), glowMaterial(style.tint));
+          halo.material.transparent = true; halo.material.opacity = 0.35; halo.material.depthWrite = false;
+          halo.position.copy(HORN_TIP);
+          horn.add(halo);
+          hornNodes.push(halo);
+        }
+      } else {
+        horn.material = hornMat;
+      }
+    }
+  }
+
   // Damping toward a gait pose normally keeps hips in a small arc. After a long
   // wheel spin the hip angle is some large multiple of two pi; fold it back into
   // the nearest turn before easing into the walk, so the legs wind down instead
   // of unwinding a full rotation backwards.
   function foldAngle(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
+
+  // ------------------------------------------------------------------ spells
+  // Elemental strikes from Long horns. Effects live here so the goat owns its
+  // own bolts, sparks and fireball; damage is dealt through M.enemies so loot,
+  // HUD and death handling stay in one place.
+  const boltMaterial = new THREE.LineBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const flashGeometry = new THREE.SphereGeometry(1, 12, 10);
+  const fireballGeometry = new THREE.SphereGeometry(0.24, 12, 10);
+  const fireballMaterial = new THREE.MeshStandardMaterial({ color: 0xff9a3c, emissive: 0xff5c1a, emissiveIntensity: 1.5 });
+  const spellFx = [];
+  const sparks = [];
+  const fireballs = [];
+
+  function spellBolt(from, to) {
+    if (M.config.reducedMotion || spellFx.length >= 40) return;
+    const group = new THREE.Group();
+    const delta = new THREE.Vector3().copy(to).sub(from);
+    const side = new THREE.Vector3(-delta.z, 0, delta.x).normalize();
+    const points = [];
+    for (let i = 0; i <= 12; i++) {
+      const k = i / 12, offset = i === 0 || i === 12 ? 0 : rand(-0.5, 0.5) * 0.55;
+      points.push(new THREE.Vector3().copy(from).addScaledVector(delta, k).addScaledVector(side, offset).add(new THREE.Vector3(0, offset * 0.5, 0)));
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(geometry, boltMaterial);
+    group.add(line);
+    group.userData.disposeGeometry = geometry;
+    group.userData.sharedMaterial = true; // boltMaterial is shared with every bolt
+    sceneRef.add(group);
+    spellFx.push({ object: group, ttl: 0.18, life: 0, onAge: function (k) { line.visible = k < 0.8; } });
+  }
+  function sparkBurst(point, colors, count, speed, life, size) {
+    if (M.config.reducedMotion) return;
+    for (let j = 0; j < count; j++) {
+      let spark = null;
+      for (let i = 0; i < sparks.length; i++) {
+        if (!sparks[i].mesh.visible) { spark = sparks[i]; break; }
+      }
+      if (!spark) {
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6),
+          new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+        sceneRef.add(mesh);
+        spark = { mesh: mesh, v: new THREE.Vector3() };
+        sparks.push(spark);
+      }
+      const angle = rand(0, Math.PI * 2);
+      const reach = speed * (0.4 + Math.random() * 0.6);
+      spark.mesh.material.color.setHex(colors[Math.floor(Math.random() * colors.length)]);
+      spark.mesh.material.opacity = 1;
+      spark.mesh.visible = true;
+      spark.mesh.position.copy(point);
+      spark.size = size * (0.7 + Math.random() * 0.6);
+      spark.maxLife = life * (0.7 + Math.random() * 0.6);
+      spark.life = spark.maxLife;
+      spark.v.set(Math.cos(angle) * reach, speed * (0.25 + Math.random() * 0.75), Math.sin(angle) * reach);
+    }
+  }
+  function spellFlash(point, color, size, ttl) {
+    if (M.config.reducedMotion) return;
+    const material = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false });
+    const mesh = new THREE.Mesh(flashGeometry, material);
+    mesh.position.copy(point);
+    mesh.scale.setScalar(size * 0.2);
+    sceneRef.add(mesh);
+    spellFx.push({ object: mesh, ttl: ttl, life: 0,
+      onAge: function (k) { mesh.scale.setScalar(size * (0.2 + k * 1.15)); mesh.material.opacity = 0.55 * (1 - k); } });
+  }
+  // The fireball flies to the spot the target stood when it was aimed at;
+  // walls burst it early, and the blast still lands around the impact point.
+  function spawnFireball(from, to, dmg) {
+    const fireball = { from: from.clone(), to: to.clone(), k: 0, dmg: dmg, mesh: null };
+    if (!M.config.reducedMotion) {
+      const mesh = new THREE.Mesh(fireballGeometry, fireballMaterial);
+      mesh.position.copy(from);
+      sceneRef.add(mesh);
+      fireball.mesh = mesh;
+    }
+    fireballs.push(fireball);
+    return fireball;
+  }
+  function explodeFireball(fireball, point) {
+    if (fireball.mesh && fireball.mesh.parent) sceneRef.remove(fireball.mesh);
+    const index = fireballs.indexOf(fireball);
+    if (index >= 0) fireballs.splice(index, 1);
+    if (M.enemies && M.enemies.spellBlast) M.enemies.spellBlast(point, 3, fireball.dmg);
+    if (audioRef && audioRef.towerImpact) audioRef.towerImpact(point, 'mortar');
+    if (!M.config.reducedMotion) {
+      spellFlash(point, 0xffc06a, 1.7, 0.24);
+      sparkBurst(point, [0xffb35c, 0xff6a22, 0xffedba], 18, 4.5, 0.62, 0.34);
+    }
+  }
+  function muzzlePos() {
+    return new THREE.Vector3(
+      goat.position.x + Math.sin(state.yaw) * 0.85,
+      goat.position.y + 1.85,
+      goat.position.z + Math.cos(state.yaw) * 0.85
+    );
+  }
+  // Returns true when an elemental strike fired. Falls back to melee when the
+  // aimed spell finds no enemies (which lets mining and placing still work).
+  function castSpell(reachLevel) {
+    if (!M.enemies || !M.enemies.spellTargets || !M.enemies.spellHit) return false;
+    const stats = M.upgrades ? M.upgrades.stats() : { damage: 0 };
+    const dmg = 1 + stats.damage;
+    const p = goat.position;
+    if (reachLevel >= 3) {
+      const targets = M.enemies.spellTargets(p, 10, 1);
+      if (!targets.length) return false;
+      const aim = new THREE.Vector3().copy(targets[0].position); aim.y += 0.8;
+      spawnFireball(muzzlePos(), aim, dmg);
+      if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'shell');
+      return true;
+    }
+    const range = reachLevel === 1 ? 3 : 4;
+    const targets = M.enemies.spellTargets(p, range, reachLevel === 1 ? 1 : 3);
+    if (!targets.length) return false;
+    let from = muzzlePos();
+    for (let i = 0; i < targets.length; i++) {
+      const enemy = targets[i];
+      if (!M.enemies.zombies.includes(enemy)) continue;
+      const to = new THREE.Vector3().copy(enemy.position); to.y += 0.8;
+      spellBolt(from, to);
+      M.enemies.spellHit(enemy, dmg);
+      from = to;
+    }
+    if (audioRef && audioRef.towerShot) audioRef.towerShot(goat.position.clone(), 'bolt');
+    return true;
+  }
+  function updateSpellFx(dt, t) {
+    for (let i = spellFx.length - 1; i >= 0; i--) {
+      const fx = spellFx[i];
+      fx.life += dt;
+      const k = clamp(fx.life / fx.ttl, 0, 1);
+      if (fx.onAge) fx.onAge(k);
+      if (fx.life >= fx.ttl) {
+        if (fx.object.userData.disposeGeometry) fx.object.userData.disposeGeometry.dispose();
+        if (!fx.object.userData.sharedMaterial) {
+          fx.object.traverse(function (o) {
+            if (!o.material) return;
+            const list = Array.isArray(o.material) ? o.material : [o.material];
+            for (let j = 0; j < list.length; j++) list[j].dispose();
+          });
+        }
+        if (fx.object.parent) fx.object.parent.remove(fx.object);
+        spellFx.splice(i, 1);
+      }
+    }
+    for (let i = 0; i < sparks.length; i++) {
+      const spark = sparks[i];
+      if (!spark.mesh.visible) continue;
+      spark.life -= dt;
+      if (spark.life <= 0) { spark.mesh.visible = false; continue; }
+      const k = clamp(spark.life / spark.maxLife, 0, 1);
+      spark.mesh.position.addScaledVector(spark.v, dt);
+      spark.v.y -= 5.5 * dt;
+      spark.mesh.scale.setScalar(spark.size * (0.35 + k * 0.65));
+      spark.mesh.material.opacity = k;
+    }
+    for (let i = fireballs.length - 1; i >= 0; i--) {
+      const fb = fireballs[i];
+      const distance = Math.max(0.001, fb.to.distanceTo(fb.from));
+      fb.k = clamp(fb.k + dt * 16 / distance, 0, 1);
+      const p = new THREE.Vector3().lerpVectors(fb.from, fb.to, fb.k);
+      if (fb.mesh) fb.mesh.position.copy(p);
+      const hitWall = worldRef && worldRef.blockedAt && worldRef.blockedAt(p.x, p.z, p.y - 0.6, p.y + 0.6);
+      if (hitWall || fb.k >= 1) { explodeFireball(fb, p); continue; }
+      if (!M.config.reducedMotion && Math.random() < 0.7)
+        sparkBurst(p, [0xffcf7a, 0xff7a2a], 1, 1.2, 0.24, 0.15);
+    }
+  }
 
   const GRAVITY = 26;
   const JUMP_SPEED = 12.2;
@@ -530,6 +777,7 @@
     const upgrades = M.upgrades ? M.upgrades.stats() : { move: 1, rate: 1, reach: 0, damage: 0 };
     const speedLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'move') : 0;
     const wheel = speedLevel >= 3;
+    const reachLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
     const previousYaw = s.yaw;
     s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
     recoverOverlap();
@@ -801,7 +1049,9 @@
         if (M.items.placeSelectedBlock()) {
           recoverOverlap();
         }
-      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: 2.8 + upgrades.reach, damage: 1 + upgrades.damage, maxTargets: 3 })) {
+      } else if (reachLevel >= 1 && castSpell(reachLevel)) {
+        // Long horns channel an elemental strike instead of a melee lunge.
+      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: 2.8, damage: 1 + upgrades.damage, maxTargets: 3 })) {
         audioRef.thud();
       } else if (M.targeting) {
         const hit = M.targeting.aim(cameraRef, goat.position);
@@ -811,7 +1061,7 @@
 
     if (stompPending) {
       s.stompHit = true;
-      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true, { range: 3.1 + upgrades.reach, damage: 2 + upgrades.damage, maxTargets: 8 });
+      const hit = s.grounded && M.enemies && M.enemies.attack(goat.position, s.yaw, true, { range: 3.1, damage: 2 + upgrades.damage, maxTargets: 8 });
       const broke = !hit && s.grounded && worldRef.breakBlockBelow(goat.position.x, goat.position.z, goat.position.y);
       audioRef.stomp(broke || hit);
       if (broke) s.footTimer = Math.max(s.footTimer, 0.3);
@@ -869,6 +1119,16 @@
 
     bell.rotation.z = Math.sin(t * 2.5) * 0.12 + s.speed * Math.sin(s.walkPhase) * 0.1;
     bell.rotation.x = Math.sin(t * 2.1 + 1) * 0.1;
+
+    // Horns glow and pulse at the speed of their elemental charge.
+    if (hornStyle.level > 0) {
+      const pulse = HORN_STYLE[hornStyle.level];
+      const charge = pulse.base + Math.sin(t * pulse.pulse) * pulse.swing;
+      for (let i = 0; i < hornStyle.mats.length; i++) hornStyle.mats[i].emissiveIntensity = charge;
+    }
+
+    // Advance bolts, sparks and fireballs, and their collisions.
+    updateSpellFx(dt, t);
   }
 
   function jump() {
@@ -978,6 +1238,7 @@
     startStomp: startStomp,
     greet: greet,
     applySpeedStyle: applySpeedStyle,
+    applyHornStyle: applyHornStyle,
     intersectsBlock: intersectsBlock,
     body: BODY,
     get aimCamera() { return cameraRef; },

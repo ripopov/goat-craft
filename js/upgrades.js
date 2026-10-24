@@ -14,26 +14,44 @@
   function valid(target) { return target === player || !!(M.animals && M.animals.list.includes(target)); }
   function keys(target) { return target !== player && target.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']; }
   function level(target, key) { const levels = training.get(target); return levels ? levels[key] || 0 : 0; }
-  // At tier 3: movement and attack speed double, reach triples (2.8 base headbutt
-  // range) and headbutt damage triples (1 base). Per-tier factors sum to those caps.
+  // At tier 3: movement and attack speed double, headbutt damage triples (1
+  // base). Attack reach is replaced for the player by elemental strikes with
+  // fixed ranges: tier 1 an electric bolt, tier 2 a chaining arc, tier 3 a
+  // fireball. Hunters keep the old melee reach (2.8 base headbutt range).
   const REACH_BASE = 2.8, DAMAGE_BASE = 1;
+  const SPELL_RANGES = [0, 3, 4, 10];
+  const SPELL_DESCRIPTION = 'Your horns channel elemental strikes: an electric bolt, then a chaining arc, then a fireball. ' +
+    'Walls stop the bolt; the fireball bursts on impact with a 3-block blast.';
   function stats(target) {
     target = target || player;
+    const reachLevel = level(target, 'reach');
     return { move: 1 + level(target, 'move') / 3, rate: 1 + level(target, 'cadence') / 3,
-      reach: level(target, 'reach') * REACH_BASE * 2 / 3, damage: level(target, 'power') * DAMAGE_BASE * 2 / 3,
+      reach: target === player ? SPELL_RANGES[reachLevel] : reachLevel * REACH_BASE * 2 / 3,
+      damage: level(target, 'power') * DAMAGE_BASE * 2 / 3,
       craft: 1 + level(target, 'craft') * 0.25 };
   }
   function effect(target, key, rank) {
     if (key === 'move') return '+' + Math.round(rank * 100 / 3) + '% movement';
     if (key === 'cadence') return '+' + Math.round(rank * 100 / 3) + '% attack speed';
-    if (key === 'reach') return '+' + (rank * REACH_BASE * 2 / 3).toFixed(1) + ' reach';
+    if (key === 'reach') {
+      if (target === player) {
+        if (rank <= 0) return 'melee headbutts';
+        if (rank === 1) return 'electric bolt · 3 blocks, nearest enemy';
+        if (rank === 2) return 'electric chain · 4 blocks, up to 3 foes';
+        return 'fireball · 10 blocks, 3-block blast';
+      }
+      return '+' + (rank * REACH_BASE * 2 / 3).toFixed(1) + ' reach';
+    }
     if (key === 'power') return '+' + (rank * DAMAGE_BASE * 2 / 3).toFixed(1) + ' damage';
     return '+' + (rank * 25) + '% work speed';
   }
   function offer(target, key) {
     if (!valid(target) || !keys(target).includes(key)) return null;
     const def = definitions[key], rank = level(target, key), maxed = rank >= MAX_LEVEL;
-    return { key: key, name: def.name, description: key === 'move' && target !== player ? 'Move faster between enemies or construction jobs.' : def.description,
+    const description = key === 'move' && target !== player ? 'Move faster between enemies or construction jobs.'
+      : key === 'reach' && target === player ? SPELL_DESCRIPTION
+      : def.description;
+    return { key: key, name: def.name, description: description,
       level: rank, maxed: maxed, current: effect(target, key, rank), next: effect(target, key, Math.min(MAX_LEVEL, rank + 1)),
       cost: maxed ? null : { coins: def.coins[rank], [def.material]: def.blocks[rank] } };
   }
@@ -51,6 +69,9 @@
     levels[key] = item.level + 1;
     if (target === player && key === 'move' && M.goat && M.goat.applySpeedStyle) {
       M.goat.applySpeedStyle(levels[key]);
+    }
+    if (target === player && key === 'reach' && M.goat && M.goat.applyHornStyle) {
+      M.goat.applyHornStyle(levels[key]);
     }
     if (M.audio && M.audio.pickup) M.audio.pickup();
     return true;

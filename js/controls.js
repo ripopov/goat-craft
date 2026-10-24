@@ -41,6 +41,12 @@
     typeof canvas.requestPointerLock === 'function' &&
     typeof document.exitPointerLock === 'function';
   let lookActive = false;
+  // Keep the player's preference separate from temporary menu/focus releases.
+  let lookWanted = false;
+  let lookSuspended = false;
+  let lookPending = false;
+  let lookReleasePending = false;
+  let pageFocused = true;
   let lookClick = null;
   let lookButton = null;
   let defaultHint = '';
@@ -304,25 +310,61 @@
     setLookHint(active);
   }
 
-  function requestLook() {
-    if (!supportsPointerLock || lookActive) return false;
+  function canResumeLook() {
+    return pageFocused && !document.hidden &&
+      (typeof document.hasFocus !== 'function' || document.hasFocus()) &&
+      !(M.upgradeMenu && M.upgradeMenu.isOpen) && !(M.strategy && M.strategy.active);
+  }
+
+  function restoreLook() {
+    if (!supportsPointerLock || !lookWanted || lookSuspended || lookActive ||
+        lookPending || lookReleasePending || !canResumeLook()) return false;
+    lookPending = true;
     try {
       const pending = canvas.requestPointerLock();
-      if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+      if (pending && typeof pending.catch === 'function') pending.catch(function () { lookPending = false; });
     } catch (err) {
+      lookPending = false;
       return false;
     }
     return true;
   }
 
-  function releaseLook() {
+  function requestLook() {
+    if (!supportsPointerLock) return false;
+    lookWanted = true;
+    return restoreLook();
+  }
+
+  function exitLook() {
     if (document.pointerLockElement === canvas && typeof document.exitPointerLock === 'function') {
-      try { document.exitPointerLock(); } catch (err) { /* ignore */ }
+      lookReleasePending = true;
+      try { document.exitPointerLock(); } catch (err) { lookReleasePending = false; }
     }
+  }
+
+  function releaseLook() {
+    lookWanted = false;
+    exitLook();
+  }
+
+  function suspendLook() {
+    lookSuspended = true;
+    exitLook();
+  }
+
+  function resumeLook() {
+    lookSuspended = false;
+    restoreLook();
   }
 
   document.addEventListener('pointerlockchange', function () {
     const active = document.pointerLockElement === canvas;
+    // Browsers may consume Esc without delivering a key event. An unrequested
+    // unlock in the focused game is the browser's explicit unlock gesture.
+    if (!active && lookActive && !lookReleasePending && !lookSuspended && canResumeLook()) lookWanted = false;
+    lookReleasePending = false;
+    lookPending = false;
     lookActive = active;
     lookClick = null;
     if (active) {
@@ -330,16 +372,35 @@
       pinch = null;
       pointers.clear();
       canvas.classList.remove('dragging');
+      // A request may finish after a menu opens or the player presses F/Esc.
+      if (!lookWanted || lookSuspended || !canResumeLook()) exitLook();
     }
-    setLookUi(active);
+    setLookUi(lookActive);
     lastInteraction = performance.now();
+    if (!active) restoreLook();
   });
 
   document.addEventListener('pointerlockerror', function () {
-    lookActive = false;
+    lookPending = false;
+    lookActive = document.pointerLockElement === canvas;
     lookClick = null;
-    setLookUi(false);
+    setLookUi(lookActive);
   });
+
+  // Focus restoration can lack the activation a browser requires. Retry on
+  // the next interaction as well, without repeatedly requesting every frame.
+  window.addEventListener('focus', function () { pageFocused = true; restoreLook(); });
+  window.addEventListener('keyup', restoreLook);
+  document.addEventListener('click', restoreLook);
+  // Handle F before the strategic view consumes its gameplay keys. It also
+  // lets the player opt out while capture is temporarily suspended.
+  window.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.altKey || e.ctrlKey || !(e.code === 'KeyF' || e.key.toLowerCase() === 'f') || !supportsPointerLock) return;
+    e.preventDefault();
+    if (e.repeat) return;
+    if (lookWanted) releaseLook();
+    else requestLook();
+  }, true);
 
   function digitKey(e) {
     const code = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
@@ -387,7 +448,7 @@
 
     // Chrome usually releases pointer lock itself on Escape, but handling it
     // explicitly keeps the state in sync (and makes the test harness reliable).
-    if (e.key === 'Escape' && lookActive) {
+    if (e.key === 'Escape' && lookWanted) {
       e.preventDefault();
       releaseLook();
       return;
@@ -412,15 +473,6 @@
       held.space = true;
       noteActivity();
       if (!e.repeat && M.controls.onJump) M.controls.onJump();
-      return;
-    }
-
-    if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') {
-      if (!supportsPointerLock) return;
-      e.preventDefault();
-      if (e.repeat) return;
-      if (lookActive) releaseLook();
-      else requestLook();
       return;
     }
 
@@ -478,9 +530,10 @@
     held.shift = held.space = held.ctrl = false;
   }
 
-  window.addEventListener('blur', stopSteering);
+  window.addEventListener('blur', function () { pageFocused = false; stopSteering(); });
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) stopSteering();
+    else restoreLook();
   });
 
   function snapTo(position) {
@@ -510,7 +563,7 @@
         e.preventDefault();
         e.stopPropagation();
         lookButton.blur();
-        if (lookActive) releaseLook();
+        if (lookWanted) releaseLook();
         else requestLook();
       });
     }
@@ -521,6 +574,8 @@
     update: updateCamera,
     requestLook: requestLook,
     releaseLook: releaseLook,
+    suspendLook: suspendLook,
+    resumeLook: resumeLook,
     get lookActive() { return lookActive; },
     get firstPerson() { return firstPerson && !(M.strategy && M.strategy.active); },
     resumeCamera: function () {

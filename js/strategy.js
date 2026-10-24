@@ -37,13 +37,14 @@
   }
   function setActive(value) {
     if (!camera || active === value) return;
+    active = value;
     if (M.upgradeMenu.isOpen) M.upgradeMenu.close();
-    active = value; keys.clear(); pointer = drag = null; M.controls.stopSteering();
+    keys.clear(); pointer = drag = null; M.controls.stopSteering();
     document.body.classList.toggle('rts-active', active);
     panel.hidden = !active; toggleButton.setAttribute('aria-pressed', String(active));
     toggleButton.querySelector('span').textContent = active ? 'Return to goat' : 'Strategic view';
-    M.controls.releaseLook();
     if (active) {
+      M.controls.suspendLook();
       const p = M.goat.group.position;
       focus.set(M.utils.clamp(p.x * .25, -35, 35), 14, M.utils.clamp(p.z * .25, -35, 35));
       camera.fov = 48; camera.updateProjectionMatrix();
@@ -54,6 +55,7 @@
     } else {
       cancel(); M.controls.resumeCamera();
       M.goat.state.manualHold = 3;
+      M.controls.resumeLook();
     }
     grid.visible = active;
   }

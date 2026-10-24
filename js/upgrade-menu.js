@@ -57,12 +57,13 @@
   function close() {
     if (!dialog || !dialog.open) return;
     dialog.close();
+    M.controls.resumeLook();
   }
   function open() {
     if (!dialog || dialog.open || M.enemies.getState().defeated) return;
     previousFocus = document.activeElement;
     nearby = M.upgrades.nearest(); target = nearby || M.upgrades.player;
-    M.controls.stopSteering(); M.controls.releaseLook(); M.controls.noteActivity();
+    M.controls.stopSteering(); M.controls.suspendLook(); M.controls.noteActivity();
     M.goat.state.manualHold = Math.max(3, M.goat.state.manualHold);
     const help = $('controls-help'); if (help) help.open = false;
     $('upgrade-animal-tab').hidden = !nearby;
@@ -88,6 +89,7 @@
     dialog.addEventListener('close', function () {
       M.controls.stopSteering(); M.controls.noteActivity();
       if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+      M.controls.resumeLook();
     });
     dialog.addEventListener('click', function (event) { if (event.target === dialog) {
       const box = dialog.getBoundingClientRect();

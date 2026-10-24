@@ -5,8 +5,10 @@ import test from 'node:test';
 
 // Run the actual input, RTS camera and goat controller together. The DOM and
 // flat terrain are fixtures; camera math, input capture and wandering are real.
-function commandGame() {
+function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   const listeners = new Map(), elements = new Map();
+  const lockEvents = [];
+  let focused = true, lockRequests = 0, rejectLock = false;
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   function listen(target, type, fn, options) {
     const key = target + ':' + type;
@@ -15,10 +17,14 @@ function commandGame() {
   }
   function element(id) {
     if (elements.has(id)) return elements.get(id);
-    const node = { hidden: false, innerHTML: '', textContent: '', attrs: {}, children: [],
+    const node = { hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, children: [],
       classList: { add() {}, remove() {}, toggle() {} },
       setAttribute(k, v) { this.attrs[k] = v; }, appendChild(child) { this.children.push(child); },
       querySelector: selector => element(id + selector),
+      replaceChildren() { this.children = []; },
+      focus() { document.activeElement = this; },
+      showModal() { this.open = true; },
+      close() { this.open = false; lockEvents.push(() => dispatch(id, 'close')); },
       addEventListener: (type, fn, options) => listen(id, type, fn, options),
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 1280, height: 720 }),
       getContext: () => drawing,
@@ -27,18 +33,27 @@ function commandGame() {
     elements.set(id, node); return node;
   }
   const document = { getElementById: element, createElement: () => element('created-' + elements.size),
+    hasFocus: () => focused, hidden: false,
     addEventListener: (type, fn, options) => listen('document', type, fn, options), body: element('body') };
-  const window = { matchMedia: () => ({ matches: false }), addEventListener: (type, fn, options) => listen('window', type, fn, options) };
+  const window = { matchMedia: query => ({ matches: coarsePointer && query.includes('pointer') }), addEventListener: (type, fn, options) => listen('window', type, fn, options) };
   function dispatch(target, type, values = {}) {
     const event = { type, key: '', code: '', ctrlKey: false, repeat: false,
-      preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; }, ...values };
+      preventDefault() { this.prevented = true; }, stopPropagation() {}, stopImmediatePropagation() { this.stopped = true; }, ...values };
     for (const { fn } of (listeners.get(target + ':' + type) || []).slice().sort((a, b) => Number(b.capture) - Number(a.capture))) {
       fn(event); if (event.stopped) break;
     }
     return event;
   }
-  element('scene').requestPointerLock = () => { document.pointerLockElement = element('scene'); dispatch('document', 'pointerlockchange'); };
-  document.exitPointerLock = () => { document.pointerLockElement = null; dispatch('document', 'pointerlockchange'); };
+  function lockChange(fn) { if (deferredLock) lockEvents.push(fn); else fn(); }
+  element('scene').requestPointerLock = () => {
+    lockRequests++;
+    if (rejectLock) {
+      lockChange(() => dispatch('document', 'pointerlockerror'));
+      return Promise.reject(new Error('Activation required'));
+    }
+    lockChange(() => { document.pointerLockElement = element('scene'); dispatch('document', 'pointerlockchange'); });
+  };
+  document.exitPointerLock = () => { document.pointerLockElement = null; lockChange(() => dispatch('document', 'pointerlockchange')); };
   const context = vm.createContext({ window, document, console, performance: { now: () => 0 } });
   const load = file => vm.runInContext(readFileSync(new URL('../' + file, import.meta.url), 'utf8'), context);
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/controls.js', 'js/goat.js', 'js/towers.js', 'js/strategy.js']) load(file);
@@ -47,8 +62,8 @@ function commandGame() {
   M.world = { blockSize: 2, surfaceHeight: () => 14, landingHeight: () => 14, waterInfoAtBlock: () => null,
     blockedAt: (x, z, low) => low < 14, blockInfoAt: () => null };
   M.items = { count: () => 0 }; M.targeting = { trace: () => null };
-  M.upgrades = { canAfford: () => false, stats: () => ({ move: 1, rate: 1, reach: 0, damage: 0 }) };
-  M.upgradeMenu = { isOpen: false, close() { this.isOpen = false; } };
+  M.upgrades = { player: {}, nearest: () => null, keys: () => [], canAfford: () => false, stats: () => ({ move: 1, rate: 1, reach: 0, damage: 0 }) };
+  load('js/upgrade-menu.js'); M.upgradeMenu.init();
   M.enemies = { getState: () => ({ coins: 8 }), zombies: [] };
   M.hearthTree = { position: new THREE.Vector3(0, 14, 0), health: 100 };
   M.controls.init(camera);
@@ -60,7 +75,12 @@ function commandGame() {
       M.goat.update(1 / 60, i / 60); M.controls.update(1 / 60, i / 60, M.goat.group, M.goat.state, M.world); M.strategy.update(1 / 60);
     }
   }
-  return { M, camera, press, dispatch, element, advance, document };
+  return { M, camera, press, dispatch, element, advance, document,
+    flush() { while (lockEvents.length) lockEvents.shift()(); },
+    setFocused(value) { focused = value; dispatch('window', value ? 'focus' : 'blur'); },
+    setRejectLock(value) { rejectLock = value; },
+    get lockRequests() { return lockRequests; }
+  };
 }
 
 test('T releases captured FPS, hands the goat to AI, pans independently and restores the prior view', () => {
@@ -77,8 +97,105 @@ test('T releases captured FPS, hands the goat to AI, pans independently and rest
   assert.ok(M.goat.group.position.distanceTo(goat) > .25, 'real autonomous goat wanders while commanding');
   assert.equal(M.goat.group.visible, true);
   press('t', 'KeyT'); assert.equal(M.strategy.active, false); assert.equal(M.controls.firstPerson, true);
+  assert.ok(document.pointerLockElement, 'returning from strategic view restores capture');
   assert.equal(camera.fov, 70); assert.equal(M.controls.getMovement(camera).lengthSq(), 0);
   advance(.1); assert.equal(M.goat.group.visible, false);
+});
+
+test('upgrades restore capture on Q, Esc, close button, backdrop and native dialog close', () => {
+  const { M, press, dispatch, element, document, flush } = commandGame();
+  press('f', 'KeyF');
+  const exits = [
+    () => press('q', 'KeyQ'),
+    () => press('Escape', 'Escape'),
+    () => dispatch('upgrade-close', 'click'),
+    () => dispatch('upgrade-menu', 'click', { target: element('upgrade-menu'), clientX: -1, clientY: -1 }),
+    () => dispatch('upgrade-menu', 'cancel'),
+    () => element('upgrade-menu').close()
+  ];
+  for (const exit of exits) {
+    press('q', 'KeyQ'); assert.equal(M.upgradeMenu.isOpen, true);
+    assert.equal(document.pointerLockElement, null);
+    exit(); flush();
+    assert.equal(M.upgradeMenu.isOpen, false);
+    assert.equal(document.pointerLockElement, element('scene'));
+  }
+});
+
+test('nested training and strategy keep the pointer free until returning to the goat', () => {
+  const { M, press, dispatch, document, element, flush } = commandGame();
+  press('f', 'KeyF'); press('t', 'KeyT'); press('q', 'KeyQ');
+  press('Escape', 'Escape'); flush();
+  assert.equal(M.strategy.active, true); assert.equal(document.pointerLockElement, null);
+  press('Escape', 'Escape'); assert.equal(document.pointerLockElement, element('scene'));
+  press('q', 'KeyQ'); press('t', 'KeyT'); flush();
+  assert.equal(M.upgradeMenu.isOpen, false); assert.equal(document.pointerLockElement, null);
+  dispatch('strategy-toggle', 'click'); assert.equal(document.pointerLockElement, element('scene'));
+});
+
+test('uncaptured players and touch controls remain free after menus and strategic view', () => {
+  for (const coarsePointer of [false, true]) {
+    const game = commandGame({ coarsePointer }), { M, press, dispatch, flush } = game;
+    if (coarsePointer) press('f', 'KeyF');
+    press('q', 'KeyQ'); press('q', 'KeyQ'); flush();
+    press('t', 'KeyT'); press('t', 'KeyT');
+    dispatch('document', 'click'); dispatch('window', 'keyup');
+    assert.equal(game.lockRequests, 0); assert.equal(M.controls.lookActive, false);
+  }
+});
+
+test('Esc and F explicitly disable recapture, including browser-consumed Esc', () => {
+  for (const exit of ['escape', 'native-escape', 'f', 'button', 'suspended-f']) {
+    const game = commandGame(), { M, press, dispatch, document, element, flush } = game;
+    press('f', 'KeyF');
+    if (exit === 'escape') press('Escape', 'Escape');
+    else if (exit === 'native-escape') {
+      document.pointerLockElement = null; dispatch('document', 'pointerlockchange');
+    } else if (exit === 'button') dispatch('look', 'click');
+    else {
+      if (exit === 'suspended-f') press('t', 'KeyT');
+      press('f', 'KeyF');
+      if (M.strategy.active) press('t', 'KeyT');
+    }
+    press('q', 'KeyQ'); press('q', 'KeyQ'); flush();
+    press('t', 'KeyT'); press('t', 'KeyT');
+    game.setFocused(false); game.setFocused(true);
+    dispatch('document', 'click'); dispatch('window', 'keyup');
+    assert.equal(document.pointerLockElement, null, exit);
+    assert.equal(game.lockRequests, 1, 'no recapture after ' + exit);
+    dispatch('look', 'click'); assert.equal(document.pointerLockElement, element('scene'));
+  }
+});
+
+test('focus and visibility losses preserve capture preference and retry denied requests on interaction', async () => {
+  const game = commandGame(), { M, press, document, dispatch, element } = game;
+  press('f', 'KeyF'); press('w', 'KeyW');
+  game.setFocused(false);
+  document.pointerLockElement = null; dispatch('document', 'pointerlockchange');
+  game.setRejectLock(true); game.setFocused(true);
+  await Promise.resolve();
+  assert.equal(document.pointerLockElement, null);
+  game.setRejectLock(false); dispatch('document', 'click');
+  assert.equal(document.pointerLockElement, element('scene'));
+  document.hidden = true; dispatch('document', 'visibilitychange');
+  document.pointerLockElement = null; dispatch('document', 'pointerlockchange');
+  document.hidden = false; dispatch('document', 'visibilitychange');
+  assert.equal(document.pointerLockElement, element('scene'));
+  assert.equal(M.controls.getMovement(game.camera).lengthSq(), 0, 'returning never leaves movement held');
+});
+
+test('asynchronous lock changes handle fast menu transitions and cancelled pending requests', () => {
+  const game = commandGame({ deferredLock: true }), { M, press, document, flush, element } = game;
+  press('f', 'KeyF'); press('q', 'KeyQ'); flush();
+  assert.equal(document.pointerLockElement, null, 'late capture cannot trap the pointer in training');
+  press('q', 'KeyQ'); flush(); assert.equal(document.pointerLockElement, element('scene'));
+  press('q', 'KeyQ'); press('q', 'KeyQ'); flush();
+  assert.equal(document.pointerLockElement, element('scene'), 'closing before unlock notification still restores');
+  M.controls.releaseLook(); flush();
+  press('f', 'KeyF'); press('f', 'KeyF'); flush();
+  assert.equal(document.pointerLockElement, null, 'F cancels an in-flight capture');
+  press('f', 'KeyF'); press('Escape', 'Escape'); flush();
+  assert.equal(document.pointerLockElement, null, 'Esc cancels an in-flight capture');
 });
 
 test('RTS keys select towers instead of inventory/actions, Tab remains accessible, Esc cancels before leaving', () => {

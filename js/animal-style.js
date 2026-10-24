@@ -1,5 +1,5 @@
 // Shared visual style machinery for the player goat and the herd. Fleet
-// hooves, Quick strikes and Long horns training decorate the same rig pieces on every
+// hooves, Quick strikes, Long horns and Heavy horns decorate the same rig pieces on every
 // animal: glowing energy bands climb the legs and the tail tip lights up,
 // tier 3 turns the legs into spinning wheel rims, and the horns re-forge
 // into cyan / gold / molten elemental charges that pulse with the spell
@@ -180,6 +180,84 @@
     { name: 'spring snap', width: 1.18, length: 1.18, color: 0xffc65b },
     { name: 'piston strike', width: 1.26, length: 1.32, color: 0xeb83ff }
   ];
+  const POWER_STYLE = [
+    { hornWidth: 1, hornLength: 1, beard: 'natural tuft', boltRadius: 0.018, glow: 0.12, fireballSize: 1 },
+    { hornWidth: 1.18, hornLength: 1.25, beard: 'pointed goatee', boltRadius: 0.035, glow: 0.2, fireballSize: 1.22 },
+    { hornWidth: 1.4, hornLength: 1.55, beard: 'forked beard', boltRadius: 0.055, glow: 0.28, fireballSize: 1.48 },
+    { hornWidth: 1.65, hornLength: 1.9, beard: 'braided beard', boltRadius: 0.08, glow: 0.36, fireballSize: 1.78 }
+  ];
+  // Heavy horns scales the existing horn meshes, so elemental tips/bands and
+  // stag antler branches stay attached regardless of upgrade purchase order.
+  function makePowerStyle(THREE) {
+    const state = { level: 0, ctx: null, rest: [], originalBeard: [], nodes: [] };
+    function restore() {
+      if (!state.ctx) return;
+      state.ctx.horns.forEach(function (horn, i) { horn.mesh.scale.copy(state.rest[i]); });
+      state.originalBeard.forEach(function (part) { part.node.visible = part.visible; });
+    }
+    return {
+      apply: function (level, ctx) {
+        level = clamp(level || 0, 0, 3);
+        if (level === state.level || !ctx || !ctx.horns || !ctx.horns.length) return state.level;
+        if (!state.ctx) {
+          state.ctx = ctx;
+          state.rest = ctx.horns.map(function (horn) { return horn.mesh.scale.clone(); });
+          state.originalBeard = ctx.beard ? ctx.beard.children.map(function (node) { return { node: node, visible: node.visible }; }) : [];
+        }
+        disposeNodes(THREE, state.nodes);
+        restore();
+        state.level = level;
+        const style = POWER_STYLE[level];
+        ctx.horns.forEach(function (horn, i) {
+          const rest = state.rest[i];
+          horn.mesh.scale.set(rest.x * style.hornWidth, rest.y * style.hornLength, rest.z * style.hornLength);
+        });
+        if (!level || !ctx.beard) return level;
+        state.originalBeard.forEach(function (part) { part.node.visible = false; });
+        const beard = new THREE.Group();
+        beard.name = 'heavy-horns-beard-' + level;
+        ctx.beard.add(beard);
+        state.nodes.push(beard);
+        const k = ctx.scale || 1;
+        function piece(geometry, x, y, z, gold) {
+          const material = gold ? new THREE.MeshStandardMaterial({ color: 0xe9bf68, roughness: 0.25, metalness: 0.65 })
+            : ctx.beardMat.clone();
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(x * k, y * k, z * k);
+          mesh.scale.setScalar(k);
+          mesh.castShadow = mesh.receiveShadow = true;
+          beard.add(mesh);
+          return mesh;
+        }
+        function tuft(x, y, width, length, tilt) {
+          const mesh = piece(new THREE.ConeGeometry(width, length, 7), x, y, 0, false);
+          mesh.rotation.z = Math.PI + tilt;
+        }
+        if (level === 1) {
+          tuft(0, -0.12, 0.11, 0.32, 0);
+          tuft(-0.06, -0.07, 0.055, 0.22, -0.12);
+          tuft(0.06, -0.07, 0.055, 0.22, 0.12);
+        } else if (level === 2) {
+          for (const side of [-1, 1]) {
+            tuft(side * 0.075, -0.17, 0.085, 0.43, side * 0.22);
+            piece(new THREE.CylinderGeometry(0.036, 0.033, 0.045, 8), side * 0.11, -0.28, 0.012, true);
+          }
+        } else {
+          tuft(0, -0.05, 0.12, 0.24, 0);
+          for (let i = 0; i < 6; i++) {
+            const knot = piece(new THREE.SphereGeometry(1, 8, 6), (i % 2 ? -1 : 1) * 0.025, -0.12 - i * 0.053, 0.015, false);
+            knot.scale.set(0.075 * k * (1 - i * 0.075), 0.065 * k, 0.055 * k);
+            knot.rotation.z = (i % 2 ? -1 : 1) * 0.4;
+          }
+          piece(new THREE.CylinderGeometry(0.05, 0.044, 0.055, 8), 0, -0.43, 0.012, true);
+          tuft(0, -0.49, 0.05, 0.14, 0);
+        }
+        return level;
+      },
+      get level() { return state.level; },
+      dispose: function () { disposeNodes(THREE, state.nodes); restore(); state.level = 0; }
+    };
+  }
   function makeNeckStyle(THREE) {
     const state = { level: 0, nodes: [], ctx: null, rest: null };
     const pose = { lunge: 0, yaw: 0, roll: 0 };
@@ -282,6 +360,8 @@
     makeSpeedStyle: makeSpeedStyle,
     makeHornStyle: makeHornStyle,
     makeNeckStyle: makeNeckStyle,
+    makePowerStyle: makePowerStyle,
+    powerStyle: POWER_STYLE,
     neckStyle: NECK_STYLE,
     tierGlow: TIER_GLOW,
     hornStyle: HORN_STYLE

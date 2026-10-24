@@ -315,6 +315,7 @@
   const horns = [];
   [-1, 1].forEach(function (sign) {
     const horn = makeHorn(sign);
+    horn.name = sign < 0 ? 'goat-horn-left' : 'goat-horn-right';
     horn.position.set(sign * 0.095, 0.225, 0.0);
     headPivot.add(horn);
     horns.push(horn);
@@ -322,6 +323,7 @@
 
   // beard
   const beard = new THREE.Group();
+  beard.name = 'goat-beard';
   beard.position.set(0, -0.24, 0.33);
   beard.rotation.x = -0.22;
   headPivot.add(beard);
@@ -425,6 +427,7 @@
   const speedFx = M.styleFx.makeSpeedStyle(THREE);
   const hornFx = M.styleFx.makeHornStyle(THREE);
   const neckFx = M.styleFx.makeNeckStyle(THREE);
+  const powerFx = M.styleFx.makePowerStyle(THREE);
   const HORN_TIP = new THREE.Vector3(0, 0.26, -0.37); // far end of makeHorn's curve
   const GOAT_HORN_BAND = new THREE.Vector3(0, 0.07, -0.03);
   function applySpeedStyle(level) {
@@ -434,6 +437,9 @@
     const ctx = { horns: [], defaultMat: hornMat, scale: 1 };
     for (let i = 0; i < horns.length; i++) ctx.horns.push({ mesh: horns[i], tip: HORN_TIP, band: GOAT_HORN_BAND });
     hornFx.apply(level, ctx);
+  }
+  function applyPowerStyle(level) {
+    powerFx.apply(level, { horns: horns.map(function (mesh) { return { mesh: mesh }; }), beard: beard, beardMat: beardMat });
   }
   function applyNeckStyle(level) {
     neckFx.apply(level, { neck: neck, headPivot: headPivot });
@@ -471,13 +477,28 @@
   const flashGeometry = new THREE.SphereGeometry(1, 12, 10);
   const fireballGeometry = new THREE.SphereGeometry(0.24, 12, 10);
   const fireballMaterial = new THREE.MeshStandardMaterial({ color: 0xff9a3c, emissive: 0xff5c1a, emissiveIntensity: 1.5 });
+  const fireballRingGeometry = new THREE.TorusGeometry(0.29, 0.012, 5, 24);
+  const POWER_VISUALS = M.styleFx.powerStyle;
+  const fireballLayers = POWER_VISUALS.map(function (style, tier) {
+    if (!tier) return null;
+    return {
+      core: new THREE.MeshBasicMaterial({ color: 0xfff4ce, toneMapped: false }),
+      shell: new THREE.MeshBasicMaterial({ color: 0xff9c32, transparent: true, opacity: 0.55 + tier * 0.06,
+        blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }),
+      halo: new THREE.MeshBasicMaterial({ color: 0xffb63f, transparent: true, opacity: style.glow,
+        blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+    };
+  });
+  const MAX_SPELL_FX = 64, MAX_SPARKS = 160;
   const spellFx = [];
   const sparks = [];
   const fireballs = [];
 
-  function spellBolt(from, to) {
-    if (M.config.reducedMotion || spellFx.length >= 40) return;
+  function spellBolt(from, to, powerLevel) {
+    if (M.config.reducedMotion || spellFx.length >= MAX_SPELL_FX) return;
     const group = new THREE.Group();
+    group.name = 'spell-bolt';
+    group.userData.powerLevel = powerLevel;
     const delta = new THREE.Vector3().copy(to).sub(from);
     const side = new THREE.Vector3(-delta.z, 0, delta.x).normalize();
     const points = [];
@@ -485,13 +506,31 @@
       const k = i / 12, offset = i === 0 || i === 12 ? 0 : rand(-0.5, 0.5) * 0.55;
       points.push(new THREE.Vector3().copy(from).addScaledVector(delta, k).addScaledVector(side, offset).add(new THREE.Vector3(0, offset * 0.5, 0)));
     }
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const line = new THREE.Line(geometry, boltMaterial);
-    group.add(line);
-    group.userData.disposeGeometry = geometry;
-    group.userData.sharedMaterial = true; // boltMaterial is shared with every bolt
+    let onAge;
+    if (!powerLevel) {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.Line(geometry, boltMaterial);
+      group.add(line);
+      group.userData.disposeGeometry = geometry;
+      group.userData.sharedMaterial = true;
+      onAge = function (k) { line.visible = k < 0.8; };
+    } else {
+      // WebGL line widths are often fixed to one pixel. Real tubes give the
+      // white-hot core and soft colored envelope visible volume on every GPU.
+      const style = POWER_VISUALS[powerLevel], path = new THREE.CatmullRomCurve3(points);
+      const core = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0xeaffff, transparent: true, depthWrite: false, toneMapped: false }));
+      core.name = 'spell-bolt-core';
+      const halo = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius * 2.8, 6, false),
+        new THREE.MeshBasicMaterial({ color: 0x64dfff, transparent: true, opacity: style.glow,
+          blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      halo.name = 'spell-bolt-halo';
+      group.add(core, halo);
+      group.userData.disposeGeometries = [core.geometry, halo.geometry];
+      onAge = function (k) { core.material.opacity = 1 - k * k; halo.material.opacity = style.glow * (1 - k); };
+    }
     sceneRef.add(group);
-    spellFx.push({ object: group, ttl: 0.18, life: 0, onAge: function (k) { line.visible = k < 0.8; } });
+    spellFx.push({ object: group, ttl: 0.18, life: 0, onAge: onAge });
   }
   function sparkBurst(point, colors, count, speed, life, size) {
     if (M.config.reducedMotion) return;
@@ -501,8 +540,11 @@
         if (!sparks[i].mesh.visible) { spark = sparks[i]; break; }
       }
       if (!spark) {
+        if (sparks.length >= MAX_SPARKS) break;
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6),
-          new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+          new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false,
+            blending: THREE.AdditiveBlending, toneMapped: false }));
+        mesh.name = 'spell-spark';
         sceneRef.add(mesh);
         spark = { mesh: mesh, v: new THREE.Vector3() };
         sparks.push(spark);
@@ -514,16 +556,18 @@
       spark.mesh.visible = true;
       spark.mesh.position.copy(point);
       spark.size = size * (0.7 + Math.random() * 0.6);
+      spark.mesh.scale.setScalar(spark.size);
       spark.maxLife = life * (0.7 + Math.random() * 0.6);
       spark.life = spark.maxLife;
       spark.v.set(Math.cos(angle) * reach, speed * (0.25 + Math.random() * 0.75), Math.sin(angle) * reach);
     }
   }
   function spellFlash(point, color, size, ttl) {
-    if (M.config.reducedMotion) return;
+    if (M.config.reducedMotion || spellFx.length >= MAX_SPELL_FX) return;
     const material = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.55,
-      blending: THREE.AdditiveBlending, depthWrite: false });
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
     const mesh = new THREE.Mesh(flashGeometry, material);
+    mesh.name = 'spell-flash';
     mesh.position.copy(point);
     mesh.scale.setScalar(size * 0.2);
     sceneRef.add(mesh);
@@ -532,10 +576,31 @@
   }
   // The fireball flies to the spot the target stood when it was aimed at;
   // walls burst it early, and the blast still lands around the impact point.
-  function spawnFireball(from, to, dmg) {
-    const fireball = { from: from.clone(), to: to.clone(), k: 0, dmg: dmg, mesh: null };
+  function spawnFireball(from, to, dmg, powerLevel) {
+    const fireball = { from: from.clone(), to: to.clone(), k: 0, dmg: dmg, powerLevel: powerLevel, trailClock: 0, mesh: null };
     if (!M.config.reducedMotion) {
-      const mesh = new THREE.Mesh(fireballGeometry, fireballMaterial);
+      let mesh;
+      if (!powerLevel) mesh = new THREE.Mesh(fireballGeometry, fireballMaterial);
+      else {
+        mesh = new THREE.Group();
+        const mats = fireballLayers[powerLevel];
+        const core = new THREE.Mesh(fireballGeometry, mats.core);
+        core.name = 'spell-fireball-core'; core.scale.setScalar(0.72);
+        const shell = new THREE.Mesh(fireballGeometry, mats.shell);
+        const halo = new THREE.Mesh(fireballGeometry, mats.halo);
+        halo.name = 'spell-fireball-halo'; halo.scale.setScalar(1.65);
+        mesh.add(core, shell, halo);
+        if (powerLevel >= 2) {
+          for (let i = 0; i < powerLevel - 1; i++) {
+            const ring = new THREE.Mesh(fireballRingGeometry, mats.core);
+            ring.rotation.set(Math.PI * (0.3 + i * 0.4), 0, i * 1.2);
+            mesh.add(ring);
+          }
+        }
+        mesh.scale.setScalar(POWER_VISUALS[powerLevel].fireballSize);
+      }
+      mesh.name = 'spell-fireball';
+      mesh.userData.powerLevel = powerLevel;
       mesh.position.copy(from);
       sceneRef.add(mesh);
       fireball.mesh = mesh;
@@ -550,8 +615,10 @@
     if (M.enemies && M.enemies.spellBlast) M.enemies.spellBlast(point, 3, fireball.dmg);
     if (audioRef && audioRef.towerImpact) audioRef.towerImpact(point, 'mortar');
     if (!M.config.reducedMotion) {
-      spellFlash(point, 0xffc06a, 1.7, 0.24);
-      sparkBurst(point, [0xffb35c, 0xff6a22, 0xffedba], 18, 4.5, 0.62, 0.34);
+      const power = fireball.powerLevel;
+      spellFlash(point, 0xffc06a, 1.7 + power * 0.16, 0.24);
+      if (power) spellFlash(point, 0xfff4ce, 0.7 + power * 0.15, 0.16);
+      sparkBurst(point, [0xffb35c, 0xff6a22, 0xffedba], 18 + power * 6, 4.5, 0.62, power ? 1.2 + power * 0.4 : 0.34);
     }
   }
   function muzzlePos() {
@@ -566,14 +633,15 @@
   function castSpell(reachLevel) {
     if (!M.upgrades || !M.upgrades.stats) return false;
     const stats = M.upgrades.stats();
-    return castSpellAt(goat.position, reachLevel, 1 + stats.damage, muzzlePos());
+    return castSpellAt(goat.position, reachLevel, 1 + stats.damage, muzzlePos(), M.upgrades.level(M.upgrades.player, 'power'));
   }
   // Elemental strikes for any caster, player or trained hunter. Damage flows
   // through M.enemies; the visuals (bolts, sparks, fireball) live here. The
   // spell ranges match M.upgrades' SPELL_RANGES: bolt 9, chain 12, fireball 30.
-  function castSpellAt(from, tier, dmg, fxFrom) {
+  function castSpellAt(from, tier, dmg, fxFrom, powerLevel) {
     if (!M.enemies || !M.enemies.spellTargets || !M.enemies.spellHit) return false;
     if (!(tier >= 1)) return false;
+    powerLevel = clamp(Math.floor(powerLevel || 0), 0, 3);
     const ranges = M.upgrades && M.upgrades.spellRanges ? M.upgrades.spellRanges() : [0, 9, 12, 30];
     const range = ranges[tier] || 0;
     if (!range) return false;
@@ -583,7 +651,7 @@
       const targets = M.enemies.spellTargets(origin, range, 1);
       if (!targets.length) return false;
       const aim = new THREE.Vector3().copy(targets[0].position); aim.y += 0.8;
-      spawnFireball(muzzle, aim, dmg);
+      spawnFireball(muzzle, aim, dmg, powerLevel);
       if (audioRef && audioRef.towerShot) audioRef.towerShot(origin.clone(), 'shell');
       return true;
     }
@@ -594,7 +662,11 @@
       const enemy = targets[i];
       if (!M.enemies.zombies.includes(enemy)) continue;
       const to = new THREE.Vector3().copy(enemy.position); to.y += 0.8;
-      spellBolt(chainFrom, to);
+      spellBolt(chainFrom, to, powerLevel);
+      if (powerLevel) {
+        spellFlash(to, 0xb9f6ff, 0.25 + powerLevel * 0.12, 0.15);
+        sparkBurst(to, [0xf4ffff, 0x64dfff], 3 + powerLevel * 2, 2.2, 0.22, 0.6 + powerLevel * 0.3);
+      }
       M.enemies.spellHit(enemy, dmg);
       chainFrom = to;
     }
@@ -634,6 +706,7 @@
       if (fx.onAge) fx.onAge(k);
       if (fx.life >= fx.ttl) {
         if (fx.object.userData.disposeGeometry) fx.object.userData.disposeGeometry.dispose();
+        if (fx.object.userData.disposeGeometries) fx.object.userData.disposeGeometries.forEach(function (geometry) { geometry.dispose(); });
         if (!fx.object.userData.sharedMaterial) {
           fx.object.traverse(function (o) {
             if (!o.material) return;
@@ -661,11 +734,17 @@
       const distance = Math.max(0.001, fb.to.distanceTo(fb.from));
       fb.k = clamp(fb.k + dt * 16 / distance, 0, 1);
       const p = new THREE.Vector3().lerpVectors(fb.from, fb.to, fb.k);
-      if (fb.mesh) fb.mesh.position.copy(p);
+      if (fb.mesh) {
+        fb.mesh.position.copy(p);
+        if (fb.powerLevel) fb.mesh.rotation.set(t * 2, t * 3, t);
+      }
       const hitWall = worldRef && worldRef.blockedAt && worldRef.blockedAt(p.x, p.z, p.y - 0.6, p.y + 0.6);
       if (hitWall || fb.k >= 1) { explodeFireball(fb, p); continue; }
-      if (!M.config.reducedMotion && Math.random() < 0.7)
-        sparkBurst(p, [0xffcf7a, 0xff7a2a], 1, 1.2, 0.24, 0.15);
+      fb.trailClock += dt;
+      if (!M.config.reducedMotion && fb.trailClock >= 0.04) {
+        fb.trailClock %= 0.04;
+        sparkBurst(p, [0xffefb0, 0xff7a2a], 1 + fb.powerLevel, 1.2, 0.24, fb.powerLevel ? 0.8 + fb.powerLevel * 0.35 : 0.15);
+      }
     }
   }
 
@@ -1226,9 +1305,11 @@
     applySpeedStyle: applySpeedStyle,
     applyHornStyle: applyHornStyle,
     applyNeckStyle: applyNeckStyle,
+    applyPowerStyle: applyPowerStyle,
     get speedStyle() { return speedFx.level; },
     get hornStyle() { return hornFx.level; },
     get neckStyle() { return neckFx.level; },
+    get powerStyle() { return powerFx.level; },
     castSpellAt: castSpellAt,
     advanceSpellFx: updateSpellFx,
     intersectsBlock: intersectsBlock,

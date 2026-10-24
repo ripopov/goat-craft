@@ -351,6 +351,120 @@ test('builder work training accelerates the actual action and its block edit', (
   assert.equal(animal.state.carryCount, 1);
 });
 
+test('Heavy horns tiers enlarge horns and restyle beards without disturbing elemental training', () => {
+  const { M } = training(); supplies(M);
+  const goatHorns = ['goat-horn-left', 'goat-horn-right'].map(name => M.goat.headPivot.getObjectByName(name));
+  const goatBeard = M.goat.headPivot.getObjectByName('goat-beard');
+  const originalTufts = goatBeard.children.slice();
+  const actors = [{ target: M.upgrades.player, horns: goatHorns, beard: goatBeard },
+    ...M.animals.list.filter(a => a.role === 'hunter').map(a => ({ target: a, horns: a.parts.horns.map(h => h.mesh), beard: a.parts.beard }))];
+  for (const [i, { target, horns, beard }] of actors.entries()) {
+    if (i === 0) train(M, target, 'reach'); // elemental glow before horn growth
+    let previousSize = 1;
+    for (let tier = 1; tier <= 3; tier++) {
+      const old = beard.getObjectByName('heavy-horns-beard-' + (tier - 1));
+      let owned = 0, disposed = 0;
+      old?.traverse(node => {
+        for (const resource of [node.geometry, node.material].filter(Boolean)) {
+          owned++; resource.addEventListener('dispose', () => disposed++);
+        }
+      });
+      train(M, target, 'power', 1);
+      assert.ok(horns.every(h => h.scale.y > previousSize && h.scale.x > 1), 'every horn and antler branch grows');
+      assert.ok(beard.getObjectByName('heavy-horns-beard-' + tier), 'each purchase changes the beard immediately');
+      if (old) { assert.equal(old.parent, null); assert.equal(disposed, owned); }
+      previousSize = horns[0].scale.y;
+    }
+    if (i > 0) {
+      train(M, target, 'reach'); // elemental glow after horn growth
+      M.animals.update(.001, 0);
+    }
+    assert.ok(horns[0].children.length > 0, 'elemental tips and bands stay attached');
+    const before = horns[0].scale.clone();
+    if (target === M.upgrades.player) M.goat.applyPowerStyle(3);
+    else target.powerFx.apply(3, target.powerCtx);
+    assert.ok(horns[0].scale.equals(before), 'reapplying the style never compounds growth');
+  }
+  assert.ok(originalTufts.every(tuft => !tuft.visible), 'the original tuft gives way to the upgraded beard');
+  assert.ok(M.animals.list.filter(a => a.role === 'builder').every(a => a.powerFx.level === 0));
+  M.goat.applyPowerStyle(0);
+  assert.ok(goatHorns.every(h => h.scale.x === 1 && h.scale.y === 1));
+  assert.ok(originalTufts.every(tuft => tuft.visible), 'reset restores the original beard');
+});
+
+test('Heavy horns makes bolts and fireballs progressively thicker and shinier while preserving spell damage', () => {
+  const { M, THREE, scene } = training();
+  const origin = new THREE.Vector3(15, 14, 15);
+  const enemy = M.enemies.spawnAt({ x: 15, y: 14, z: 21 }); enemy.hp = 1000;
+  let radius = 0, glow = 0, ballSize = 0;
+  for (let tier = 0; tier <= 3; tier++) {
+    let hp = enemy.hp;
+    assert.equal(M.goat.castSpellAt(origin, 1, 1, undefined, tier), true);
+    assert.equal(hp - enemy.hp, 1, 'visual strength never adds damage of its own');
+    const bolt = scene.getObjectByName('spell-bolt');
+    if (tier) {
+      const core = bolt.getObjectByName('spell-bolt-core'), halo = bolt.getObjectByName('spell-bolt-halo');
+      assert.ok(core.geometry.parameters.radius > radius);
+      assert.ok(halo.material.opacity > glow);
+      assert.equal(halo.material.blending, THREE.AdditiveBlending);
+      assert.equal(core.material.toneMapped, false, 'the bright core stays luminous at night');
+      radius = core.geometry.parameters.radius; glow = halo.material.opacity;
+    }
+    let owned = 0, disposed = 0;
+    bolt.traverse(node => {
+      if (node.geometry) { owned++; node.geometry.addEventListener('dispose', () => disposed++); }
+      if (tier && node.material) { owned++; node.material.addEventListener('dispose', () => disposed++); }
+    });
+    M.goat.advanceSpellFx(.4, 0);
+    assert.equal(scene.getObjectByName('spell-bolt'), undefined);
+    assert.equal(disposed, owned, 'expired lightning releases its tubes and materials');
+    hp = enemy.hp;
+    assert.equal(M.goat.castSpellAt(origin, 3, 1, undefined, tier), true);
+    const ball = scene.getObjectByName('spell-fireball');
+    assert.ok(ball.scale.x > ballSize, 'fireballs become wider at every tier');
+    ballSize = ball.scale.x;
+    if (tier) assert.equal(ball.getObjectByName('spell-fireball-halo').material.opacity, glow);
+    M.goat.advanceSpellFx(.05, .05);
+    assert.equal(ball.userData.powerLevel, tier, 'a flying projectile retains its cast-time style');
+    M.goat.advanceSpellFx(1, 1);
+    assert.equal(hp - enemy.hp, 1, 'the upgraded blast keeps its original damage');
+    assert.equal(scene.getObjectByName('spell-fireball'), undefined);
+    M.goat.advanceSpellFx(1, 2);
+  }
+  for (const z of [21.5, 22]) { const target = M.enemies.spawnAt({ x: 15, y: 14, z }); target.hp = 1000; }
+  M.goat.castSpellAt(origin, 2, 1, undefined, 3);
+  assert.equal(scene.children.filter(node => node.name === 'spell-bolt').length, 3, 'every chain link receives the upgraded effect');
+  for (let i = 0; i < 60; i++) M.goat.castSpellAt(origin, 2, 1, undefined, 3);
+  assert.ok(scene.children.filter(node => ['spell-bolt', 'spell-flash'].includes(node.name)).length <= 64);
+  assert.ok(scene.children.filter(node => node.name === 'spell-spark').length <= 160, 'particles stay bounded during repeated casts');
+  M.goat.advanceSpellFx(2, 4);
+  assert.ok(scene.children.filter(node => node.name === 'spell-spark').every(node => !node.visible));
+  M.config.reducedMotion = true;
+  const hp = enemy.hp;
+  M.goat.castSpellAt(origin, 3, 1, undefined, 3);
+  assert.equal(scene.getObjectByName('spell-fireball'), undefined, 'reduced motion suppresses the added visual motion');
+  M.goat.advanceSpellFx(1, 5);
+  assert.equal(hp - enemy.hp, 1, 'reduced motion still deals normal damage');
+});
+
+test('automatic player and hunter spells use their individual Heavy horns visual tiers', () => {
+  const { M, scene, controls } = training(isolatedAnimal('Bramble')); supplies(M);
+  const hunter = M.animals.list.find(a => a.name === 'Bramble');
+  train(M, M.upgrades.player, 'power'); train(M, M.upgrades.player, 'reach', 1);
+  train(M, hunter, 'power', 1); train(M, hunter, 'reach', 1);
+  controls.firstPerson = true;
+  M.goat.group.position.set(15, 14, 15);
+  hunter.group.position.set(-20, 14, -20);
+  const enemy = M.enemies.spawnAt({ x: 15, y: 14, z: 21 }); enemy.hp = 1000;
+  advancePlayer(M, .2);
+  assert.equal(scene.getObjectByName('spell-bolt').userData.powerLevel, 3);
+  M.goat.advanceSpellFx(.4, .6);
+  M.goat.group.position.set(-20, 14, -20); hunter.group.position.set(15, 14, 15);
+  Object.assign(hunter.state, { mode: 'hunt', huntTarget: enemy, strikeTime: .15, attackCooldown: 10 });
+  M.animals.update(.02, .7);
+  assert.equal(scene.getObjectByName('spell-bolt').userData.powerLevel, 1, 'the hunter does not inherit the player visual tier');
+});
+
 test('enemy coin loot stays in the world until picked up and needs no inventory slot', () => {
   const { M, THREE } = training();
   const p = new THREE.Vector3(15, 14, 15);

@@ -2337,8 +2337,10 @@
     const speedLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'move') : 0;
     const hornLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
     const cadenceLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'cadence') : 0;
+    const powerLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'power') : 0;
     if (animal.speedFx) animal.speedFx.apply(speedLevel, animal.speedCtx);
     if (animal.neckFx) animal.neckFx.apply(cadenceLevel, animal.neckCtx);
+    if (animal.powerFx) animal.powerFx.apply(powerLevel, animal.powerCtx);
     if (animal.hornFx) {
       animal.hornFx.apply(hornLevel, animal.hornCtx);
       animal.hornFx.pulse(t);
@@ -2546,7 +2548,8 @@
       const strikeReach = spellRange || 8.4 + upgrades.reach;
       if (before < 0.16 && s.strikeTime >= 0.16 && distance <= strikeReach + 0.6 && Math.abs(q.y - p.y) <= 2.8) {
         const dealt = spellRange
-          ? (M.goat && M.goat.castSpellAt(p, reachTier, 1 + upgrades.damage))
+          ? (M.goat && M.goat.castSpellAt(p, reachTier, 1 + upgrades.damage, undefined,
+            M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'power') : 0))
           : M.enemies.attack(p, s.yaw, false, { range: strikeReach, damage: 1 + upgrades.damage, maxTargets: 1 });
         if (dealt) s.happy = 1;
       }
@@ -2952,6 +2955,7 @@
       speedFx: M.styleFx ? M.styleFx.makeSpeedStyle(THREE) : null,
       hornFx: M.styleFx ? M.styleFx.makeHornStyle(THREE) : null,
       neckFx: M.styleFx ? M.styleFx.makeNeckStyle(THREE) : null,
+      powerFx: M.styleFx ? M.styleFx.makePowerStyle(THREE) : null,
       speedCtx: null,
       hornCtx: null,
       state: null
@@ -2960,6 +2964,13 @@
     animal.speedCtx = { legs: parts.legs, tailPivot: parts.tailPivot, scale: styleScale.leg };
     animal.hornCtx = { horns: parts.horns, defaultMat: parts.mats.horn, scale: styleScale.horn };
     animal.neckCtx = { neck: parts.neck, headPivot: parts.headPivot };
+    if (animal.role === 'hunter') {
+      parts.beard = new THREE.Group();
+      parts.beard.position.set(0, -0.2, 0.3);
+      parts.beard.rotation.x = -0.22;
+      parts.headPivot.add(parts.beard);
+    }
+    animal.powerCtx = { horns: parts.horns, beard: parts.beard, beardMat: parts.mats.face, scale: 0.85 };
 
     animal.state = {
       mode: 'idle',

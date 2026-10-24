@@ -123,13 +123,20 @@
   window.addEventListener('keydown', wakeAudio);
   window.addEventListener('wheel', wakeAudio, { passive: true });
 
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) M.music.update(0, { paused: true });
+  });
+
   const clock = new THREE.Clock();
   let elapsed = 0, accumulator = 0;
   const STEP = 1 / 60;
 
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.1);
-    if (document.hidden || M.upgradeMenu.isOpen) { accumulator = 0; return; }
+    if (document.hidden || M.upgradeMenu.isOpen) {
+      M.music.update(dt, { paused: true });
+      accumulator = 0; return;
+    }
     accumulator += dt;
     while (accumulator + 0.000001 >= STEP) {
       elapsed += STEP;
@@ -151,6 +158,15 @@
     caveLight.intensity = M.utils.damp(caveLight.intensity, underground ? 5 : 0, 6, dt);
     M.water.update(dt, elapsed, M.goat.group, M.goat.state, camera, M.world);
     M.audio.setListener(camera);
+    const horde = M.enemies.getState();
+    const besieged = M.enemies.zombies.some(function (enemy) { return enemy.mode === 'tree'; });
+    M.music.update(dt, {
+      combat: horde.phase === 'combat' ? Math.min(1, 0.22 + horde.count / 24 + (besieged ? 0.3 : 0)) : 0,
+      danger: Math.max(0, 1 - horde.health / 45),
+      speed: M.goat.state.speed,
+      underground: underground,
+      defeated: horde.defeated
+    });
     M.minimap.update(dt);
     M.highlights.update();
     M.ui.updateBubble(dt, M.goat.headPivot, camera);

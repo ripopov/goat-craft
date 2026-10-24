@@ -792,7 +792,7 @@
     tower.group.updateMatrixWorld(true); weapon.localToWorld(origin);
     if (!lineClear(center, origin, tower) || !launch(tower, target, origin)) return false;
     tower.fireAge = 0; muzzle(tower, origin, aim);
-    if (M.audio && M.audio.towerShot) M.audio.towerShot(origin, def.style);
+    if (M.audio && M.audio.towerShot) M.audio.towerShot(origin, def.style, def.id);
     tower.shots++; return true;
   }
   function animateTower(tower, dt) {

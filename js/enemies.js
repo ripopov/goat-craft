@@ -702,6 +702,7 @@
     if (wave > 0 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
       const bonus = Math.min(24, 4 + wave * 2);
       coins += bonus; nextWave = elapsed + 12;
+      if (M.audio && M.audio.cue) M.audio.cue('clear');
       if (M.ui) M.ui.showBubble('Wave cleared! +' + bonus + ' coins · Q to upgrade');
     }
     updateHud(); render(elapsed);

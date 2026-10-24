@@ -96,7 +96,11 @@ const effects = [
   ...['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'].map(id => ['towerImpact', { x: 0, y: 0, z: 0 }, id]),
   ['towerShot', { x: 0, y: 0, z: 0 }, 'shell'], ['towerShot', { x: 0, y: 0, z: 0 }, 'bolt'],
   ['towerShot', { x: 0, y: 0, z: 0 }, 'crystal'], ['towerShot', { x: 0, y: 0, z: 0 }, 'coil'],
-  ['enemyBurst', { x: 0, y: 0, z: 0 }],
+  ...['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'].map((id, i) =>
+    ['towerShot', null, ['bolt', 'shell', 'crystal', 'shell', 'crystal', 'coil', 'bolt', 'shell', 'crystal', 'coil'][i], id]),
+  ...['stone', 'log', 'leaves', 'dirt', 'grass', 'coal', 'iron', 'copper'].flatMap(material =>
+    [['block', 'break', null, material], ['block', 'place', null, material]]),
+  ['cue', 'clear'], ['enemyBurst', { x: 0, y: 0, z: 0 }],
   ['bleat'], ['thud'], ['step', false, 4.8], ['step', true, 9.6], ['jump'], ['whoosh'],
   ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1],
   ['zombie', 'groan'], ['zombie', 'hurt'], ['zombie', 'death'], ['zombie', 'bite'],
@@ -121,6 +125,10 @@ test('every effect has a silent attack/release, scheduling headroom, and frees i
     for (const source of h.sources.slice(firstSource)) {
       assert.ok(source.started >= source.scheduledAt + 0.02, `${name} starts with scheduling headroom`);
       assert.ok(source.stopped > source.started);
+      if (source.buffer && !source.loop) {
+        const end = source.started + (source.buffer.length / source.buffer.sampleRate - source.offset) / source.playbackRate.value;
+        assert.ok(end >= source.stopped - 0.02, `${name} noise lasts through its release`);
+      }
     }
     const envelopes = created.flatMap(node => node.gain.events.length ? [node.gain] : []);
     assert.ok(envelopes.length > 0);
@@ -274,4 +282,112 @@ test('crowds are rate limited, suspended audio does not queue, and mute preserve
   const playing = h.sources.length;
   h.M.audio.zombie('hurt');
   assert.ok(h.sources.length > playing, 'unmuting restores effects');
+});
+
+test('combat layers build and recover, caves darken, and pause reaches both dry and wet paths', () => {
+  function run(combat) {
+    const h = harness();
+    h.M.music.start();
+    for (let i = 1; i <= 400; i++) {
+      h.advance(i * 0.08);
+      h.M.music.update(0.08, { combat, speed: 7 });
+    }
+    return h;
+  }
+  const calm = run(0), battle = run(1);
+  assert.ok(battle.sources.length > calm.sources.length * 1.4, 'battle adds actual instrumental layers');
+  const action = battle.nodes.find(n => n.gain.events.some(e => e.type === 'target' && e.constant === 0.5 && e.value > 0.95));
+  assert.ok(action, 'combat bus smoothly opens');
+  battle.advance(32.08);
+  battle.M.music.update(0.08, { combat: 0, underground: true });
+  const colour = battle.nodes.find(n => n.frequency.events.some(e => e.type === 'target' && e.value === 2100));
+  assert.ok(colour, 'caves get a darker tonal balance');
+  for (let i = 402; i <= 900; i++) {
+    battle.advance(i * 0.08);
+    battle.M.music.update(0.08, { combat: 0, underground: true });
+  }
+  assert.ok(action.gain.events.at(-1).value < 0.001, 'rhythm recedes after a wave');
+  // The visibility event can arrive in the same audio clock tick as a mix update.
+  battle.M.music.update(0, { paused: true });
+  const dimmed = battle.nodes.filter(n => n.gain.events.at(-1)?.type === 'target' && Math.abs(n.gain.events.at(-1).value - 0.12) < 0.001);
+  const wet = battle.nodes.filter(n => n.gain.events.at(-1)?.type === 'target' && Math.abs(n.gain.events.at(-1).value - 0.096) < 0.001);
+  assert.ok(dimmed.length >= 1 && wet.length >= 1, 'pause dims reverb sends as well as the direct music');
+  assert.equal(battle.intervals.size, 1, 'scene changes keep the transport running');
+  assert.deepEqual(battle.errors, []);
+});
+
+test('danger adds rhythm, defeat releases it, and full-suite battle playback stays bounded', () => {
+  const h = harness();
+  h.M.music.update(10, { danger: 1 });
+  h.M.music.start();
+  let peak = 0;
+  for (let i = 1; i <= 2800; i++) {
+    h.advance(i * 0.08);
+    h.M.music.update(0.08, { danger: 1, combat: 1, speed: 9.6 });
+    peak = Math.max(peak, h.nodes.filter(n => n.connections.length).length);
+  }
+  assert.ok(peak < 350, `battle graph stays bounded across all sections and variations (${peak})`);
+  h.M.music.update(60, { danger: 1, combat: 1, defeated: true });
+  const action = h.nodes.find(n => n.gain.events.some(e => e.type === 'target' && e.constant === 0.5 && e.value > 0.95));
+  assert.ok(action.gain.events.at(-1).value < 0.0001, 'defeat overrides combat and danger');
+  h.M.music.stop(); h.advance(230, false);
+  assert.ok(h.sources.filter(s => s.stopped !== undefined).every(s => s.disconnected));
+  assert.deepEqual(h.errors, []);
+});
+
+test('important cues duck only music and overlapping cues keep a continuous gain', () => {
+  const h = harness();
+  h.M.music.start();
+  h.M.audio.cue('wave');
+  const bus = h.nodes.find(n => n.gain.events.some(e => e.type === 'linear' && e.value === 0.4));
+  assert.ok(bus);
+  h.advance(0.01, false);
+  h.M.audio.cue('damage');
+  const held = bus.gain.events.findLast(e => e.type === 'set').value;
+  assert.ok(Math.abs(held - 0.76) < 1e-8, 'second cue starts at the first cue\'s in-flight level');
+  assert.equal(bus.gain.events.at(-1).value, 1, 'music recovers automatically');
+  const before = h.sources.length;
+  h.M.audio.setEffectsEnabled(false);
+  h.M.audio.cue('defeat');
+  assert.equal(h.sources.length, before, 'muted cues do not trigger a duck');
+});
+
+test('tower identities and block materials have distinct physical sound signatures', () => {
+  const h = harness(); h.M.audio.unlock();
+  function signature(method, ...args) {
+    const first = h.sources.length;
+    h.M.audio[method](...args);
+    return JSON.stringify(h.sources.slice(first).map(s => [s.type, s.frequency.events, s.stopped - s.started]));
+  }
+  const ids = ['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'];
+  const styles = ['bolt', 'shell', 'crystal', 'shell', 'crystal', 'coil', 'bolt', 'shell', 'crystal', 'coil'];
+  const shots = new Set(), impacts = new Set();
+  for (let i = 0; i < ids.length; i++) {
+    // Use the same time for signatures, and a fresh family for each tower.
+    shots.add(signature('towerShot', null, styles[i], ids[i]));
+    impacts.add(signature('towerImpact', null, ids[i]));
+  }
+  assert.equal(shots.size, 10, 'all ten weapons have a distinct launch');
+  assert.equal(impacts.size, 10, 'all ten elements have a distinct impact');
+  const materials = new Set();
+  for (const material of ['stone', 'log', 'leaves', 'dirt']) {
+    const separate = harness(); separate.M.audio.unlock();
+    separate.M.audio.block('break', null, material);
+    materials.add(JSON.stringify(separate.sources.map(s => [s.type, s.frequency.events, s.stopped - s.started])));
+  }
+  assert.equal(materials.size, 4, 'stone, wood, foliage and soil sound different');
+});
+
+
+test('dense effects reserve enough voices for music to keep its beat', () => {
+  const h = harness(); h.M.audio.unlock();
+  for (let i = 0; i < 300; i++) h.M.audio.thud();
+  const before = h.sources.length;
+  h.M.music.start();
+  assert.ok(h.sources.length > before + 5, 'the initial chord and picking survive an effect storm');
+  h.advance(0.4);
+  const next = h.sources.length;
+  h.advance(1.1);
+  assert.ok(h.sources.length > next, 'the next beat still schedules');
+  assert.deepEqual(h.errors, []);
 });

@@ -1,38 +1,65 @@
 (function (M) {
   'use strict';
 
-  const { rand } = M.utils;
+  const { rand, clamp } = M.utils;
 
-  const BPM = 72;
+  const BPM = 84;
   const STEP = 60 / BPM / 2; // eighth note
   const BAR_DUR = STEP * 8;
-  const LOOP_STEPS = 64;
+  const LOOP_STEPS = 192; // three eight-bar movements
   const MUSIC_LEVEL = 0.3;
   const SCHEDULE_LEAD = 0.04;
-  const LOOKAHEAD = 1.0;
+  const LOOKAHEAD = 0.32;
 
-  // D minor folk progression: Dm – Bb – F – C
+  // "Hearth / Canopy / Ridgeline": an original D-Dorian suite. Common tones
+  // connect open ninths and sixths; the B-natural gives the meadow its own colour.
   const CHORDS = [
-    { bass: 38, pad: [50, 53, 57], arp: [50, 57, 62, 65, 69, 65, 62, 57] },
-    { bass: 34, pad: [46, 50, 53], arp: [46, 53, 58, 62, 65, 62, 58, 53] },
-    { bass: 41, pad: [53, 57, 60], arp: [53, 57, 60, 65, 69, 65, 60, 57] },
-    { bass: 36, pad: [48, 52, 55], arp: [48, 55, 60, 64, 67, 64, 60, 55] }
+    { bass: 38, pad: [53, 57, 64], arp: [62, 69, 64, 65, 69, 74, 65, 64] }, // Dm9
+    { bass: 43, pad: [55, 59, 64], arp: [62, 67, 71, 64, 67, 74, 71, 64] }, // G6
+    { bass: 36, pad: [52, 59, 62], arp: [60, 67, 62, 64, 71, 76, 67, 62] }, // Cmaj9
+    { bass: 40, pad: [55, 59, 62], arp: [64, 71, 67, 62, 64, 74, 71, 67] }, // Em7
+    { bass: 41, pad: [57, 60, 67], arp: [65, 72, 67, 69, 72, 76, 69, 67] }, // Fadd9
+    { bass: 45, pad: [55, 62, 64], arp: [64, 69, 62, 67, 69, 74, 67, 62] }, // Asus4
+    { bass: 35, pad: [53, 57, 62], arp: [62, 69, 65, 57, 62, 74, 69, 65] }, // B half-diminished
+    { bass: 38, pad: [53, 59, 64], arp: [62, 69, 64, 65, 71, 76, 69, 62] }  // Dm6/9
   ];
-
-  const MELODY = [
-    [{ step: 0, midi: 74, len: 3 }, { step: 3, midi: 72, len: 2 }, { step: 5, midi: 69, len: 3 }],
-    [{ step: 0, midi: 67, len: 2 }, { step: 2, midi: 69, len: 2 }, { step: 4, midi: 70, len: 4 }],
-    [{ step: 0, midi: 65, len: 2 }, { step: 2, midi: 69, len: 2 }, { step: 4, midi: 72, len: 4 }],
-    [{ step: 0, midi: 67, len: 2 }, { step: 2, midi: 64, len: 2 }, { step: 4, midi: 67, len: 4 }],
-    [{ step: 0, midi: 74, len: 2 }, { step: 2, midi: 77, len: 2 }, { step: 4, midi: 76, len: 2 }, { step: 6, midi: 74, len: 2 }],
-    [{ step: 0, midi: 72, len: 3 }, { step: 3, midi: 70, len: 2 }, { step: 5, midi: 69, len: 3 }],
-    [{ step: 0, midi: 69, len: 2 }, { step: 2, midi: 72, len: 2 }, { step: 4, midi: 74, len: 2 }, { step: 6, midi: 72, len: 2 }],
-    [{ step: 0, midi: 69, len: 4 }, { step: 4, midi: 67, len: 2 }, { step: 6, midi: 64, len: 2 }]
+  const HARMONY = [
+    [0, 1, 4, 2, 0, 6, 5, 7],
+    [4, 2, 1, 0, 4, 6, 1, 5],
+    [0, 0, 1, 4, 6, 2, 5, 7]
+  ];
+  // [eighth-note position, MIDI, length]; purposeful rests and 3+3+2 replies.
+  const THEMES = [
+    [ [[0,74,2],[3,76,1],[4,77,2],[7,69,1]], [[1,71,2],[4,74,3]],
+      [[0,72,3],[3,69,2],[6,67,2]], [[2,71,2],[5,76,2]],
+      [[0,77,2],[3,76,1],[4,74,3]], [[1,77,2],[4,74,2],[7,69,1]],
+      [[0,76,3],[4,74,2],[6,67,2]], [[0,65,3],[3,64,2],[6,62,2]] ],
+    [ [[1,81,2],[4,79,1],[6,76,2]], [[0,79,3],[3,76,1],[5,74,2]],
+      [[0,74,2],[3,71,2],[6,69,2]], [[2,77,2],[5,76,2]],
+      [[0,76,2],[2,79,1],[4,81,3]], [[1,77,2],[4,74,2]],
+      [[0,79,3],[4,76,2],[7,74,1]], [[0,76,2],[3,74,2],[6,69,2]] ],
+    [ [[0,74,2],[3,69,1],[6,76,2]], [[0,77,2],[3,76,2],[6,74,2]],
+      [[0,79,3],[4,77,2],[6,74,2]], [[1,77,2],[4,81,3]],
+      [[0,77,2],[3,74,2],[6,69,2]], [[0,76,3],[4,74,2],[7,71,1]],
+      [[0,69,2],[3,74,2],[6,76,2]], [[0,77,3],[4,76,2],[6,74,2]] ]
   ];
 
   let ctx = null;
   let master = null;
   let reverbSend = null;
+  let action = null;
+  let atmosphereSend = null;
+  let actionSend = null;
+  let atmosphere = null;
+  let colourFilter = null;
+  let intensity = 0;
+  let travel = 0;
+  let cave = false;
+  let quiet = 1;
+  let lastMix = -Infinity;
+  let mixedIntensity = -1;
+  let mixedCave = null;
+  let mixedQuiet = null;
   let built = false;
   let playing = false;
   let timer = null;
@@ -55,10 +82,10 @@
     fade = { from: current, to: target, start: now, end: now + duration };
   }
 
-  function voiceAt(pan, reverb) {
-    const voice = M.audio.createVoice(master, pan);
+  function voiceAt(pan, reverb, bus) {
+    const voice = M.audio.createVoice(bus || atmosphere, pan);
     if (!voice) return null;
-    if (reverb) voice.output.connect(reverbSend);
+    if (reverb) voice.output.connect(bus === action ? actionSend : atmosphereSend);
     voices.add(voice);
     voice.onended = function () { voices.delete(voice); };
     return voice;
@@ -94,8 +121,8 @@
     return buffer;
   }
 
-  function pluck(midi, when, level, pan) {
-    const voice = voiceAt(pan, true);
+  function pluck(midi, when, level, pan, bus) {
+    const voice = voiceAt(pan, true, bus);
     if (!voice) return;
     const f = midiToFreq(midi);
     const osc = voice.create('Oscillator');
@@ -103,7 +130,7 @@
     osc.type = 'triangle';
     osc2.type = 'sine';
     osc.frequency.value = f;
-    osc2.frequency.value = f * 2;
+    osc2.frequency.value = f * 3.002;
     osc.detune.value = rand(-4, 4);
 
     const filter = voice.create('BiquadFilter');
@@ -116,7 +143,7 @@
     M.audio.envelope(gain.gain, when, 1.35, level, 0.012);
 
     const second = voice.create('Gain');
-    second.gain.value = 0.16;
+    second.gain.value = 0.09;
 
     osc.connect(filter);
     osc2.connect(second);
@@ -128,8 +155,8 @@
     voice.start(osc2, when, when + 1.4);
   }
 
-  function flute(midi, when, duration, level) {
-    const voice = voiceAt(0.08, true);
+  function flute(midi, when, duration, level, pan) {
+    const voice = voiceAt(pan || 0.08, true);
     if (!voice) return;
     const f = midiToFreq(midi);
     const osc = voice.create('Oscillator');
@@ -141,12 +168,21 @@
 
     const vib = voice.create('Oscillator');
     vib.type = 'sine';
-    vib.frequency.value = 5.1;
+    vib.frequency.value = rand(4.3, 5.2);
     const vibGain = voice.create('Gain');
-    vibGain.gain.value = f * 0.0035;
+    M.audio.envelope(vibGain.gain, when, duration + 0.22, f * 0.003, 0.12, Math.max(0.12, duration - 0.2));
     vib.connect(vibGain);
     vibGain.connect(osc.frequency);
     vibGain.connect(octave.frequency);
+
+    const air = voice.create('BufferSource');
+    air.buffer = noiseShort; air.loop = true;
+    const airFilter = voice.create('BiquadFilter');
+    airFilter.type = 'bandpass'; airFilter.frequency.value = f * 2.6; airFilter.Q.value = 1.2;
+    const airGain = voice.create('Gain');
+    M.audio.envelope(airGain.gain, when, duration + 0.22, level * 0.12, 0.09, Math.max(0.09, duration - 0.25));
+    air.connect(airFilter); airFilter.connect(airGain); airGain.connect(voice.input);
+    voice.start(air, when, when + duration + 0.3);
 
     const filter = voice.create('BiquadFilter');
     filter.type = 'lowpass';
@@ -170,7 +206,7 @@
     voice.start(vib, when, when + duration + 0.3);
   }
 
-  function pad(midis, when) {
+  function pad(midis, when, level) {
     for (let i = 0; i < midis.length; i++) {
       const voice = voiceAt(i === 0 ? -0.25 : i === 2 ? 0.25 : 0, true);
       if (!voice) continue;
@@ -185,7 +221,6 @@
       filter.Q.value = 0.4;
 
       const gain = voice.create('Gain');
-      const level = 0.0065;
       M.audio.envelope(gain.gain, when, BAR_DUR + 0.1, level, 0.75, BAR_DUR - 0.8);
 
       osc.connect(filter);
@@ -196,7 +231,7 @@
     }
   }
 
-  function bass(midi, when) {
+  function bass(midi, when, strength) {
     const voice = voiceAt(0, false);
     if (!voice) return;
     const osc = voice.create('Oscillator');
@@ -209,17 +244,17 @@
     filter.Q.value = 0.4;
 
     const gain = voice.create('Gain');
-    M.audio.envelope(gain.gain, when, 2.4, 0.045, 0.035);
+    M.audio.envelope(gain.gain, when, 1.55, 0.042 * strength, 0.035);
 
     osc.connect(filter);
     filter.connect(gain);
     gain.connect(voice.input);
 
-    voice.start(osc, when, when + 2.5);
+    voice.start(osc, when, when + 1.6);
   }
 
   function drum(when, strength) {
-    const voice = voiceAt(0, false);
+    const voice = voiceAt(0, false, action);
     if (!voice) return;
     const osc = voice.create('Oscillator');
     osc.type = 'sine';
@@ -246,8 +281,8 @@
     voice.start(noise, when, when + 0.16);
   }
 
-  function shaker(when, pan) {
-    const voice = voiceAt(pan, false);
+  function shaker(when, pan, strength) {
+    const voice = voiceAt(pan, false, action);
     if (!voice) return;
     const noise = voice.create('BufferSource');
     noise.buffer = noiseShort;
@@ -256,46 +291,93 @@
     filter.frequency.value = 2800;
     filter.Q.value = 0.6;
     const gain = voice.create('Gain');
-    M.audio.envelope(gain.gain, when, 0.12, 0.004, 0.018);
+    M.audio.envelope(gain.gain, when, 0.12, 0.009 * strength, 0.012);
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(voice.input);
     voice.start(noise, when, when + 0.14);
   }
 
+  function chime(midi, when, level, pan) {
+    const voice = voiceAt(pan, true);
+    if (!voice) return;
+    const f = midiToFreq(midi);
+    [1, 2.756, 5.404].forEach(function (ratio, i) {
+      const osc = voice.create('Oscillator');
+      osc.type = 'sine'; osc.frequency.value = f * ratio;
+      const gain = voice.create('Gain');
+      const duration = 1.9 / (1 + i * 0.65);
+      M.audio.envelope(gain.gain, when, duration, level * [1, 0.22, 0.06][i], 0.012);
+      osc.connect(gain); gain.connect(voice.input);
+      voice.start(osc, when, when + duration + 0.02);
+    });
+  }
+
   function scheduleStep(index, when) {
-    const bar = Math.floor(index / 8);
-    const step = index % 8;
-    const chord = CHORDS[bar % 4];
-
-    if (step === 0) {
-      pad(chord.pad, when);
-      bass(chord.bass, when);
-    }
-
-    const rest = step === 7 && bar % 2 === 1;
-    if (!rest) {
-      const accent = step === 0 ? 1.15 : step === 4 ? 1.0 : 0.8;
-      pluck(
-        chord.arp[step],
-        when + rand(-0.005, 0.005),
-        0.052 * accent * rand(0.86, 1.1),
-        step % 2 ? 0.28 : -0.28
-      );
-    }
-
+    const bar = Math.floor(index / 8), step = index % 8;
+    const section = Math.floor(bar / 8), phrase = bar % 8;
+    const chord = CHORDS[HARMONY[section][phrase]];
+    const variation = loopCount % 3;
     const intro = loopCount === 0 && bar < 2;
-    if (!intro) {
-      const events = MELODY[bar];
-      for (let i = 0; i < events.length; i++) {
-        if (events[i].step === step) {
-          flute(events[i].midi, when + 0.004, Math.max(0.3, events[i].len * STEP * 0.9), 0.036);
-        }
+    const sparse = cave || (section === 1 && variation === 2);
+    if (step === 0) {
+      pad(chord.pad, when, sparse ? 0.009 : 0.007);
+      bass(chord.bass, when, 0.85 + intensity * 0.3);
+    }
+    if (step === 4 && intensity > 0.45) bass(chord.bass + 7, when, 0.55);
+
+    // Broken 3+3+2 picking, with space for the woodwind to answer.
+    const pattern = sparse ? [0, 3, 6] : section === 1 ? [0, 2, 3, 5, 6] : [0, 1, 3, 4, 6];
+    if (pattern.includes(step) && !(phrase % 4 === 3 && step > 5)) {
+      const pick = (step + (variation === 1 ? 2 : 0)) % 8;
+      pluck(chord.arp[pick], when + rand(0, 0.007),
+        (step === 0 || step === 3 || step === 6 ? 0.055 : 0.035) * rand(0.9, 1.06),
+        step % 2 ? 0.32 : -0.32);
+    }
+    if (!intro && !(variation === 2 && phrase === 2)) {
+      for (const event of THEMES[section][phrase]) {
+        if (event[0] !== step) continue;
+        flute(event[1] - (cave ? 12 : 0), when + 0.008,
+          Math.max(0.25, event[2] * STEP * 0.82), cave ? 0.023 : 0.036, section === 1 ? -0.16 : 0.14);
       }
     }
+    // The little struck-stone reply changes each pass rather than shadowing
+    // every melody note. Never fill every available gap.
+    if (!intro && phrase % 2 === 1 && step === 6 && (travel > 0.25 || section === 1 || cave)) {
+      chime(chord.arp[(variation + phrase) % 8] + (cave ? 0 : 12), when, 0.022, -0.4);
+    }
+    if (intensity > 0.08) {
+      if (step === 0 || step === 3 || step === 6) drum(when, step === 0 ? 1.25 : 0.7);
+      if (step % 2 || intensity > 0.65) shaker(when + 0.012, step % 2 ? -0.38 : 0.38, step % 2 ? 0.65 : 0.35);
+      if (intensity > 0.4 && [1, 4, 7].includes(step)) {
+        pluck(chord.arp[step] - 12, when, 0.035, 0.18, action);
+      }
+      if (intensity > 0.75 && phrase % 4 === 3 && step === 7) drum(when + STEP * 0.5, 0.5);
+    }
+  }
 
-    if (step === 0 || step === 4) drum(when, step === 0 ? 1 : 0.65);
-    if (step === 2 || step === 6) shaker(when, step === 2 ? -0.45 : 0.45);
+  // Gameplay supplies facts; musical transitions retain the running beat and
+  // ease over several seconds instead of restarting the tune at every kill.
+  function update(dt, state) {
+    state = state || {};
+    const combat = clamp(Number(state.combat) || 0, 0, 1);
+    const danger = clamp(Number(state.danger) || 0, 0, 1);
+    const target = state.defeated ? 0 : Math.max(combat, danger * 0.85);
+    intensity += (target - intensity) * (1 - Math.exp(-Math.max(0, dt) / (target > intensity ? 1.5 : 5)));
+    travel = clamp((Number(state.speed) || 0) / 9.6, 0, 1);
+    cave = !!state.underground;
+    const previousQuiet = quiet;
+    quiet = state.paused ? 0.12 : state.defeated ? 0.35 : 1;
+    const mix = Math.round(intensity * 100) / 100;
+    if (!built || (quiet === previousQuiet && ctx.currentTime - lastMix < 0.1)) return;
+    if (mix === mixedIntensity && cave === mixedCave && quiet === mixedQuiet) return;
+    lastMix = ctx.currentTime;
+    mixedIntensity = mix; mixedCave = cave; mixedQuiet = quiet;
+    action.gain.setTargetAtTime(mix * quiet, lastMix, 0.5);
+    atmosphere.gain.setTargetAtTime((1 - mix * 0.18) * quiet, lastMix, 0.6);
+    actionSend.gain.setTargetAtTime(mix * quiet * 0.8, lastMix, 0.5);
+    atmosphereSend.gain.setTargetAtTime((1 - mix * 0.18) * quiet * 0.8, lastMix, 0.6);
+    colourFilter.frequency.setTargetAtTime(cave ? 2100 : 5600 + mix * 1200, lastMix, 1.2);
   }
 
   function scheduleAhead() {
@@ -325,7 +407,7 @@
     if (!ctx) return false;
     if (built) return true;
 
-    const masterFilter = ctx.createBiquadFilter();
+    const masterFilter = colourFilter = ctx.createBiquadFilter();
     masterFilter.type = 'lowpass';
     masterFilter.frequency.value = 5600;
     masterFilter.Q.value = 0.4;
@@ -339,6 +421,12 @@
 
     master = ctx.createGain();
     master.gain.value = 0;
+    atmosphere = ctx.createGain();
+    atmosphere.gain.value = quiet;
+    atmosphere.connect(master);
+    action = ctx.createGain();
+    action.gain.value = intensity * quiet;
+    action.connect(master);
     master.connect(masterFilter);
     masterFilter.connect(compressor);
     compressor.connect(M.audio.getMusicInput());
@@ -349,6 +437,12 @@
     wet.gain.value = 0.24;
     reverbSend = ctx.createGain();
     reverbSend.gain.value = 1;
+    atmosphereSend = ctx.createGain();
+    atmosphereSend.gain.value = quiet * 0.8;
+    atmosphereSend.connect(reverbSend);
+    actionSend = ctx.createGain();
+    actionSend.gain.value = intensity * quiet * 0.8;
+    actionSend.connect(reverbSend);
     reverbSend.connect(convolver);
     convolver.connect(wet);
     wet.connect(master);
@@ -375,7 +469,7 @@
     windHigh.connect(windLow);
     windLow.connect(windGain);
     windGain.connect(windPan);
-    windPan.connect(master);
+    windPan.connect(atmosphere);
     wind.start();
 
     const windLfo = ctx.createOscillator();
@@ -386,42 +480,6 @@
     windLfo.connect(windLfoGain);
     windLfoGain.connect(windGain.gain);
     windLfo.start();
-
-    // low D/A drone under everything
-    const droneGain = ctx.createGain();
-    droneGain.gain.value = 0.011;
-    const droneFilter = ctx.createBiquadFilter();
-    droneFilter.type = 'lowpass';
-    droneFilter.frequency.value = 270;
-    droneFilter.Q.value = 0.4;
-    droneGain.connect(droneFilter);
-    droneFilter.connect(master);
-
-    const droneNotes = [
-      [73.416, 'triangle', 0.5],
-      [110.0, 'sine', 0.32],
-      [146.832, 'sine', 0.14]
-    ];
-    for (let i = 0; i < droneNotes.length; i++) {
-      const osc = ctx.createOscillator();
-      osc.type = droneNotes[i][1];
-      osc.frequency.value = droneNotes[i][0];
-      osc.detune.value = rand(-3, 3);
-      const gain = ctx.createGain();
-      gain.gain.value = droneNotes[i][2];
-      osc.connect(gain);
-      gain.connect(droneGain);
-      osc.start();
-    }
-
-    const droneLfo = ctx.createOscillator();
-    droneLfo.type = 'sine';
-    droneLfo.frequency.value = 0.045;
-    const droneLfoGain = ctx.createGain();
-    droneLfoGain.gain.value = 0.003;
-    droneLfo.connect(droneLfoGain);
-    droneLfoGain.connect(droneGain.gain);
-    droneLfo.start();
 
     built = true;
     return true;
@@ -473,6 +531,7 @@
     start: start,
     stop: stop,
     toggle: toggle,
+    update: update,
     isPlaying: function () { return playing; }
   };
 })(window.Meadow = window.Meadow || {});

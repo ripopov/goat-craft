@@ -72,10 +72,11 @@
     dialog.close();
     M.controls.resumeLook();
   }
-  function open() {
+  function open(animal) {
     if (!dialog || dialog.open || (M.devConsole && M.devConsole.isOpen) || M.enemies.getState().defeated) return;
     previousFocus = document.activeElement;
-    nearby = M.upgrades.nearest(); target = nearby || M.upgrades.player;
+    nearby = M.animals && M.animals.list.includes(animal) ? animal : M.upgrades.nearest();
+    target = nearby || M.upgrades.player;
     M.controls.stopSteering(); M.controls.suspendLook(); M.controls.noteActivity();
     M.goat.state.manualHold = Math.max(3, M.goat.state.manualHold);
     const help = $('controls-help'); if (help) help.open = false;
@@ -87,7 +88,7 @@
   }
   function init() {
     dialog = $('upgrade-menu');
-    $('upgrade-open').addEventListener('click', open);
+    $('upgrade-open').addEventListener('click', function () { open(); });
     $('upgrade-close').addEventListener('click', close);
     $('upgrade-player-tab').addEventListener('click', function () { target = M.upgrades.player; $('upgrade-message').textContent = ''; render(); });
     $('upgrade-animal-tab').addEventListener('click', function () { if (nearby) { target = nearby; $('upgrade-message').textContent = ''; render(); } });

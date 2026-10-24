@@ -106,6 +106,15 @@ if (existsSync(upgradeMenuPath)) {
   }
 }
 
+// Strategic portraits follow the named NPC roster, and must work offline.
+const animalsPath = path.join(jsDir, 'animals.js');
+if (existsSync(animalsPath)) {
+  const source = readFileSync(animalsPath, 'utf8');
+  for (const match of source.matchAll(/\bname: '([^']+)'/g)) {
+    if (checkReference(`assets/animals/${match[1].toLowerCase()}.svg`, root, 'js/animals.js')) checked++;
+  }
+}
+
 if (failures.length) {
   console.error('Static site check failed:');
   for (const failure of failures) console.error(`  - ${failure}`);

@@ -465,6 +465,16 @@
   #rts-resources b { font-size: 18px; font-weight: 500; color: #f7ebc8; }
   #rts-resources [data-resource="coins"] b { color: #f4cc6d; }
   .rts-dock { position: absolute; bottom: max(16px, env(safe-area-inset-bottom)); left: 20px; right: 20px; pointer-events: auto; border: 1px solid #7e9a855c; border-top-color: #d6bd7b99; border-radius: 12px; background: linear-gradient(115deg, #152a23fa, #0d201cf7); box-shadow: 0 12px 50px #06130e77, inset 0 1px #f6dfb51a; backdrop-filter: blur(16px); }
+  .rts-herd { display: flex; align-items: center; gap: 18px; padding: 10px 18px; border-bottom: 1px solid #98ac8d22; }
+  .rts-herd-heading { flex: 0 0 220px; display: flex; flex-direction: column; gap: 5px; }
+  .rts-herd-heading small { color: #a6bcae; font-size: 10px; }
+  #rts-animals { display: flex; gap: 8px; }
+  .rts-animal { display: flex; align-items: center; gap: 10px; padding: 4px 14px 4px 4px; border: 1px solid #8ba18b40; border-radius: 8px; background: #243a3066; color: #f6eac9; text-align: left; }
+  .rts-animal:hover { border-color: #e2c481; background: #57745855; }
+  .rts-animal img { display: block; width: 44px; height: 44px; border-radius: 5px; background: #0f241e; }
+  .rts-animal > span { display: flex; flex-direction: column; gap: 4px; }
+  .rts-animal strong { font-size: 11px; font-weight: 600; }
+  .rts-animal small { font-size: 9px; color: #a6bcae; text-transform: capitalize; }
   .rts-dock-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px 12px; border-bottom: 1px solid #98ac8d22; }
   .rts-eyebrow { color: #b1c5ae; font-size: 9px; letter-spacing: .19em; }
   .rts-dock h2 { margin: 4px 0 0; font-family: Georgia, serif; font-size: 21px; font-weight: normal; color: #f6eac9; }
@@ -497,8 +507,9 @@
   body.rts-active .defense-stats { display: none; }
   body.rts-active #water-status { display: none; }
   body.rts-active #strategy-toggle { top: 20px; bottom: auto; right: 235px; padding: 7px 12px; }
-  body.rts-active #minimap { bottom: 330px; width: 132px; height: 132px; }
+  body.rts-active #minimap { bottom: 405px; width: 132px; height: 132px; }
   @media (max-width: 1150px) {
+    .rts-herd-heading { flex-basis: 180px; }
     .rts-detail { flex-basis: 180px; }
     .tower-card { grid-template-columns: 43px 1fr; gap: 5px; padding: 5px; }
     .tower-art { width: 43px; height: 60px; }
@@ -507,6 +518,13 @@
     #rts-resources > span { padding: 9px 12px; }
   }
   @media (max-width: 760px) {
+    .rts-herd { position: sticky; top: 0; z-index: 1; padding: 8px 10px; background: #152a23; }
+    .rts-herd-heading { display: none; }
+    #rts-animals { width: 100%; gap: 5px; }
+    .rts-animal { flex: 1; min-width: 0; gap: 5px; padding: 4px; }
+    .rts-animal img { width: 32px; height: 36px; object-fit: contain; }
+    .rts-animal strong { font-size: 10px; }
+    .rts-animal small { font-size: 8px; }
     #strategy-toggle { right: 12px; bottom: calc(var(--bar-bottom) + 180px); padding: 8px 11px; }
     body.rts-active #strategy-toggle { right: 104px; top: 12px; padding: 5px 9px; }
     body.rts-active #strategy-toggle i { display: none; }
@@ -518,7 +536,7 @@
     #rts-resources > span { padding: 6px 10px; }
     #rts-resources b { font-size: 15px; }
     #rts-resources small { font-size: 8px; }
-    .rts-dock { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); }
+    .rts-dock { left: 8px; right: 8px; bottom: max(8px, env(safe-area-inset-bottom)); max-height: calc(100dvh - 240px); overflow-y: auto; }
     .rts-dock-top { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
     .rts-dock h2 { font-size: 18px; }
     #rts-message { order: 3; width: 100%; font-size: 10px; }
@@ -549,6 +567,8 @@
   }
   @media (prefers-reduced-motion: reduce) { .tower-card { transition: none; } }
   @media (max-height: 500px) and (max-width: 760px) {
+    .rts-herd { padding: 5px 7px; }
+    .rts-dock { max-height: calc(100dvh - 130px); }
     .rts-banner, .rts-detail, .rts-footer { display: none; }
     #rts-resources { top: 65px; left: 12px; }
     #rts-roster { display: flex; overflow-x: auto; padding-bottom: 3px; }

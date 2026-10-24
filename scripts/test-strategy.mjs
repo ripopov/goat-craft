@@ -17,7 +17,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   }
   function element(id) {
     if (elements.has(id)) return elements.get(id);
-    const node = { hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, children: [],
+    const node = { id, hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, dataset: {}, children: [],
       classList: { add() {}, remove() {}, toggle() {} },
       setAttribute(k, v) { this.attrs[k] = v; }, appendChild(child) { this.children.push(child); },
       querySelector: selector => element(id + selector),
@@ -62,6 +62,13 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   M.world = { blockSize: 2, surfaceHeight: () => 14, landingHeight: () => 14, waterInfoAtBlock: () => null,
     blockedAt: (x, z, low) => low < 14, blockInfoAt: () => null };
   M.items = { count: () => 0 }; M.targeting = { trace: () => null };
+  M.animals = { list: [
+    { name: 'Mallow', species: 'sheep', role: 'builder' },
+    { name: 'Clover', species: 'cow', role: 'builder' },
+    { name: 'Bramble', species: 'stag', role: 'hunter' },
+    { name: 'Poppy', species: 'sheep', role: 'hunter' }
+  ].map(animal => ({ ...animal, group: new THREE.Group() })) };
+  M.animals.list.forEach(animal => animal.group.position.set(100, 14, 100));
   M.upgrades = { player: {}, nearest: () => null, keys: () => [], canAfford: () => false, stats: () => ({ move: 1, rate: 1, reach: 0, damage: 0 }) };
   load('js/upgrade-menu.js'); M.upgradeMenu.init();
   M.enemies = { getState: () => ({ coins: 8 }), zombies: [] };
@@ -75,13 +82,60 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
       M.goat.update(1 / 60, i / 60); M.controls.update(1 / 60, i / 60, M.goat.group, M.goat.state, M.world); M.strategy.update(1 / 60);
     }
   }
-  return { M, camera, press, dispatch, element, advance, document,
+  return { M, camera, press, dispatch, element, advance, document, load,
     flush() { while (lockEvents.length) lockEvents.shift()(); },
     setFocused(value) { focused = value; dispatch('window', value ? 'focus' : 'blur'); },
     setRejectLock(value) { rejectLock = value; },
     get lockRequests() { return lockRequests; }
   };
 }
+
+test('all four strategic portraits open remote individual upgrades and return focus to the chosen ally', () => {
+  const { M, load, press, dispatch, element, document, flush, advance } = commandGame();
+  load('js/upgrades.js');
+  let coins = 100;
+  const stock = { log: 20, stone: 20 };
+  M.enemies.getState = () => ({ coins });
+  M.enemies.spendCoins = amount => { coins -= amount; return true; };
+  M.items.count = kind => stock[kind] || 0;
+  M.items.canSpend = cost => Object.entries(cost).every(([kind, amount]) => kind === 'coins' || stock[kind] >= amount);
+  M.items.spend = cost => { for (const kind of ['log', 'stone']) stock[kind] -= cost[kind] || 0; };
+  const portraits = element('rts-animals').children;
+  assert.equal(portraits.length, 4);
+  assert.equal(M.upgrades.nearest(), null, 'the entire herd is out of talking range');
+  press('f', 'KeyF'); press('t', 'KeyT');
+  for (const [i, animal] of M.animals.list.entries()) {
+    const portrait = portraits[i];
+    assert.match(portrait.attrs['aria-label'], new RegExp(animal.name));
+    assert.equal(portrait.attrs['aria-haspopup'], 'dialog');
+    assert.ok(readFileSync(new URL('../' + portrait.children[0].src, import.meta.url)).length, 'offline portrait exists');
+    press('d', 'KeyD');
+    portrait.focus(); dispatch(portrait.id, 'click');
+    assert.equal(M.upgradeMenu.isOpen, true);
+    assert.equal(M.upgradeMenu.target, animal);
+    assert.equal(element('upgrade-title').textContent, animal.name);
+    assert.equal(element('upgrade-animal-tab').hidden, false);
+    const upgradeButtons = () => element('upgrade-cards').children.map(card => card.children.at(-1));
+    assert.deepEqual(upgradeButtons().map(button => button.dataset.upgrade),
+      animal.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']);
+    dispatch('upgrade-player-tab', 'click'); assert.equal(M.upgradeMenu.target, M.upgrades.player);
+    dispatch('upgrade-animal-tab', 'click'); assert.equal(M.upgradeMenu.target, animal);
+    dispatch(upgradeButtons()[0].id, 'click');
+    assert.equal(M.upgrades.level(animal, 'move'), 1);
+    assert.equal(M.upgrades.level(M.upgrades.player, 'move'), 0);
+    assert.equal(M.upgrades.level(M.animals.list[(i + 1) % 4], 'move'), i === 3 ? 1 : 0, 'each animal owns its training');
+    assert.match(element('upgrade-message').textContent, new RegExp(animal.name));
+    press('Escape', 'Escape'); flush();
+    assert.equal(M.upgradeMenu.isOpen, false);
+    assert.equal(M.strategy.active, true);
+    assert.equal(document.activeElement, portrait);
+    assert.equal(document.pointerLockElement, null);
+    const focus = M.strategy.focus.clone(); advance(.1);
+    assert.equal(M.strategy.focus.x, focus.x, 'opening training clears held camera movement');
+  }
+  assert.equal(coins, 68); assert.equal(stock.log, 12);
+  press('t', 'KeyT'); assert.equal(document.pointerLockElement, element('scene'));
+});
 
 test('T releases captured FPS, hands the goat to AI, pans independently and restores the prior view', () => {
   const { M, camera, press, advance, document } = commandGame();

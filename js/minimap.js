@@ -10,6 +10,7 @@
   function draw() {
     if (!context || !M.goat.group) return;
     const size = canvas.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2);
+    if (size <= 10) return; // Strategic view hides the minimap on compact screens.
     if (canvas.width !== Math.round(size * ratio)) canvas.width = canvas.height = Math.round(size * ratio);
     const ctx = context, center = size / 2, radius = center - 5, player = M.goat.group.position;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, size, size);

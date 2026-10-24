@@ -135,6 +135,25 @@
     grid.material.transparent = true; grid.material.opacity = .12; grid.material.depthWrite = false; grid.visible = false; scene.add(grid);
     range = new THREE.Mesh(new THREE.RingGeometry(.99, 1, 96), new THREE.MeshBasicMaterial({ color: 0x9bd7bc, side: THREE.DoubleSide, transparent: true, opacity: .65, depthWrite: false }));
     range.rotation.x = -Math.PI / 2; range.visible = false; scene.add(range);
+    const animals = document.getElementById('rts-animals');
+    M.animals.list.forEach(animal => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'rts-animal';
+      button.setAttribute('aria-label', 'Upgrade ' + animal.name + ', ' + animal.species + ' ' + animal.role);
+      button.setAttribute('aria-haspopup', 'dialog'); button.setAttribute('aria-controls', 'upgrade-menu');
+      button.title = 'Upgrade ' + animal.name;
+      const icon = document.createElement('img');
+      icon.src = 'assets/animals/' + animal.name.toLowerCase() + '.svg'; icon.alt = ''; icon.draggable = false;
+      icon.width = icon.height = 44;
+      const label = document.createElement('span'), name = document.createElement('strong'), role = document.createElement('small');
+      name.textContent = animal.name; role.textContent = animal.role;
+      label.appendChild(name); label.appendChild(role); button.appendChild(icon); button.appendChild(label);
+      button.addEventListener('click', () => {
+        keys.clear(); pointer = drag = null;
+        if (ghost) ghost.visible = false;
+        M.upgradeMenu.open(animal);
+      });
+      animals.appendChild(button);
+    });
     const roster = document.getElementById('rts-roster');
     M.towers.definitions.forEach((def, i) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'tower-card';

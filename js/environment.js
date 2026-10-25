@@ -178,7 +178,13 @@
     const c = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      const y = 0.035 + Math.random() * 0.95;
+      // Uniform over solid angle across the whole celestial sphere, not just
+      // a northern cap. The star field only rotates around the celestial
+      // pole, so stars generated with y >= 0 stayed pinned to the northern
+      // sky forever and left the entire southern hemisphere starless. y is
+      // uniform over [-1, 1] (uniform cos of the polar angle), which spreads
+      // the points evenly per square degree.
+      const y = -1 + 2 * Math.random();
       const angle = Math.random() * Math.PI * 2;
       const r = Math.sqrt(1 - y * y);
       const radius = radiusBase + Math.random() * 9;
@@ -396,8 +402,10 @@
     starGroup = new THREE.Group();
     starGroup.renderOrder = -9;
     celestial.add(starGroup);
-    stars = makeStarCloud(coarse ? 650 : 1200, 1.7, 166);
-    brightStars = makeStarCloud(coarse ? 90 : 170, 2.7, 170);
+    // Extra points: roughly half the field now sits below the horizon at any
+    // moment, so the same visible density needs more total stars.
+    stars = makeStarCloud(coarse ? 950 : 1900, 1.7, 166);
+    brightStars = makeStarCloud(coarse ? 140 : 280, 2.7, 170);
     starGroup.add(stars);
     starGroup.add(brightStars);
   }

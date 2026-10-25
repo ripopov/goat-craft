@@ -229,32 +229,6 @@
     const ctx = canvas.getContext('2d');
     const c = size / 2;
 
-    // Soft sunburst rays first: faint wedges that linger past the disc like a
-    // corona. The disc gradient painted afterwards dims them near the core,
-    // leaving just a delicate star-burst halo on the AdditiveBlending sprite.
-    const rayCount = 12;
-    for (let i = 0; i < rayCount; i++) {
-      ctx.save();
-      ctx.translate(c, c);
-      ctx.rotate((i / rayCount) * Math.PI * 2 + (i % 2) * 0.018);
-      const span = 0.42 * (1 + 0.35 * Math.sin(i * 2.61));
-      const length = size * (0.66 + span * 0.28);
-      const half = Math.atan(0.14);
-      const g = ctx.createLinearGradient(0, 0, length, 0);
-      g.addColorStop(0, 'rgba(255, 232, 165, 0)');
-      g.addColorStop(0.5, 'rgba(255, 224, 148, 0.055)');
-      g.addColorStop(0.92, 'rgba(255, 214, 128, 0.02)');
-      g.addColorStop(1, 'rgba(255, 210, 120, 0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(length, Math.tan(half) * length * 0.2);
-      ctx.lineTo(length, -Math.tan(half) * length * 0.2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
     // The disc: a hot white punctum, a golden face and a long warm corona
     // that bleeds into the sky with no hard edge.
     const g = ctx.createRadialGradient(c, c, 0, c, c, c);

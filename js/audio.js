@@ -360,6 +360,41 @@
     });
   }
 
+  // Each new silhouette has a matching acoustic material. Wind-ups rise in
+  // pitch; casts resolve them, without long bass sweeps or permanent loops.
+  function enemy(species, event, point) {
+    if (!['parachute', 'worm', 'binder', 'prismback', 'sower'].includes(species)) return;
+    const warning = event === 'warn' || event === 'open';
+    const death = event === 'death', hurt = event === 'hurt';
+    nearby(point, 42, 'enemy-' + species + '-' + event, event === 'idle' ? 1.5 : .16, function (voice, when, level) {
+      const gain = level * (event === 'idle' ? .035 : warning ? .09 : .07);
+      if (species === 'parachute') {
+        noise(voice, when, { frequency: event === 'open' ? 1900 : 1100, endFrequency: 500,
+          duration: event === 'open' ? .7 : .22, level: gain, attack: .035 });
+        body(voice, when + .06, event === 'open' ? 310 : 145, .2, gain * .45, 'wood');
+      } else if (species === 'worm') {
+        noise(voice, when, { frequency: warning ? 520 : 310, endFrequency: warning ? 1000 : 180,
+          duration: warning ? .65 : death ? .55 : .3, level: gain, attack: .025 });
+        body(voice, when + .04, warning ? 185 : hurt ? 270 : 120, .24, gain * .6, 'stone');
+        fragments(voice, when + .1, 1700, gain * .25, death || event === 'emerge' ? 4 : 2);
+      } else if (species === 'binder') {
+        body(voice, when, warning ? 310 : death ? 170 : 420, .3, gain * .7, 'wood');
+        tone(voice, when + .06, { type: 'triangle', frequency: warning ? 380 : 650,
+          endFrequency: warning ? 570 : 420, duration: warning ? .65 : .24, level: gain * .4, attack: .03 });
+        fragments(voice, when, 2400, gain * .23, death ? 4 : 2);
+      } else if (species === 'prismback') {
+        body(voice, when, event === 'block' ? 1020 : warning ? 480 : 680, .32, gain * .7, 'metal');
+        tone(voice, when + .07, { frequency: warning ? 720 : 1440, endFrequency: warning ? 1080 : 950,
+          duration: warning ? .6 : .25, level: gain * .3, attack: .012 });
+      } else if (species === 'sower') {
+        for (let i = 0; i < 3; i++) tone(voice, when + i * .07, { type: 'sine',
+          frequency: (warning ? 360 : 240) + i * 100, endFrequency: 150 + i * 50,
+          duration: .18, level: gain * .55 / (1 + i * .3), attack: .014 });
+        noise(voice, when + .04, { frequency: 1300, endFrequency: 500, duration: death ? .45 : .25, level: gain * .6, attack: .02 });
+      }
+    });
+  }
+
   function animal(species, point) {
     nearby(point, 30, 'animal', 1.5, function (voice, when, level) {
       const cow = species === 'cow', stag = species === 'stag';
@@ -515,6 +550,7 @@
     setListener: setListener,
     setEffectsEnabled: setEffectsEnabled,
     zombie: zombie,
+    enemy: enemy,
     enemyBurst: enemyBurst,
     towerShot: towerShot,
     towerImpact: towerImpact,

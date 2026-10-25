@@ -667,7 +667,7 @@
         spellFlash(to, 0xb9f6ff, 0.25 + powerLevel * 0.12, 0.15);
         sparkBurst(to, [0xf4ffff, 0x64dfff], 3 + powerLevel * 2, 2.2, 0.22, 0.6 + powerLevel * 0.3);
       }
-      M.enemies.spellHit(enemy, dmg);
+      M.enemies.spellHit(enemy, dmg, chainFrom);
       chainFrom = to;
     }
     if (audioRef && audioRef.towerShot) audioRef.towerShot(origin.clone(), 'bolt');
@@ -814,6 +814,9 @@
   function updateGoat(dt, t) {
     const s = state;
     const upgrades = M.upgrades ? M.upgrades.stats() : { move: 1, rate: 1, reach: 0, damage: 0 };
+    const terrainSpeed = M.enemies && M.enemies.movementScale ? M.enemies.movementScale(goat.position) : 1;
+    if (terrainSpeed < 1 && !s.mired && uiRef && uiRef.showBubble) uiRef.showBubble('Mire slows hooves — jump or move out of the amber ring');
+    s.mired = terrainSpeed < 1;
     const speedLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'move') : 0;
     const wheel = speedLevel >= 3;
     const reachLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
@@ -853,7 +856,7 @@
       s.manualHold = 3.0;
       s.mode = 'manual';
       if (!controlsRef.firstPerson && s.headbutt < 0) face(turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7));
-      s.speed = damp(s.speed, (s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8)) * upgrades.move, s.swimming ? 3.5 : 5, dt);
+      s.speed = damp(s.speed, (s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8)) * upgrades.move * terrainSpeed, s.swimming ? 3.5 : 5, dt);
 
       const mx = input.x * s.speed * dt;
       const mz = input.y * s.speed * dt;
@@ -878,7 +881,7 @@
         s.wait = rand(2.5, 6.0);
       } else {
         face(turnToward(s.yaw, Math.atan2(dx, dz), dt * 4.5));
-        s.speed = damp(s.speed, clamp(1.6 + dist * 1.3, 1.6, 3.4), 3.0, dt);
+        s.speed = damp(s.speed, clamp(1.6 + dist * 1.3, 1.6, 3.4) * terrainSpeed, 3.0, dt);
 
         const mx = dx / dist * s.speed * dt;
         const mz = dz / dist * s.speed * dt;

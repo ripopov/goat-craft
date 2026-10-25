@@ -3,10 +3,13 @@ import vm from 'node:vm';
 
 const root = new URL('../../', import.meta.url);
 
-export function game() {
+export function game({ seed } = {}) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
+  if (Number.isInteger(seed)) vm.runInContext(`{ let state = ${seed >>> 0}; Math.random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296;
+  }; }`, context);
   const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;

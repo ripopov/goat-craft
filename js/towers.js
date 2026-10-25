@@ -392,7 +392,7 @@
   }
   function hit(tower, enemy, amount) {
     if (!alive(enemy)) return;
-    if (M.enemies.damageEnemy(enemy, amount)) tower.kills++;
+    if (M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: !!tower.def.splash || !!tower.def.pierce })) tower.kills++;
     if (alive(enemy) && tower.def.slow) { enemy.towerSlow = tower.def.slow; enemy.towerSlowTime = 2.5; }
     if (alive(enemy) && tower.def.dot) {
       enemy.towerDots = enemy.towerDots || {};
@@ -830,7 +830,7 @@
   function shoot(tower) {
     if (projectiles.length >= MAX_PROJECTILES) return false;
     const def = tower.def, center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
-    const enemies = M.enemies.zombies.filter(e => alive(e) && Math.hypot(e.position.x - center.x, e.position.z - center.z) <= def.range &&
+    const enemies = M.enemies.zombies.filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && Math.hypot(e.position.x - center.x, e.position.z - center.z) <= def.range &&
       Math.abs(e.position.y - tower.position.y) < 15);
     enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq());
     const target = enemies.find(e => lineClear(center, aimAt(e), tower));
@@ -938,7 +938,12 @@
       if (!M.world.blockInfoAt(tower.bx, tower.by - 1, tower.bz)) { dismantle(tower); continue; }
       animateTower(tower, dt);
       if (M.hearthTree.health <= 0) continue;
-      tower.cooldown -= dt;
+      if (tower.snareTime > 0) {
+        tower.snareTime = Math.max(0, tower.snareTime - dt);
+        if (!tower.snareOwner || tower.snareOwner.hp <= 0) tower.snareTime = 0;
+        if (tower.snareTime === 0) tower.snareOwner = null;
+      }
+      tower.cooldown -= dt * (tower.snareTime > 0 ? .6 : 1);
       if (tower.cooldown <= 0) tower.cooldown = shoot(tower) ? tower.def.interval : .35;
     }
     for (let i = effects.length - 1; i >= 0; i--) {

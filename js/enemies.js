@@ -7,7 +7,11 @@
     zombie: { name: 'Zombie', unlock: 1, hp: 2, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
     spider: { name: 'Spider', unlock: 3, hp: 2, speed: 2.7, reward: 2, bite: 3.5, damage: 1, chew: 12, radius: 0.42, height: 1.15 },
     skeleton: { name: 'Skeleton', unlock: 5, hp: 3, speed: 1.9, reward: 2, bite: 2.6, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
-    brute: { name: 'Stone brute', unlock: 8, hp: 7, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 }
+    brute: { name: 'Stone brute', unlock: 8, hp: 7, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 },
+    worm: { name: 'Burrow Worm', unlock: 10, hp: 4, speed: 1.6, reward: 4, bite: 3.6, damage: 1, chew: 9, radius: .4, height: 1.4 },
+    binder: { name: 'Briar Binder', unlock: 7, hp: 3, speed: 1.35, reward: 3, bite: 3.8, damage: 1, chew: 11, radius: .4, height: 2.8 },
+    prismback: { name: 'Prismback', unlock: 12, hp: 4, speed: 1.25, reward: 4, bite: 3.8, damage: 1, chew: 9, radius: .44, height: 1.8 },
+    sower: { name: 'Mire Sower', unlock: 15, hp: 3, speed: 1.5, reward: 3, bite: 3.5, damage: 1, chew: 11, radius: .42, height: 2 }
   };
   function waveSize(level) { return Math.min(MAX_ENEMIES, 2 + level * 4); }
   // Pressure comes from coordinated arrivals before it comes from stat growth.
@@ -29,10 +33,18 @@
   }
   // Deterministic slots introduce a readable mix and bound the durable units.
   function typeForWave(level, slot) {
+    if (level >= 10 && slot % 12 === 9) return 'worm';
+    if (level >= 15 && slot % 20 === 17) return 'sower';
+    if (level >= 12 && slot % 20 === 13) return 'prismback';
+    if (level >= 7 && slot % 20 === 7) return 'binder';
     if (level >= 8 && slot % 6 === 5) return 'brute';
     if (level >= 5 && slot % 4 === 2) return 'skeleton';
     if (level >= 3 && slot % 3 === 1) return 'spider';
     return 'zombie';
+  }
+  function deliveryForWave(level, slot, type) {
+    return level >= 5 && (type === 'zombie' || type === 'skeleton') &&
+      (level === 5 ? slot === 3 : slot % 10 === 3) ? 'parachute' : 'ground';
   }
   const physics = M.actorPhysics, BODY = { radius: 0.34, height: 2.8, skin: 0.002 };
   const { clamp, turnToward, damp } = M.utils;
@@ -92,7 +104,7 @@
   }
 
   const models = {};
-  ['zombie', 'skeleton', 'spider', 'brute'].forEach(function (type) { models[type] = { parts: [], joints: [] }; });
+  Object.keys(TYPES).concat('parachute').forEach(function (type) { models[type] = { parts: [], joints: [] }; });
   function joint(type, kind, parent, x, y, z, side, index) {
     const model = models[type], id = model.joints.length + 1;
     model.joints.push({ id: id, kind: kind, parent: parent || 0, x: x, y: y, z: z, side: side || 0, index: index || 0, rx: 0, ry: 0, rz: 0 });
@@ -274,7 +286,91 @@
     part('brute', heavy ? -0.23 : 0.15, -0.25, 0.34, 0.05, 0.32, 0.035, 0x303e37, elbow).rz = heavy ? -0.4 : 0.5;
   });
 
-  const maxParts = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].parts.length; }));
+  // Original silhouettes: articulated tunnel segments, a lantern stump,
+  // a faceted shield animal, and a walking seed amphora. All share one draw.
+  let wormParent = 0;
+  for (let i = 0; i < 6; i++) {
+    const segment = joint('worm', 'wormSegment', wormParent, 0, i ? 0 : .62, i ? -.4 : .65, 0, i);
+    const width = .66 - i * .065;
+    part('worm', 0, 0, 0, width, .65 - i * .055, .5, i % 2 ? 0x765344 : 0xa67d53, segment);
+    part('worm', 0, .29 - i * .025, 0, width * .85, .09, .35, 0xc4a16c, segment);
+    part('worm', 0, .05, .23, width * .9, .08, .06, 0x473a37, segment);
+    if (!i) {
+      for (const side of [-1, 1]) {
+        part('worm', side * .2, .13, .29, .12, .12, .07, 0xffcc75, segment, true);
+        part('worm', side * .24, -.12, .36, .1, .27, .12, 0xe9d2a1, segment).rx = -.4;
+      }
+      part('worm', 0, -.08, .3, .31, .14, .11, 0x36282f, segment);
+    }
+    wormParent = segment;
+  }
+  const binder = walkerJoints('binder', .23, .53, 1.95);
+  part('binder', 0, 1.35, 0, .85, 1.05, .65, 0x66503b);
+  for (const x of [-.3, 0, .3]) part('binder', x, 1.4, .35, .1, .85, .1, 0xa18a4d).rz = x * .25;
+  part('binder', 0, 1.6, .42, .36, .4, .14, 0x303d32);
+  part('binder', 0, 1.6, .51, .19, .24, .05, 0xffcb67, 0, true);
+  part('binder', 0, .28, 0, .8, .58, .65, 0x7b6944, binder.head);
+  for (const side of [-1, 1]) {
+    part('binder', side * .19, .28, .35, .13, .09, .06, 0xffe29a, binder.head, true);
+    part('binder', side * .3, .6, 0, .13, .55, .12, 0x685139, binder.head).rz = -side * .4;
+    part('binder', side * .45, .76, .02, .45, .26, .46, 0x577453, binder.head);
+    part('binder', side * .22, .9, -.05, .46, .2, .5, 0x7e935e, binder.head);
+  }
+  binder.legs.forEach((j, i) => {
+    part('binder', 0, -.25, 0, .25, .5, .3, 0x5b503b, j[0]);
+    part('binder', 0, -.3, .06, .3, .6, .4, 0x52634b, j[1]).rz = i ? -.12 : .12;
+  });
+  binder.arms.forEach((j, i) => {
+    part('binder', 0, -.22, 0, .25, .47, .27, 0x74613f, j[0]);
+    part('binder', 0, -.28, .02, .18, .6, .2, 0x536b46, j[1]);
+    for (let finger = 0; finger < 3; finger++) part('binder', (finger - 1) * .11, -.58, .12, .065, .27, .08, 0x91a260, j[1]).rx = -.3;
+  });
+  const prismBody = joint('prismback', 'body', 0, 0, .85, -.18);
+  part('prismback', 0, 0, 0, .92, .7, 1.4, 0x394e61, prismBody);
+  for (let row = 0; row < 3; row++) for (const side of [-1, 1]) {
+    const plate = part('prismback', side * .3, .35, -.58 + row * .42, .55, .32, .52, row % 2 ? 0x8dbdca : 0x517f96, prismBody);
+    plate.rz = side * .3;
+  }
+  part('prismback', 0, .75, .66, .62, .45, .44, 0x4b6172);
+  for (const side of [-1, 1]) {
+    part('prismback', side * .21, .85, .9, .12, .09, .06, 0xc9f6ff, 0, true);
+    const hinge = joint('prismback', 'prismShield', 0, side * .45, 1.02, .66, side);
+    part('prismback', -side * .21, .04, .04, .52, .85, .2, 0x97d1dd, hinge).rz = side * .23;
+    part('prismback', -side * .09, -.06, .16, .14, .58, .06, 0xc4f5f3, hinge, true);
+    for (let i = 0; i < 2; i++) {
+      const leg = joint('prismback', 'quadruped', 0, side * .4, .63, -.58 + i * .96, side, i);
+      part('prismback', 0, -.26, .03, .29, .59, .36, 0x586574, leg);
+      part('prismback', 0, -.54, .12, .35, .14, .42, 0x303d4c, leg);
+    }
+  }
+  part('prismback', 0, .84, -.95, .4, .37, .12, 0xffbb69, 0, true);
+  part('sower', 0, .56, .12, .87, .74, 1.07, 0x687756);
+  part('sower', 0, 1.15, -.18, .77, .9, .8, 0x986743);
+  part('sower', 0, 1.65, -.18, .52, .21, .55, 0x604934);
+  part('sower', 0, 1.79, -.18, .36, .13, .38, 0xc2a064);
+  for (const side of [-1, 1]) {
+    part('sower', side * .25, .77, .69, .16, .12, .08, 0xffde88, 0, true);
+    part('sower', side * .34, 1.27, -.16, .12, .8, .55, 0xd4ad60).rz = side * .15;
+    for (let i = 0; i < 2; i++) {
+      const foot = joint('sower', 'quadruped', 0, side * .4, .35, -.35 + i * .7, side, i);
+      part('sower', side * .06, -.2, .05, .32, .28, .43, 0x404c3e, foot);
+    }
+  }
+  part('sower', 0, .4, .7, .38, .12, .13, 0x3c392e);
+  for (let i = 0; i < 3; i++) part('sower', (i - 1) * .2, 1.36, -.63, .11, .11, .08, 0xffcf6c, 0, true);
+
+  // Voxel cloth panels and four suspension cords ride in the horde batch.
+  for (let x = -2; x <= 2; x++) for (let z = -1; z <= 1; z++) {
+    const panel = part('parachute', x * .53, 5.15 - x * x * .11 - z * z * .15, z * .65,
+      .57, .27, .72, (x + z) % 2 ? 0xc88b63 : 0xf1dbad);
+    panel.rz = -x * .32;
+  }
+  for (const side of [-1, 1]) for (const front of [-1, 1]) {
+    const cord = part('parachute', side * .65, 3.58, front * .35, .035, 2.32, .035, 0xb9ae99);
+    cord.rz = -side * .28; cord.rx = front * .14;
+  }
+
+  const maxParts = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].parts.length; })) + models.parachute.parts.length;
   const maxJoints = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].joints.length; }));
   const jointMatrices = [rootMatrix];
   for (let i = 1; i <= maxJoints; i++) jointMatrices.push(new THREE.Matrix4());
@@ -294,6 +390,7 @@
         const eating = enemy.eatBlend * (enemy.type === 'zombie' ? 1.1 : 0.85);
         j.rx = (enemy.type === 'zombie' ? -1.12 : enemy.type === 'brute' ? -0.2 : -0.08) - eating -
           j.side * gait * (enemy.type === 'skeleton' ? 0.55 : 0.12) + recoil * 1.8;
+        if (enemy.mode === 'chant') j.rx = -1.5 - enemy.charge * .1;
         j.rz = j.side * (enemy.type === 'brute' ? 0.12 : 0.04) + Math.sin(time * 1.7 + enemy.id + j.side) * 0.025 * motion;
       } else if (j.kind === 'elbow') {
         j.rx = -0.12 - chew * 0.5 - enemy.eatBlend * 0.25 + Math.max(0, j.side * gait) * 0.2;
@@ -314,6 +411,13 @@
       } else if (j.kind === 'fang') {
         j.rx = -0.1 - chew * 0.5;
         j.rz = j.side * chew * 0.15;
+      } else if (j.kind === 'prismShield') {
+        j.ry = j.side * (enemy.prismPhase === 'exposed' ? 1.2 : enemy.prismPhase === 'brace' ? 0 : .15);
+      } else if (j.kind === 'wormSegment') {
+        j.ry = Math.sin(enemy.phase * 1.4 - j.index * .8) * .13 * motion;
+        j.rx = Math.sin(enemy.phase - j.index * .7) * .045 * motion;
+      } else if (j.kind === 'quadruped') {
+        j.rx = Math.sin(enemy.phase + j.index * Math.PI + j.side) * enemy.stride * .45 * motion;
       } else if (j.kind === 'body') {
         j.rx = Math.sin(enemy.phase * 0.5) * 0.04 * enemy.stride * motion;
         j.ry = Math.sin(time * 1.8 + enemy.id) * 0.025 * motion;
@@ -333,7 +437,7 @@
       for (let n = 0; n < actors.length; n++) {
         const enemy = actors[n], p = enemy.position, model = models[enemy.type];
         const dying = enemy.death !== undefined, death = dying ? clamp(enemy.death / 0.65, 0, 1) : 0;
-        const motion = reducedMotion ? 0 : 1;
+        const motion = reducedMotion || M.config.reducedMotion ? 0 : 1;
         const recoil = Math.sin(clamp(enemy.flash / 0.2, 0, 1) * Math.PI) * 0.22 * motion;
         const bob = Math.abs(Math.sin(enemy.phase)) * (enemy.type === 'brute' ? 0.075 : enemy.type === 'spider' ? 0.025 : 0.045) * enemy.stride * motion;
         const collapse = enemy.exploded ? 0 : death;
@@ -345,8 +449,8 @@
         const shrink = dying ? 1 - Math.pow(clamp((death - 0.65) / 0.35, 0, 1), 2) : 1;
         scale.setScalar(Math.max(0.001, shrink)); rootMatrix.compose(position, quaternion, scale);
         poseJoints(enemy, model, time, motion, recoil);
-        for (let partIndex = 0; partIndex < model.parts.length; partIndex++) {
-          const part = model.parts[partIndex];
+        for (let partIndex = 0, count = model.parts.length + (enemy.airborne ? models.parachute.parts.length : 0); partIndex < count; partIndex++) {
+          const part = partIndex < model.parts.length ? model.parts[partIndex] : models.parachute.parts[partIndex - model.parts.length];
           position.set(part.x, part.y, part.z); scale.set(part.sx, part.sy, part.sz);
           if (enemy.exploded) {
             const burst = death * (2 - death), angle = partIndex * 2.39996 + enemy.id;
@@ -369,6 +473,230 @@
     mesh.count = index;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  const signals = [], mudPools = [];
+  const signalRing = new THREE.TorusGeometry(1, .035, 4, 32);
+  const signalDisk = new THREE.CylinderGeometry(1, 1, .018, 24);
+  const signalCube = new THREE.BoxGeometry(1, 1, 1), signalMaterials = new Map();
+  let digBudget = 32;
+  function sound(type, event, point) { if (M.audio && M.audio.enemy) M.audio.enemy(type, event, point); }
+  function signalMaterial(tint, opacity) {
+    const key = tint + '/' + opacity;
+    if (!signalMaterials.has(key)) signalMaterials.set(key, new THREE.MeshBasicMaterial({ color: tint,
+      transparent: opacity < 1, opacity, depthWrite: false, toneMapped: false }));
+    return signalMaterials.get(key);
+  }
+  function signal(kind, point, radius, ttl, owner) {
+    if (!scene || signals.length >= 64) return null;
+    const group = new THREE.Group(), tint = kind === 'mud' ? 0xdcb276 : kind === 'air' ? 0xe1b8ff : kind === 'root' ? 0xb0d66c : kind === 'shield' ? 0xa6e9ff : 0xffc67c;
+    group.name = 'Enemy ' + kind + ' signal'; group.position.copy(point); group.position.y += .05;
+    const rim = new THREE.Mesh(signalRing, signalMaterial(tint, .9)); rim.rotation.x = Math.PI / 2;
+    rim.scale.setScalar(radius); group.add(rim);
+    if (kind === 'mud') {
+      const disk = new THREE.Mesh(signalDisk, signalMaterial(0x5b4835, .65)); disk.scale.set(radius, 1, radius); group.add(disk);
+    }
+    for (let i = 0; i < (kind === 'root' ? 6 : 4); i++) {
+      const angle = i * Math.PI / (kind === 'root' ? 3 : 2);
+      const bit = new THREE.Mesh(signalCube, signalMaterial(tint, 1));
+      bit.position.set(Math.cos(angle) * radius * .75, kind === 'root' ? .45 : .05, Math.sin(angle) * radius * .75);
+      bit.scale.set(kind === 'root' ? .1 : .14, kind === 'root' ? .9 : .1, .14); bit.rotation.y = angle;
+      group.add(bit);
+    }
+    scene.add(group);
+    const fx = { group, kind, ttl, age: 0, owner, radius }; signals.push(fx); return fx;
+  }
+  function advanceSignals(dt) {
+    for (let i = signals.length - 1; i >= 0; i--) {
+      const fx = signals[i]; fx.age += dt;
+      let done = fx.age >= fx.ttl || fx.owner && fx.owner.hp <= 0;
+      if (fx.owner && (fx.kind === 'burrow' || fx.kind === 'air')) {
+        const e = fx.owner;
+        done = done || !(e.airborne || e.burrowed || e.mode === 'emerge');
+        fx.group.position.set(e.position.x, (e.airborne ? e.landingY : e.surfaceY) + .05, e.position.z);
+      }
+      if (!reducedMotion && !M.config.reducedMotion && fx.kind !== 'mud') fx.group.rotation.y += dt * .6;
+      if (done) { scene.remove(fx.group); signals.splice(i, 1); }
+    }
+    for (let i = mudPools.length - 1; i >= 0; i--) {
+      mudPools[i].life -= dt;
+      if (mudPools[i].life <= 0) mudPools.splice(i, 1);
+    }
+  }
+  function movementScale(point) {
+    return mudPools.some(pool => Math.abs(point.y - pool.point.y) < 1.2 &&
+      Math.hypot(point.x - pool.point.x, point.z - pool.point.z) <= pool.radius) ? .65 : 1;
+  }
+  function surfaceAt(x, z, fallback) {
+    return world.surfaceHeight ? world.surfaceHeight(x, z) : fallback;
+  }
+  function tunnelRoofAt(x, z, fallback) {
+    return world.terrainHeight ? world.terrainHeight(x, z) : surfaceAt(x, z, fallback);
+  }
+  function emergenceExit(enemy) {
+    const from = enemy.shaft, height = enemy.emergence.y;
+    let best = null, score = Infinity;
+    for (const node of navigation.nodes) {
+      const distance = Math.hypot(node.x - from.x, node.z - from.z);
+      if (distance < 1.6 || distance > 4.2 || Math.abs(node.y - height) > .1 ||
+          Math.hypot(node.x - tree.position.x, node.z - tree.position.z) > 9.8 ||
+          !physics.clear(world, node.x, height, node.z, enemy.body) ||
+          Math.abs(physics.support(world, node, height + .1, enemy.body) - height) > .1 ||
+          !navigation.canWalk({ x: from.x, y: height, z: from.z }, node)) continue;
+      const value = distance + (Number.isFinite(node.distance) ? node.distance * .1 : 5);
+      if (value < score) { best = new THREE.Vector3(node.x, height, node.z); score = value; }
+    }
+    return best;
+  }
+  function emergencePoint(enemy) {
+    const heading = Math.atan2(enemy.position.x - tree.position.x, enemy.position.z - tree.position.z);
+    let best = null, score = Infinity;
+    for (const node of navigation.nodes) {
+      const distance = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
+      if (distance < 7 || distance > 9.8 || world.isProtectedArea && world.isProtectedArea(node.bx, node.bz)) continue;
+      const value = angleDistance(angleTo(node), heading) * 20 + Math.abs(distance - 9);
+      if (value < score) { best = node; score = value; }
+    }
+    return best ? new THREE.Vector3(best.x, surfaceAt(best.x, best.z, best.y), best.z) :
+      new THREE.Vector3(tree.position.x + Math.sin(heading) * 8, surfaceAt(tree.position.x, tree.position.z, enemy.position.y), tree.position.z + Math.cos(heading) * 8);
+  }
+  function releaseSpoil(enemy, point) {
+    if (!enemy.spoil || !M.items || !M.items.dropBlock) return;
+    for (const kind of enemy.spoil) M.items.dropBlock(kind, point.x, point.y + .6, point.z, { persistent: true });
+    enemy.spoil.length = 0;
+  }
+  function settleShaft(enemy) {
+    if (world.placeBlock) {
+      const shaft = enemy.shaft, by = Math.floor(enemy.emergence.y / SIZE) - 2;
+      for (let bx = Math.floor((shaft.x - .42) / SIZE); bx <= Math.floor((shaft.x + .42) / SIZE); bx++)
+        for (let bz = Math.floor((shaft.z - .42) / SIZE); bz <= Math.floor((shaft.z + .42) / SIZE); bz++) {
+          if (!enemy.spoil.length || world.blockInfoAt(bx, by, bz) || !world.blockInfoAt(bx, by - 1, bz)) continue;
+          if (world.placeBlock(enemy.spoil[0], bx, by, bz)) enemy.spoil.shift();
+        }
+    }
+    releaseSpoil(enemy, enemy.position);
+  }
+  function excavate(point, height, enemy) {
+    const r = .42, minY = Math.floor((point.y + .01) / SIZE), maxY = Math.floor((point.y + height - .01) / SIZE);
+    for (let bx = Math.floor((point.x - r) / SIZE); bx <= Math.floor((point.x + r) / SIZE); bx++)
+      for (let bz = Math.floor((point.z - r) / SIZE); bz <= Math.floor((point.z + r) / SIZE); bz++) {
+        if (world.isProtectedArea && world.isProtectedArea(bx, bz)) return false;
+        for (let by = minY; by <= maxY; by++) {
+          const block = world.blockInfoAt(bx, by, bz);
+          if (!block) continue;
+          if (by < 0) continue; // synthetic flat test worlds have an immutable bed.
+          if (digBudget <= 0) return false;
+          digBudget--;
+          const retain = enemy && enemy.spoil.length < 4 && ['grass', 'dirt', 'stone'].includes(block.kind);
+          const kind = world.breakBlockAt(bx, by, bz, { persistentDrop: true, drop: !retain });
+          if (!kind) return false;
+          if (retain) enemy.spoil.push(kind);
+        }
+      }
+    return true;
+  }
+  function specialMovement(enemy, dt) {
+    const p = enemy.position;
+    if (enemy.airborne) {
+      enemy.mode = 'air'; enemy.moving = false;
+      const floor = world.landingHeight(p.x, p.z, p.y + .01);
+      const next = Math.max(floor, p.y - 3.8 * dt);
+      if (p.y > floor + .01) physics.moveVertical(world, p, enemy.body, next);
+      if (p.y <= floor + .02 || next <= floor) {
+        p.y = floor; enemy.landingY = floor; enemy.airborne = false; enemy.grounded = true;
+        enemy.recoverTime = .9; enemy.mode = 'recover'; enemy.target = null; enemy.progressAt = elapsed;
+        signal('land', p, 1.15, .45); sound('parachute', 'land', p);
+      }
+      return true;
+    }
+    if (enemy.recoverTime > 0) { enemy.recoverTime -= dt; enemy.moving = false; enemy.mode = 'recover'; return true; }
+    if (enemy.type !== 'worm' || !enemy.burrowed && enemy.mode !== 'emerge') return false;
+    const goal = enemy.emergence;
+    enemy.surfaceY = tunnelRoofAt(p.x, p.z, enemy.surfaceY);
+    if (enemy.mode !== 'emerge') {
+      enemy.mode = 'burrow';
+      const dx = goal.x - p.x, dz = goal.z - p.z, distance = Math.hypot(dx, dz);
+      if (distance > .15) {
+        const step = Math.min(distance, 2.1 * enemy.speedScale * dt);
+        const next = new THREE.Vector3(p.x + dx / distance * step, 0, p.z + dz / distance * step);
+        next.y = Math.floor((tunnelRoofAt(next.x, next.z, enemy.surfaceY) - 4) / SIZE) * SIZE;
+        if (excavate(next, enemy.body.height, enemy)) { p.copy(next); enemy.moving = true; enemy.phase += dt * 7; }
+        enemy.yaw = Math.atan2(dx, dz);
+      } else { enemy.mode = 'emerge'; enemy.emergeTime = 0; enemy.shaft = p.clone(); sound('worm', 'warn', goal); }
+    } else {
+      enemy.emergeTime += dt; enemy.moving = false;
+      // The surface opens only inside five full voxels (10 world units).
+      if (enemy.emergeTime >= 1.4 && excavate(new THREE.Vector3(enemy.shaft.x, goal.y - 4, enemy.shaft.z), 4 + enemy.body.height, enemy)) {
+        if (!enemy.emergeExit) enemy.emergeExit = emergenceExit(enemy);
+        if (!enemy.emergeExit) return true;
+        enemy.burrowed = false;
+        const k = clamp((enemy.emergeTime - 1.4) / .8, 0, 1);
+        const rise = clamp(k * 2, 0, 1), lurch = clamp(k * 2 - 1, 0, 1);
+        const lift = rise * rise * (3 - 2 * rise), shift = lurch * lurch * (3 - 2 * lurch);
+        p.x = enemy.shaft.x + (enemy.emergeExit.x - enemy.shaft.x) * shift;
+        p.z = enemy.shaft.z + (enemy.emergeExit.z - enemy.shaft.z) * shift;
+        p.y = goal.y - 4 + 4 * lift + Math.sin(shift * Math.PI) * .6;
+        if (k >= 1) {
+          p.y = goal.y; enemy.mode = 'walk'; enemy.grounded = true; enemy.target = null;
+          enemy.recoverTime = .7; enemy.progressAt = elapsed; settleShaft(enemy); sound('worm', 'emerge', p);
+        }
+      }
+    }
+    return true;
+  }
+  function tacticalAbility(enemy, dt) {
+    const p = enemy.position;
+    enemy.abilityTimer -= dt;
+    if (enemy.type === 'prismback') {
+      enemy.prismTimer -= dt;
+      if (enemy.prismTimer <= 0) {
+        const phase = enemy.prismPhase;
+        enemy.prismPhase = phase === 'march' ? 'brace' : phase === 'brace' ? 'rush' : phase === 'rush' ? 'exposed' : 'march';
+        enemy.prismTimer = { march: 6, brace: 1.1, rush: 1.5, exposed: 1.8 }[enemy.prismPhase];
+        if (enemy.prismPhase === 'brace') { signal('shield', p, 1.3, 1.1); sound('prismback', 'warn', p); }
+      }
+      if (enemy.prismPhase === 'brace') { enemy.mode = 'brace'; enemy.moving = false; return true; }
+    }
+    if (enemy.type === 'binder') {
+      if (enemy.snareTarget) {
+        const tower = enemy.snareTarget;
+        if (!M.towers || !M.towers.list.includes(tower) || tower.position.distanceTo(p) > 9) { enemy.snareTarget = null; return false; }
+        enemy.mode = 'chant'; enemy.moving = false; enemy.charge += dt;
+        enemy.yaw = Math.atan2(tower.position.x - p.x, tower.position.z - p.z);
+        if (enemy.charge >= 1.25) {
+          tower.snareTime = 3; tower.snareOwner = enemy; enemy.snareTarget = null;
+          enemy.abilityTimer = 7; enemy.casts++; enemy.progressAt = elapsed;
+          signal('root', tower.position, 1.2, 3, enemy); sound('binder', 'cast', p);
+        }
+        return true;
+      }
+      if (enemy.abilityTimer <= 0 && enemy.casts < 4 && M.towers) {
+        const tower = M.towers.list.filter(t => !(t.snareTime > 0) && t.position.distanceTo(p) < 8 &&
+          M.towers.lineClear(p.clone().add(new THREE.Vector3(0, 1.2, 0)), t.position.clone().add(new THREE.Vector3(0, t.def.height * SIZE, 0)), t))
+          .sort((a, b) => a.position.distanceToSquared(p) - b.position.distanceToSquared(p))[0];
+        if (tower) { enemy.snareTarget = tower; enemy.charge = 0; signal('root', p, 1, 1.25, enemy); sound('binder', 'warn', p); }
+      }
+    }
+    if (enemy.type === 'sower' && Math.hypot(p.x - tree.position.x, p.z - tree.position.z) < 24 && enemy.casts < 3) {
+      if (enemy.abilityTimer <= 0) {
+        if (!enemy.charge) { signal('sow', p, 2.4, .9, enemy); sound('sower', 'warn', p); }
+        enemy.charge += dt; enemy.mode = 'sow'; enemy.moving = false;
+        if (enemy.charge >= .9) {
+          if (mudPools.length < 12 && world.waterDepthAt(p.x, p.z) < .3) {
+            const point = p.clone(); mudPools.push({ point, radius: 2.4, life: 5 }); signal('mud', point, 2.4, 5);
+            sound('sower', 'cast', p);
+          }
+          enemy.charge = 0; enemy.abilityTimer = 7; enemy.casts++;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+  function isTargetable(enemy, origin) {
+    // Soil occlusion, range and actual projectile collision protect a buried
+    // Worm. Once a player opens a tunnel it is an ordinary, damageable model.
+    return enemy.hp > 0;
   }
 
   function updateHud() {
@@ -420,7 +748,11 @@
     prepareSpawns(wave);
     spawnTimer = 0;
     if (M.audio && M.audio.cue) M.audio.cue('wave');
-    if (M.ui) M.ui.showBubble('Wave ' + wave + (wave === 3 ? ' — spiders incoming!' : wave === 5 ? ' — skeletons incoming!' : wave === 8 ? ' — stone brutes incoming!' : ' — protect the Hearth!'));
+    const introductions = { 3: 'Spiders incoming!', 5: 'Skeletons and parachutes — watch the lavender landing rings.',
+      7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
+      10: 'Burrow Worms — guard the inner five blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
+      15: 'Mire Sowers — avoid amber puddles or jump clear.' };
+    if (M.ui) M.ui.showBubble('Wave ' + wave + ' — ' + (introductions[wave] || 'protect the Hearth!'));
     updateHud();
   }
   function startNextWave() {
@@ -435,7 +767,7 @@
     beginWave(level);
     return true;
   }
-  function spawnAt(node, type) {
+  function spawnAt(node, type, options) {
     if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || !node) return null;
     type = TYPES[type] ? type : 'zombie';
     const def = TYPES[type], start = navigation.nodeAt(node.x, node.y, node.z);
@@ -446,14 +778,39 @@
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,
       jump: null, vy: 0, grounded: true, retry: 0, stuck: 0, stride: 0, eatBlend: 0,
       voiceTimer: 1 + (nextId * 1.71) % 5, chewTimer: 0,
+      abilityTimer: 4, charge: 0, casts: 0, prismPhase: 'march', prismTimer: 6, recoverTime: 0,
       progressAt: elapsed, progressRevision: navigation.revision, progressPath: null,
       bestTreeDistance: Math.hypot(node.x - tree.position.x, node.z - tree.position.z),
       bestRouteDistance: start && Number.isFinite(start.distance) ? start.distance * SIZE + Math.hypot(node.x - start.x, node.z - start.z) : Infinity };
     zombies.push(zombie);
+    if (type === 'worm' && !(options && options.surface)) {
+      zombie.spoil = [];
+      zombie.surfaceY = tunnelRoofAt(node.x, node.z, node.y); zombie.emergence = emergencePoint(zombie);
+      zombie.burrowed = true; zombie.mode = 'burrow'; zombie.position.y = Math.floor((zombie.surfaceY - 4) / SIZE) * SIZE;
+      signal('burrow', new THREE.Vector3(node.x, zombie.surfaceY, node.z), .9, 40, zombie);
+      sound('worm', 'dig', new THREE.Vector3(node.x, zombie.surfaceY, node.z));
+    }
+    if (options && options.airborne && (type === 'zombie' || type === 'skeleton')) {
+      zombie.airborne = true; zombie.landingY = node.y; zombie.position.y += 16;
+      zombie.grounded = false; zombie.mode = 'air';
+      signal('air', new THREE.Vector3(node.x, node.y, node.z), 1.2, 12, zombie); sound('parachute', 'open', zombie.position);
+    }
     return zombie;
   }
   function spawn() {
+    const type = typeForWave(wave, waveSpawned);
+    if (deliveryForWave(wave, waveSpawned, type) === 'parachute') {
+      const targets = navigation.nodes.filter(node => {
+        const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
+        return d >= 18 && d <= 26 && world.waterDepthAt(node.x, node.z) < .3 &&
+          !zombies.some(enemy => Math.hypot(enemy.position.x - node.x, enemy.position.z - node.z) < 2);
+      });
+      const reachable = targets.filter(node => Number.isFinite(node.distance)), pool = reachable.length ? reachable : targets;
+      if (pool.length) return !!spawnAt(pool[Math.floor(Math.random() * pool.length)], type, { airborne: true });
+    }
     const candidates = ringNodes().filter(function (node) {
+      if (type === 'worm' && M.goat && M.goat.group &&
+          Math.hypot(node.x - M.goat.group.position.x, node.z - M.goat.group.position.z) < 16) return false;
       return !zombies.some(function (z) { return z.position.distanceToSquared(node) < 2.25; });
     });
     if (!candidates.length) return false;
@@ -493,6 +850,7 @@
     return true;
   }
   function canHit(enemy, origin, yaw, stomp, range) {
+    if (!isTargetable(enemy, origin)) return false;
     const p = enemy.position, dx = p.x - origin.x, dz = p.z - origin.z, distance = Math.hypot(dx, dz);
     if (distance > range || Math.abs(p.y - origin.y) > 2.8) return false;
     if (!stomp && distance > .1 && (dx * Math.sin(yaw) + dz * Math.cos(yaw)) / distance < .25) return false;
@@ -501,6 +859,7 @@
   // Elemental strikes pick the nearest enemy anywhere around the goat, no
   // aiming cone; walls still block the bolt, exactly like melee attacks.
   function canHitSpell(enemy, origin, range) {
+    if (!isTargetable(enemy, origin)) return false;
     const p = enemy.position;
     if (Math.hypot(p.x - origin.x, p.z - origin.z) > range || Math.abs(p.y - origin.y) > 2.8) return false;
     return lineClear(origin, p);
@@ -516,12 +875,12 @@
     });
     return list;
   }
-  function spellHit(enemy, damage) {
+  function spellHit(enemy, damage, origin, area) {
     const index = zombies.indexOf(enemy);
     if (index < 0 || tree.health <= 0) return false;
     enemy.bite = 0; enemy.blockBite = 0;
-    const killed = damageEnemy(enemy, damage);
-    if (M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
+    const killed = damageEnemy(enemy, damage, { origin: origin, area: area });
+    if (!['worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
     updateHud(); render(elapsed);
     return killed;
   }
@@ -535,7 +894,7 @@
       if (distance > 1.5 && !lineClear(point, p)) return;
       hits.push(zombie);
     });
-    hits.forEach(function (zombie) { spellHit(zombie, damage); });
+    hits.forEach(function (zombie) { spellHit(zombie, damage, point, true); });
     return hits;
   }
   const outlineMatrix = new THREE.Matrix4(), outlineScale = new THREE.Vector3(1.065, 1.065, 1.065);
@@ -543,7 +902,7 @@
     if (!outlineMesh) return;
     let source = 0, count = 0;
     zombies.forEach(function (enemy) {
-      const length = models[enemy.type].parts.length;
+      const length = models[enemy.type].parts.length + (enemy.airborne ? models.parachute.parts.length : 0);
       if (predicate(enemy)) for (let i = 0; i < length; i++) {
         mesh.getMatrixAt(source + i, outlineMatrix); outlineMatrix.scale(outlineScale);
         outlineMesh.setMatrixAt(count++, outlineMatrix);
@@ -564,23 +923,23 @@
       const zombie = targets[j], p = zombie.position;
       const i = zombies.indexOf(zombie);
       if (!canHit(zombie, origin, yaw, stomp, range)) continue;
-      hit = true; hits++; zombie.hp -= damage; zombie.flash = 0.2;
+      hit = true; hits++;
       zombie.bite = 0; zombie.blockBite = 0;
-      if (M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
-      if (zombie.hp <= 0) {
-        removeEnemy(zombie, i, false);
-      }
+      damageEnemy(zombie, damage, { origin: origin, area: stomp });
+      if (!['worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
     }
     if (hit) { updateHud(); render(elapsed); }
     return hit;
   }
   function removeEnemy(enemy, index, exploded) {
     enemy.hp = 0; enemy.exploded = exploded;
+    releaseSpoil(enemy, enemy.position);
     if (!reducedMotion) {
       enemy.death = 0; fallen.push(enemy);
       if (fallen.length > 12) fallen.shift();
     }
     zombies.splice(index, 1);
+    if (M.towers) M.towers.list.forEach(tower => { if (tower.snareOwner === enemy) { tower.snareOwner = null; tower.snareTime = 0; } });
     if (M.items && M.items.dropCoins) M.items.dropCoins(enemy.position, TYPES[enemy.type].reward);
     if (exploded && M.audio && M.audio.enemyBurst) M.audio.enemyBurst(enemy.position);
   }
@@ -661,7 +1020,8 @@
       // rejected by navigation before the jump is attempted.
       zombie.vy = 10.6; zombie.grounded = false; zombie.jump = target;
     }
-    const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
+    const rush = zombie.type === 'prismback' ? zombie.prismPhase === 'rush' ? 2 : zombie.prismPhase === 'exposed' ? .65 : 1 : 1;
+    const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * rush * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
     const x = p.x + dx / d * step, z = p.z + dz / d * step;
     zombie.moving = physics.moveHorizontal(world, p, zombie.body, x - p.x, z - p.z);
     if (zombie.moving) zombie.phase += dt * (zombie.type === 'spider' ? 10 : 5);
@@ -687,6 +1047,7 @@
   function update(dt) {
     if (!mesh) return;
     elapsed += dt;
+    digBudget = 32; advanceSignals(dt);
     for (let i = fallen.length - 1; i >= 0; i--) {
       fallen[i].death += dt;
       if (fallen[i].death >= 0.65) fallen.splice(i, 1);
@@ -715,6 +1076,7 @@
     }
     zombies.forEach(function (zombie) {
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
+      if (specialMovement(zombie, dt)) return;
       updatePhysics(zombie, dt);
       if (zombie.grounded && navigation.contact(zombie.position.x, zombie.position.y, zombie.position.z)) {
         zombie.mode = 'tree'; zombie.moving = false; zombie.blockBite = 0;
@@ -726,6 +1088,7 @@
         return;
       }
       zombie.bite = 0; zombie.mode = 'walk'; zombie.moving = false;
+      if (tacticalAbility(zombie, dt)) return;
       if (!zombie.target) zombie.target = chooseTarget(zombie);
       const target = zombie.target;
       if (!target) { zombie.blockBite = 0; return; }
@@ -743,15 +1106,20 @@
       const eating = zombie.mode === 'tree' || zombie.mode === 'block';
       zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);
       const footBeat = Math.floor(zombie.phase / Math.PI);
-      if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat && M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
+      if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat) {
+        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
+        else if (M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
+      }
       zombie.footBeat = footBeat;
       zombie.voiceTimer -= dt; zombie.chewTimer -= dt;
       if (zombie.voiceTimer <= 0) {
-        if (M.audio && M.audio.zombie) M.audio.zombie(zombie.type === 'spider' || zombie.type === 'skeleton' ? 'bite' : 'groan', zombie.position);
+        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
+        else if (M.audio && M.audio.zombie) M.audio.zombie(zombie.type === 'spider' || zombie.type === 'skeleton' ? 'bite' : 'groan', zombie.position);
         zombie.voiceTimer = 7.5 + Math.sin(elapsed + zombie.id) * 3.5;
       }
       if (eating && zombie.chewTimer <= 0) {
-        if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
+        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
+        else if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
     });
@@ -783,17 +1151,28 @@
     outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(outlineMesh);
     updateHud();
   }
-  function damageEnemy(enemy, amount) {
+  function damageEnemy(enemy, amount, profile) {
     const index = zombies.indexOf(enemy);
     if (index < 0 || !Number.isFinite(amount) || amount <= 0 || tree.health <= 0) return false;
+    profile = profile || {};
+    if (!isTargetable(enemy, profile.origin)) return false;
+    if (enemy.type === 'prismback' && enemy.prismPhase !== 'exposed' && profile.origin && !profile.area) {
+      const dx = profile.origin.x - enemy.position.x, dz = profile.origin.z - enemy.position.z, distance = Math.hypot(dx, dz);
+      if (distance > .01 && (dx * Math.sin(enemy.yaw) + dz * Math.cos(enemy.yaw)) / distance > .4) {
+        amount *= .45; signal('shield', enemy.position, .8, .24); sound('prismback', 'block', enemy.position);
+      }
+    }
     enemy.hp -= amount; enemy.flash = .15;
     const killed = enemy.hp <= 0;
+    if (['worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
     if (killed) removeEnemy(enemy, index, false);
     updateHud();
     return killed;
   }
   M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
     spellTargets: spellTargets, spellHit: spellHit, spellBlast: spellBlast,
+    isTargetable: isTargetable, movementScale: movementScale, deliveryForWave: deliveryForWave,
+    get mudPools() { return mudPools; }, get signals() { return signals; }, emergenceRadius: 5 * SIZE,
     watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, wavePlan: wavePlan, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
     startNextWave: startNextWave,
     startWave: startWave,

@@ -1953,6 +1953,9 @@
     init: init,
     update: update,
     surfaceHeight: surfaceHeight,
+    // Original terrain level lets burrowers keep a covered tunnel even when
+    // an earlier tunnel entrance has lowered the currently exposed surface.
+    terrainHeight: function (x, z) { return heightBlocks(Math.floor(x / BLOCK), Math.floor(z / BLOCK)) * BLOCK; },
     blockedAt: blockedAt,
     supportHeight: supportHeight,
     landingHeight: landingHeight,

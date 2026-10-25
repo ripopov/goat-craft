@@ -36,7 +36,7 @@ assets/upgrades/    five locally stored voxel training icons and their generatio
 js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk streaming, exact voxel collision, block edits and debris
 js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
 js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning
-js/enemies.js       instanced zombies, spiders, skeletons and brutes; waves, combat and defeat
+js/enemies.js       eight instanced species, parachutes, tunnels, specialist abilities and waves
 js/upgrades.js      individual training tiers, prices, resource purchases and nearby targeting
 js/upgrade-menu.js  accessible paused training menu, character switching and purchase feedback
 js/minimap.js       circular player-centered radar for enemies, herd, coin drops and the Hearth
@@ -59,6 +59,9 @@ scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice
 scripts/test-console.mjs keyboard capture, command history and resource/wave console shortcuts
 scripts/test-hearth-tree.mjs  landmark geometry, root collision, clearing terrain, player spawn, placement and reduced-motion checks
 scripts/test-enemies.mjs  routes, jumps, chewing, tree damage, mixed waves, shared cap and loot
+scripts/test-special-enemies.mjs  airdrops, physical Worm tunnels, mining combat and specialist counterplay
+scripts/test-enemy-balance.mjs  deterministic mixed-defense clearance regressions
+scripts/check-enemy-balance.mjs  staged loadout combat and CPU timing benchmark
 scripts/test-upgrades.mjs training, atomic purchases, individual NPC effects, live combat and collectible coins
 scripts/test-caves.mjs    geology, exposed ore, protected roofs and actual player descent/exit
 scripts/test-targeting.mjs camera mining in every direction, obstruction, preview/action agreement and outlines
@@ -183,9 +186,17 @@ Fleet hooves and Long horns training are visible on the goat **and on the traine
 | Zombie | 1 | 2 | 1.65 | 1 / 3s | 10s | 1 |
 | Spider | 3 | 2 | 2.7 | 1 / 3.5s | 12s | 2 |
 | Skeleton | 5 | 3 | 1.9 | 1 / 2.6s | 10s | 2 |
+| Briar Binder | 7 | 3 | 1.35 | 1 / 3.8s | 11s | 3 |
 | Stone brute | 8 | 7 | 1.15 | 2 / 3.5s | 7s | 4 |
+| Burrow Worm | 10 | 4 | 1.6; 2.1 underground | 1 / 3.6s | 9s | 4 |
+| Prismback | 12 | 4 | 1.25; short 2× rush | 1 / 3.8s | 9s | 4 |
+| Mire Sower | 15 | 3 | 1.5 | 1 / 3.5s | 11s | 3 |
 
-Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. All types share the arena routes, one-block jumps and live wall collision, with individual body sizes. Beveled voxel parts, hierarchical joints, species-specific silhouettes, layered faces, clothing, bone and rock details share one bounded instanced draw; fallen bodies do not count toward the live cap.
+Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. Beveled voxel parts, hierarchical joints, species-specific silhouettes, layered faces, clothing, bone and rock details share one bounded instanced draw; fallen bodies do not count toward the live cap.
+
+From **wave 5**, some zombies and skeletons descend by parachute into the outer meadow. A lavender landing marker warns of their arrival; they can be shot during descent and recover for 0.9 seconds after landing. From **wave 10**, Worms spawn on the distant outer ring, at least 16 world units from the goat, and excavate covered tunnels toward the Hearth. Their segmented bodies remain modeled and animated inside the soil: **mine down into a tunnel to find and fight them normally**. Soil blocks attacks. Worms emerge only within **five blocks (10 world units)** of the Hearth, with a warning and a short recovery. Excavation preserves collectible materials, the protected Hearth foundation and a navigable step out of the exit shaft.
+
+**Briar Binders** chant before slowing one tower to 60% firing cadence for three seconds. Kill the caster to interrupt or release the snare. **Prismbacks** mitigate frontal direct hits by 55%; flank them or use splash. A visible brace precedes their rush, followed by an open-armor window. **Mire Sowers** outline a puddle before it forms, slowing goat and herd movement by 35% for five seconds; leave or jump clear. Puddles and snares do not stack. Specialists replace ordinary wave slots, with bounded casts and effect counts. Each has an original articulated model, warning effects and spatial synthesized audio. See [enemy design and validation](docs/enemy-design.md) for timings, counters and research.
 
 An enemy watchdog measures meaningful progress rather than animation or tiny jitter. **After 20 simulation seconds without getting closer to the Hearth or advancing along a valid route, the enemy bursts apart and drops its normal collectible coins.** Successful wall breaks and Hearth damage count as progress, so real sieges do not trigger false alarms. The watchdog applies to every species, frees live slots immediately, and does not damage terrain, allies or the Hearth. Its debris shares the bounded death pool and respects reduced motion. Pausing the training menu pauses the watchdog too.
 

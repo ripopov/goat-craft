@@ -2933,7 +2933,8 @@
   }
 
   function defWalkSpeed(animal) {
-    return animal.def.walkSpeed * (M.upgrades ? M.upgrades.stats(animal).move : 1);
+    const terrain = M.enemies && M.enemies.movementScale ? M.enemies.movementScale(animal.group.position) : 1;
+    return animal.def.walkSpeed * (M.upgrades ? M.upgrades.stats(animal).move : 1) * terrain;
   }
 
   function findSpawnNear(cx, cz, minRadius, maxRadius, ignore) {

@@ -370,7 +370,7 @@ test('unrelated construction cannot reset an ongoing ten-second bite', () => {
 test('chewed drops stack, survive ordinary drop limits, and collect into placeable inventory', () => {
   const { M, THREE, scene, load } = harness(true);
   load('js/items.js'); M.items.init(scene);
-  for (let i = 0; i < 200; i++) M.items.dropBlock('stone', 5, 13, -25, { persistent: true });
+  for (let i = 0; i < 200; i++) M.items.dropBlock('stone', 5, 15, -25, { persistent: true });
   assert.equal(M.items.drops.length, 1);
   assert.equal(M.items.drops[0].userData.drop.count, 200);
   for (let i = 0; i < 200; i++) M.items.dropBlock('dirt', 70, 14, 70);
@@ -529,7 +529,7 @@ test('twenty seconds without real progress explodes stalled enemies, drops loot 
     const { M, scene, world, tree, coinDrops } = fixture();
     const blasts = []; M.audio = { enemyBurst: point => blasts.push(point.clone()) };
     M.enemies.init({ scene, world, tree });
-    const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type);
+    const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type, { surface: true });
     M.actorPhysics.moveHorizontal = () => false;
     advance(M, 19.95); assert.ok(M.enemies.zombies.includes(enemy), type + ' survives until the full deadline');
     advance(M, .05); assert.equal(M.enemies.zombies.includes(enemy), false, type + ' explodes at 20 seconds');

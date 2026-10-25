@@ -124,15 +124,15 @@ test('cannons auto-target within range, obey walls and award normal physical coi
   const { M, THREE } = defense();
   const tower = M.towers.place('ballista', 8, 7, 8);
   const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 23)); assert.ok(enemy);
-  step(M, .3); assert.equal(enemy.hp, 2, 'launch does not damage'); assert.equal(tower.shots, 1);
-  step(M, .2); assert.equal(enemy.hp, 1, 'bolt arrival damages');
-  step(M, 1.3); assert.equal(enemy.hp, 0); assert.equal(tower.kills, 1);
+  step(M, .3); assert.equal(enemy.hp, 8, 'launch does not damage'); assert.equal(tower.shots, 1);
+  step(M, .2); assert.equal(enemy.hp, 7, 'bolt arrival damages');
+  step(M, 8.3); assert.equal(enemy.hp, 0); assert.equal(tower.kills, 1);
   assert.equal(M.items.drops.filter(d => d.userData.drop.kind === 'coin').length, 1);
   const blocked = M.enemies.spawnAt(new THREE.Vector3(17, 14, 25));
   for (let y = 7; y < 12; y++) M.world.placeBlock('stone', 8, y, 10);
-  step(M, 3); assert.equal(blocked.hp, 2, 'wall blocks tower shots');
+  step(M, 3); assert.equal(blocked.hp, 8, 'wall blocks tower shots');
   const far = M.enemies.spawnAt(new THREE.Vector3(45, 14, 17)); assert.ok(far);
-  step(M, 3); assert.equal(far.hp, 2, 'out of range');
+  step(M, 3); assert.equal(far.hp, 8, 'out of range');
 });
 
 test('frost slows actual walking, poison and fire linger, and splash / chain / beam hit groups', () => {
@@ -145,7 +145,7 @@ test('frost slows actual walking, poison and fire linger, and splash / chain / b
     const b = M.enemies.spawnAt(new THREE.Vector3(id === 'sun' ? 17 : id === 'venom' ? 18 : 19, 14, 24), 'brute');
     const initial = a.hp; step(M, 1.1);
     assert.ok(a.hp < initial, id + ' attacks');
-    if (tower.def.splash || tower.def.chain || tower.def.pierce) assert.ok(b.hp < 7, id + ' hits multiple enemies');
+    if (tower.def.splash || tower.def.chain || tower.def.pierce) assert.ok(b.hp < 28, id + ' hits multiple enemies');
     if (tower.def.slow) {
       assert.ok(a.towerSlowTime > 0); assert.equal(a.towerSlow, tower.def.slow);
       const before = a.position.clone(); M.enemies.update(.05, 0);
@@ -179,12 +179,12 @@ test('every blueprint resolves its visible projectile and status only on collisi
       const tower = M.towers.place(id, 8, 7, 8);
       const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
       fireOnce(M, tower);
-      assert.equal(enemy.hp, 7); assert.ok(!enemy.towerSlowTime); assert.ok(!enemy.towerDots);
+      assert.equal(enemy.hp, 28); assert.ok(!enemy.towerSlowTime); assert.ok(!enemy.towerDots);
       const projectile = flights(scene)[0]; assert.ok(projectile, 'visible distinctive projectile');
       const start = projectile.position.clone(); step(M, .05);
-      assert.ok(projectile.position.distanceTo(start) > .1, 'projectile travels'); assert.equal(enemy.hp, 7);
-      until(M, () => enemy.hp < 7);
-      assert.equal(enemy.hp, 7 - tower.def.damage, 'exact direct damage at the collision tick');
+      assert.ok(projectile.position.distanceTo(start) > .1, 'projectile travels'); assert.equal(enemy.hp, 28);
+      until(M, () => enemy.hp < 28);
+      assert.equal(enemy.hp, 28 - tower.def.damage, 'exact direct damage at the collision tick');
       if (tower.def.slow) assert.equal(enemy.towerSlowTime, 2.5);
       if (tower.def.dot) assert.equal(enemy.towerDots[id].remaining, 4);
       M.towers.dismantle(tower); step(M, 6);
@@ -201,7 +201,7 @@ test('physical bolts can miss a moving target; homing frost follows without earl
     const tower = M.towers.place(id, 8, 7, 8);
     const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
     fireOnce(M, tower); enemy.position.x += 5; step(M, 1.5);
-    assert.equal(enemy.hp, id === 'frost' ? 6.5 : 7, id);
+    assert.equal(enemy.hp, id === 'frost' ? 27.5 : 28, id);
   }
 });
 
@@ -211,7 +211,7 @@ test('an enemy entering a bolt flight path intercepts it and protects the intend
   const target = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
   fireOnce(M, tower);
   const blocker = M.enemies.spawnAt(new THREE.Vector3(17, 14, 23), 'brute');
-  step(M, 1); assert.equal(blocker.hp, 6); assert.equal(target.hp, 7);
+  step(M, 1); assert.equal(blocker.hp, 27); assert.equal(target.hp, 28);
 });
 
 test('new walls stop in-flight shots, even with a long swept simulation step', () => {
@@ -222,7 +222,7 @@ test('new walls stop in-flight shots, even with a long swept simulation step', (
     fireOnce(M, tower);
     if (wall) for (let y = 7; y < 12; y++) assert.ok(M.world.placeBlock('stone', 8, y, 11));
     M.towers.update(.5);
-    assert.equal(enemy.hp, wall ? 7 : 1.75, 'earliest wall/body contact wins');
+    assert.equal(enemy.hp, wall ? 28 : 22.75, 'earliest wall/body contact wins');
   }
 });
 
@@ -236,9 +236,9 @@ test('shell splash uses the impact-time positions and cannot propagate through a
   escaped.position.x = 25; newcomer.position.x = 15;
   const protectedEnemy = M.enemies.spawnAt(new THREE.Vector3(20.5, 14, 29), 'brute');
   for (let y = 7; y < 11; y++) assert.ok(M.world.placeBlock('stone', 9, y, 14));
-  until(M, () => target.hp < 7);
-  assert.equal(target.hp, 5.5); assert.equal(newcomer.hp, 5.5);
-  assert.equal(escaped.hp, 7); assert.equal(protectedEnemy.hp, 7);
+  until(M, () => target.hp < 28);
+  assert.equal(target.hp, 26.5); assert.equal(newcomer.hp, 26.5);
+  assert.equal(escaped.hp, 28); assert.equal(protectedEnemy.hp, 28);
 });
 
 test('lightning damages each of its three victims on separate sequential arrivals', () => {
@@ -246,12 +246,12 @@ test('lightning damages each of its three victims on separate sequential arrival
   const tower = M.towers.place('storm', 8, 7, 8);
   const targets = [17, 20, 23].map(x => M.enemies.spawnAt(new THREE.Vector3(x, 14, 29), 'brute'));
   fireOnce(M, tower);
-  until(M, () => targets[0].hp < 7);
-  assert.equal(targets[1].hp, 7); assert.equal(targets[2].hp, 7);
-  until(M, () => targets[1].hp < 7); assert.equal(targets[2].hp, 7);
-  until(M, () => targets[2].hp < 7);
-  targets.forEach(e => assert.equal(e.hp, 5.2)); step(M, 1);
-  targets.forEach(e => assert.equal(e.hp, 5.2, 'chain never loops back'));
+  until(M, () => targets[0].hp < 28);
+  assert.equal(targets[1].hp, 28); assert.equal(targets[2].hp, 28);
+  until(M, () => targets[1].hp < 28); assert.equal(targets[2].hp, 28);
+  until(M, () => targets[2].hp < 28);
+  targets.forEach(e => assert.equal(e.hp, 26.2)); step(M, 1);
+  targets.forEach(e => assert.equal(e.hp, 26.2, 'chain never loops back'));
 });
 
 test('Sunspire sweeps through at most three bodies, in their actual flight order', () => {
@@ -259,10 +259,10 @@ test('Sunspire sweeps through at most three bodies, in their actual flight order
   const tower = M.towers.place('sun', 8, 7, 8);
   const targets = [29, 31, 33, 35].map(z => M.enemies.spawnAt(new THREE.Vector3(17, 14, z), 'brute'));
   fireOnce(M, tower);
-  until(M, () => targets[0].hp < 7); assert.equal(targets[1].hp, 7);
-  until(M, () => targets[1].hp < 7); assert.equal(targets[2].hp, 7);
-  until(M, () => targets[2].hp < 7); step(M, 1);
-  assert.deepEqual(targets.map(e => e.hp), [3.25, 3.25, 3.25, 7]);
+  until(M, () => targets[0].hp < 28); assert.equal(targets[1].hp, 28);
+  until(M, () => targets[1].hp < 28); assert.equal(targets[2].hp, 28);
+  until(M, () => targets[2].hp < 28); step(M, 1);
+  assert.deepEqual(targets.map(e => e.hp), [24.25, 24.25, 24.25, 28]);
 });
 
 test('Watchman pierces exactly two enemies and still stops at a newly built wall', () => {
@@ -270,16 +270,16 @@ test('Watchman pierces exactly two enemies and still stops at a newly built wall
   const tower = M.towers.place('sniper', 8, 7, 8);
   const targets = [29, 31, 33].map(z => M.enemies.spawnAt(new THREE.Vector3(17, 14, z), 'brute'));
   fireOnce(M, tower);
-  until(M, () => targets[0].hp < 7); assert.equal(targets[1].hp, 7);
-  until(M, () => targets[1].hp < 7); step(M, .5);
-  assert.deepEqual(targets.map(e => e.hp), [1.75, 1.75, 7]);
+  until(M, () => targets[0].hp < 28); assert.equal(targets[1].hp, 28);
+  until(M, () => targets[1].hp < 28); step(M, .5);
+  assert.deepEqual(targets.map(e => e.hp), [22.75, 22.75, 28]);
   targets.forEach(e => M.enemies.damageEnemy(e, 100)); step(M, 1);
   const a = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
   const b = M.enemies.spawnAt(new THREE.Vector3(17, 14, 33), 'brute');
   tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
-  until(M, () => a.hp < 7);
+  until(M, () => a.hp < 28);
   for (let y = 7; y < 12; y++) assert.ok(M.world.placeBlock('stone', 8, y, 15));
-  step(M, 1); assert.equal(b.hp, 7, 'a wall stops penetration after the first body');
+  step(M, 1); assert.equal(b.hp, 28, 'a wall stops penetration after the first body');
 });
 
 test('Arcane slash cleaves only two nearby victims, respects cover, and works with reduced motion', () => {
@@ -292,10 +292,10 @@ test('Arcane slash cleaves only two nearby victims, respects cover, and works wi
     tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
     const covered = M.enemies.spawnAt(new THREE.Vector3(14.6, 14, 27.55), 'brute');
     for (let y = 7; y < 11; y++) if (!M.world.blockInfoAt(7, y, 14)) assert.ok(M.world.placeBlock('stone', 7, y, 14));
-    until(M, () => primary.hp < 7);
-    assert.equal(primary.hp, 5.8);
-    assert.deepEqual(nearby.map(e => e.hp), [6.4, 6.4, 7]);
-    assert.equal(covered.hp, 7, 'slash cannot cut through cover');
+    until(M, () => primary.hp < 28);
+    assert.equal(primary.hp, 26.8);
+    assert.deepEqual(nearby.map(e => e.hp), [27.4, 27.4, 28]);
+    assert.equal(covered.hp, 28, 'slash cannot cut through cover');
     assert.equal(scene.children.some(o => o.name === 'Arcane slash'), !reduced);
     M.enemies.zombies.slice().forEach(e => M.enemies.damageEnemy(e, 100)); step(M, 2);
     assert.equal(scene.children.some(o => o.name === 'Arcane slash'), false, 'slash expires');
@@ -311,9 +311,9 @@ test('Venom splash poisons impact-time neighbors, refreshes without stacking, an
   fireOnce(M, tower);
   const covered = M.enemies.spawnAt(new THREE.Vector3(14.6, 14, 27.55), 'brute');
   for (let y = 7; y < 11; y++) assert.ok(M.world.placeBlock('stone', 7, y, 14));
-  until(M, () => primary.hp < 7);
-  assert.equal(neighbor.hp, 6.7); assert.equal(neighbor.towerDots.venom.rate, .7);
-  assert.equal(far.hp, 7); assert.equal(covered.hp, 7);
+  until(M, () => primary.hp < 28);
+  assert.equal(neighbor.hp, 27.7); assert.equal(neighbor.towerDots.venom.rate, .7);
+  assert.equal(far.hp, 28); assert.equal(covered.hp, 28);
   M.enemies.damageEnemy(covered, 100);
   step(M, .5); tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
   until(M, () => neighbor.towerDots.venom.remaining === 4);
@@ -328,8 +328,9 @@ test('a shot survives packing its tower, while an already killed target yields n
     const { M, THREE } = defense();
     const tower = M.towers.place('sniper', 8, 7, 8);
     const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29));
+    enemy.hp = 5; // A wounded enemy can be finished by this one in-flight dart.
     fireOnce(M, tower); M.towers.dismantle(tower);
-    if (killed) M.enemies.damageEnemy(enemy, 2);
+    if (killed) M.enemies.damageEnemy(enemy, enemy.maxHp);
     step(M, 2);
     assert.equal(enemy.hp, 0); assert.equal(tower.kills, killed ? 0 : 1);
     assert.equal(M.items.drops.filter(d => d.userData.drop.kind === 'coin').length, 1);
@@ -341,9 +342,9 @@ test('reduced motion preserves visible projectiles, impact timing, damage and ch
   const tower = M.towers.place('storm', 8, 7, 8);
   const a = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
   const b = M.enemies.spawnAt(new THREE.Vector3(20, 14, 29), 'brute');
-  fireOnce(M, tower); assert.equal(a.hp, 7); assert.equal(flights(scene).length, 1);
-  until(M, () => a.hp < 7); assert.equal(b.hp, 7);
-  until(M, () => b.hp < 7);
+  fireOnce(M, tower); assert.equal(a.hp, 28); assert.equal(flights(scene).length, 1);
+  until(M, () => a.hp < 28); assert.equal(b.hp, 28);
+  until(M, () => b.hp < 28);
   assert.equal(scene.children.filter(o => o.name.endsWith(' impact')).length, 0);
 });
 
@@ -352,11 +353,11 @@ test('physical arrows, darts and siege shots lead a steadily walking enemy', () 
     const { M, THREE } = defense();
     const tower = M.towers.place(id, 8, 7, 8);
     const enemy = M.enemies.spawnAt(new THREE.Vector3(15, 14, 29), 'brute');
-    for (let i = 0; i < 180 && enemy.hp === 7; i++) {
+    for (let i = 0; i < 180 && enemy.hp === 28; i++) {
       enemy.position.x += 1.65 / 60; M.towers.update(1 / 60);
       if (tower.shots) tower.cooldown = 1000;
     }
-    assert.equal(enemy.hp, 7 - tower.def.damage, id + ' intercepts walking target');
+    assert.equal(enemy.hp, 28 - tower.def.damage, id + ' intercepts walking target');
   }
 });
 
@@ -417,8 +418,8 @@ test('spatial projectile queries include moving interceptors across negative cel
   fireOnce(M, tower);
   interceptor.position.set(-17, 14, -24);
   M.towers.update(.6); // Sweeps through several grid cells in a single tick.
-  assert.equal(interceptor.hp, 6, 'the fresh spatial index catches a newly arrived body');
-  assert.equal(target.hp, 7, 'the nearer interceptor protects the original target');
+  assert.equal(interceptor.hp, 27, 'the fresh spatial index catches a newly arrived body');
+  assert.equal(target.hp, 28, 'the nearer interceptor protects the original target');
 });
 
 test('tower batches preserve hidden loading mechanisms and repeated builder trim instances', () => {

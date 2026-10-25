@@ -26,7 +26,7 @@ test('hunters chase and headbutt zombies while builders stay on their tasks', ()
   const zombie = M.enemies.spawnAt(M.enemies.navigation.nodeAt(9, 14, 25));
   assert.ok(zombie);
   advanceAnimals(M, 2);
-  assert.ok(zombie.hp < 2 || !M.enemies.zombies.includes(zombie), 'hunter damaged the zombie');
+  assert.ok(zombie.hp < zombie.maxHp || !M.enemies.zombies.includes(zombie), 'hunter damaged the zombie');
   assert.equal(hunter.state.project, null);
   advanceAnimals(M, 2);
   assert.equal(M.enemies.zombies.includes(zombie), false);

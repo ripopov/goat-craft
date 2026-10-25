@@ -135,6 +135,9 @@ test('Worms excavate real covered tunnels, surface only within the doubled emerg
 
 test('digging a shaft reveals a rendered Worm and lets the real player controller kill it underground', () => {
   const { M, controls, scene, THREE } = defense();
+  // A tougher Worm needs trained strikes to finish it before it leaves the
+  // opened shaft. Exercise the real upgrade and controller damage path.
+  for (let tier = 0; tier < 3; tier++) assert.ok(M.upgrades.buy(M.upgrades.player, 'power'));
   M.goat.group.position.set(25, 14, 1); controls.firstPerson = true; controls.getFacingYaw = () => Math.PI / 2;
   const enemy = M.enemies.spawnAt({ x: 29, y: 14, z: 1 }, 'worm');
   // A legal inner-band exit leaves time to intercept this manually placed Worm.
@@ -151,7 +154,7 @@ test('digging a shaft reveals a rendered Worm and lets the real player controlle
   assert.ok(matrix.elements[13] > 10 && matrix.elements[13] < 12, 'the model is physically inside the tunnel');
   for (let i = 0; i < 180 && enemy.hp > 0; i++) { M.enemies.update(1 / 60); M.goat.update(1 / 60, i / 60); }
   assert.equal(M.goat.group.position.y, 10);
-  assert.equal(enemy.hp, 0, 'normal automatic attacks kill the exposed Worm');
+  assert.equal(enemy.hp, 0, 'trained automatic attacks kill the exposed Worm');
   assert.equal(enemy.burrowed, true, 'the kill happens before the Worm surfaces');
   assert.ok(Math.hypot(enemy.position.x, enemy.position.z) > 10, 'the player intercepts it far from the tree');
   assert.ok(M.items.drops.some(drop => drop.userData.drop.kind === 'coin' && drop.position.y < 12), 'loot stays in the accessible tunnel');

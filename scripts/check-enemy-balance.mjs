@@ -7,7 +7,7 @@ export function runDefense(wave, seed = 42) {
   const { M, load, scene, controls } = game({ seed });
   load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.enemies.addCoins(10000);
-  for (const kind of ['log', 'stone', 'iron', 'copper']) M.items.addItem(kind, 1000);
+  for (const kind of ['log', 'stone', 'iron', 'copper', 'coal']) M.items.addItem(kind, 1000);
   M.animals.list.forEach((animal, i) => animal.group.position.set(-35 + i * 3, 14, 35));
   M.goat.group.position.set(8, 14, 4); controls.firstPerson = true;
   let invested = 0;
@@ -23,6 +23,12 @@ export function runDefense(wave, seed = 42) {
   for (const [x, z] of [[11, 11], [11, -11], [-11, 11], [-11, -11]]) build('frost', x, z);
   // Introduce affordable splash coverage when frontal armor first appears.
   if (wave >= 12) for (const [x, z] of [[21, 9], [-21, -9]]) build('mortar', x, z);
+  // Fourfold enemy health calls for a larger prepared battery. Keep real tower
+  // damage and costs: this benchmark measures an investment, not free buffs.
+  if (wave >= 12) {
+    for (const [x, z] of [[23, 11], [23, -11], [-23, 11], [-23, -11]]) build('arcane', x, z);
+    for (const [x, z] of [[11, 23], [11, -23], [-11, 23], [-11, -23]]) build('sun', x, z);
+  }
   if (wave >= 20) for (const [x, z] of [[9, -21], [-9, 21]]) build('mortar', x, z);
   if (wave >= 30) for (const [x, z] of [[19, -15], [-15, -19], [-19, 15], [15, 19]]) build('arcane', x, z);
   const deaths = [], seen = new Set(), trace = new WeakMap(); let air = 0, burrows = 0, maxLiving = 0;

@@ -195,7 +195,7 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
     assert.ok(plan.size <= M.enemies.maxEnemies && plan.size >= 6);
     assert.ok(plan.squadSize <= 5 && plan.memberInterval >= .3 && plan.squadInterval >= 2.4);
     assert.ok(difficulty.hp >= 1 && difficulty.hp < 5 && difficulty.speed >= 1 && difficulty.speed < 3);
-    if (wave <= 3) assert.equal(difficulty.hp, 1, 'early zombies remain vulnerable to one stomp');
+    if (wave <= 3) assert.equal(difficulty.hp, 1, 'opening waves keep the same base health');
     if (wave >= 6) assert.equal(plan.lanes, 3);
     if ([3, 5, 8].includes(wave)) {
       const previous = M.enemies.wavePlan(wave - 1);
@@ -204,6 +204,35 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
     }
   }
   assert.equal(M.enemies.waveSize(1000), M.enemies.maxEnemies);
+});
+
+test('every species has exactly four times its previous health and wave gains, including bosses and special deliveries', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const previousBase = { zombie: 2, spider: 2, skeleton: 3, brute: 7, worm: 4, binder: 3, prismback: 4, sower: 3, boss: 2 };
+  const previousHealth = (type, wave) => Math.round(previousBase[type] *
+    (1 + 4 * (1 - Math.exp(-Math.max(0, wave - 3) / 30))) * (type === 'boss' ? 20 : 1));
+  for (const type of Object.keys(previousBase)) {
+    assert.equal(M.enemies.types[type].hp, 4 * previousBase[type]);
+    for (const wave of [1, 3, 4, 7, 12, 20, 30, 70, 80, 130, 1000]) {
+      const current = M.enemyRules.healthForWave(type, wave);
+      assert.equal(current, 4 * previousHealth(type, wave), type + ' at wave ' + wave);
+      assert.equal(current - M.enemyRules.healthForWave(type, 1),
+        4 * (previousHealth(type, wave) - previousHealth(type, 1)), 'wave health gains scale proportionally');
+    }
+  }
+  // Exercise real spawn initialization as well as pure rules. Stats stay locked
+  // when later waves start, and parachuting and surface Worms use the same HP.
+  const initial = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
+  assert.equal(initial.hp, 8); assert.equal(initial.maxHp, 8);
+  for (const wave of [20, 30, 70, 130]) {
+    M.enemies.startWave(wave);
+    for (const type of Object.keys(previousBase)) {
+      const enemy = M.enemies.spawnAt({ x: 15, y: 30, z: 1 }, type, { airborne: true });
+      assert.equal(enemy.hp, 4 * previousHealth(type, wave)); assert.equal(enemy.maxHp, enemy.hp);
+      M.enemies.damageEnemy(enemy, enemy.hp);
+    }
+    assert.equal(initial.maxHp, 8, 'a later wave never retroactively levels up an existing enemy');
+  }
 });
 
 test('the actual terrain delivers opening threats promptly without an immediate defeat', () => {
@@ -305,10 +334,13 @@ test('headbutts and stomps kill zombies, drop one coin each, and cannot hit thro
   const { M, THREE, scene, world, tree, coinDrops } = fixture(); M.enemies.init({ scene, world, tree });
   const node = M.enemies.navigation.nodeAt(9, 0, 1), origin = new THREE.Vector3(9, 0, 3);
   const zombie = M.enemies.spawnAt(node);
-  assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(zombie.hp, 1);
-  assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(M.enemies.getState().coins, 0);
+  assert.equal(M.enemies.attack(origin, Math.PI, false), true); assert.equal(zombie.hp, 7);
+  for (let i = 0; i < 7; i++) assert.equal(M.enemies.attack(origin, Math.PI, false), true);
+  assert.equal(zombie.hp, 0); assert.equal(M.enemies.getState().coins, 0);
   M.enemies.attack(origin, Math.PI, false); assert.equal(M.enemies.getState().coins, 0);
-  M.enemies.spawnAt(node); M.enemies.attack(origin, 0, true);
+  const stomped = M.enemies.spawnAt(node);
+  for (let i = 0; i < 4; i++) M.enemies.attack(origin, 0, true);
+  assert.equal(stomped.hp, 0);
   assert.equal(M.enemies.getState().coins, 0);
   assert.deepEqual(coinDrops.map(drop => drop.count), [1, 1], 'each kill leaves physical loot once');
   M.enemies.spawnAt(M.enemies.navigation.nodeAt(9, 0, -1)); world.place(4, 0, 0);
@@ -465,7 +497,7 @@ test('death animation stays bounded and expires without changing immediate kills
   for (let i = 0; i < 50; i++) M.enemies.spawnAt(origin);
   const mesh = scene.children.find(node => node.name === 'Enemy horde');
   assert.ok(mesh.instanceColor, 'instance colors exist before an empty first draw compiles the shader');
-  M.enemies.attack(origin, 0, true);
+  M.enemies.attack(origin, 0, true, { damage: 8 });
   assert.equal(M.enemies.getState().count, 0, 'fallen bodies stop being enemies immediately');
   assert.equal(M.enemies.getState().coins, 0, 'kills never credit the wallet automatically');
   assert.ok(mesh.count > 0 && mesh.count <= mesh.instanceMatrix.count, 'only a bounded visual death pool remains');
@@ -473,7 +505,7 @@ test('death animation stays bounded and expires without changing immediate kills
   advance(M, 0.2);
   assert.ok(mesh.count <= mesh.instanceMatrix.count);
   assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite), 'crowded articulated poses stay finite');
-  M.enemies.attack(origin, 0, true);
+  M.enemies.attack(origin, 0, true, { damage: 8 });
   advance(M, 0.8);
   assert.equal(mesh.count, 0, 'no corpse instances leak after their animation');
 });
@@ -518,7 +550,7 @@ test('a mixed horde shares the living cap, finite render pool and physical rewar
   advance(M, .1);
   const mesh = scene.getObjectByName('Enemy horde');
   assert.ok(mesh.count <= mesh.instanceMatrix.count); assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite));
-  M.enemies.attack({ x: 9, y: 0, z: 1 }, 0, true, { damage: 10, range: 5 });
+  M.enemies.attack({ x: 9, y: 0, z: 1 }, 0, true, { damage: 28, range: 5 });
   assert.equal(M.enemies.getState().count, 0); assert.equal(M.enemies.getState().coins, 0);
   assert.equal(coinDrops.reduce((sum, drop) => sum + drop.count, 0), expected);
   advance(M, 1); assert.equal(mesh.count, 0);
@@ -537,7 +569,7 @@ test('clearing actual waves introduces each species, pays one bonus, and gives a
         if (!rosters.has(state.wave)) rosters.set(state.wave, []);
         rosters.get(state.wave).push(enemy.type); lastId = enemy.id;
       }
-      M.enemies.attack(enemy.position, 0, true, { damage: 20, range: 1 });
+      M.enemies.attack(enemy.position, 0, true, { damage: enemy.maxHp, range: 1 });
     }
     if (state.phase === 'intermission') {
       assert.ok(state.nextWave <= 10); assert.ok(!state.count && !state.pending);
@@ -680,7 +712,7 @@ test('catch-up simulation and multi-target spells upload just one final horde po
     M.enemies.spellBlast(origin, 4, .5);
   }
   assert.equal(mesh.instanceMatrix.version, version, 'neither catch-up ticks nor individual spell victims rebuild the horde');
-  assert.ok(M.enemies.zombies.every(e => e.hp === 5), 'all four combat ticks still resolve');
+  assert.ok(M.enemies.zombies.every(e => e.hp === 26), 'all four combat ticks still resolve');
   M.enemies.syncRender();
   assert.equal(mesh.instanceMatrix.version, version + 1);
   assert.equal(mesh.instanceMatrix.updateRange.count, mesh.count * 16, 'only populated instance data is uploaded');

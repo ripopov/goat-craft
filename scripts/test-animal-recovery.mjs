@@ -145,7 +145,7 @@ test('a hunter clears an obstacle and resumes attacking its zombie', () => {
   const zombie = M.enemies.spawnAt(M.enemies.navigation.nodeAt(23, 14, 1));
   assert.ok(zombie);
   advance(12);
-  assert.ok(zombie.hp < 2 || !M.enemies.zombies.includes(zombie));
+  assert.ok(zombie.hp < zombie.maxHp || !M.enemies.zombies.includes(zombie));
   assert.equal(animal.state.recovery.rescues, 0);
   assert.ok(clearBody(M, animal));
 });

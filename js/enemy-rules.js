@@ -12,15 +12,15 @@
     specialWaves[wave] = { delivery: 'parachute', intro: 'Air invasion! Every enemy arrives by parachute — watch the landing rings.' };
   });
   const TYPES = {
-    zombie: { name: 'Zombie', unlock: 1, hp: 2, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
-    spider: { name: 'Spider', unlock: 3, hp: 2, speed: 2.7, reward: 2, bite: 3.5, damage: 1, chew: 12, radius: 0.42, height: 1.15 },
-    skeleton: { name: 'Skeleton', unlock: 5, hp: 3, speed: 1.9, reward: 2, bite: 2.6, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
-    brute: { name: 'Stone brute', unlock: 8, hp: 7, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 },
-    worm: { name: 'Burrow Worm', unlock: 10, hp: 4, speed: 1.6, reward: 4, bite: 3.6, damage: 1, chew: 9, radius: .4, height: 1.4 },
-    binder: { name: 'Briar Binder', unlock: 7, hp: 3, speed: 1.35, reward: 3, bite: 3.8, damage: 1, chew: 11, radius: .4, height: 2.8 },
-    prismback: { name: 'Prismback', unlock: 12, hp: 4, speed: 1.25, reward: 4, bite: 3.8, damage: 1, chew: 9, radius: .44, height: 1.8 },
-    sower: { name: 'Mire Sower', unlock: 15, hp: 3, speed: 1.5, reward: 3, bite: 3.5, damage: 1, chew: 11, radius: .42, height: 2 },
-    boss: { name: 'Boss', unlock: 7, hp: 2, speed: 1.2, reward: 20, bite: 4, damage: 2, chew: 6, radius: 0.46, height: 2.8 }
+    zombie: { name: 'Zombie', unlock: 1, hp: 8, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
+    spider: { name: 'Spider', unlock: 3, hp: 8, speed: 2.7, reward: 2, bite: 3.5, damage: 1, chew: 12, radius: 0.42, height: 1.15 },
+    skeleton: { name: 'Skeleton', unlock: 5, hp: 12, speed: 1.9, reward: 2, bite: 2.6, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
+    brute: { name: 'Stone brute', unlock: 8, hp: 28, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 },
+    worm: { name: 'Burrow Worm', unlock: 10, hp: 16, speed: 1.6, reward: 4, bite: 3.6, damage: 1, chew: 9, radius: .4, height: 1.4 },
+    binder: { name: 'Briar Binder', unlock: 7, hp: 12, speed: 1.35, reward: 3, bite: 3.8, damage: 1, chew: 11, radius: .4, height: 2.8 },
+    prismback: { name: 'Prismback', unlock: 12, hp: 16, speed: 1.25, reward: 4, bite: 3.8, damage: 1, chew: 9, radius: .44, height: 1.8 },
+    sower: { name: 'Mire Sower', unlock: 15, hp: 12, speed: 1.5, reward: 3, bite: 3.5, damage: 1, chew: 11, radius: .42, height: 2 },
+    boss: { name: 'Boss', unlock: 7, hp: 8, speed: 1.2, reward: 20, bite: 4, damage: 2, chew: 6, radius: 0.46, height: 2.8 }
   };
   function waveSize(level) { return Math.min(MAX_ENEMIES, 2 + level * 4); }
   // Pressure comes from coordinated arrivals before it comes from stat growth.
@@ -38,6 +38,11 @@
     const health = 1 - Math.exp(-Math.max(0, wave - 3) / 30);
     const speed = 1 - Math.exp(-Math.max(0, wave - 1) / 45);
     return { hp: 1 + 4 * health, speed: 1 + 2 * speed };
+  }
+  function healthForWave(type, wave) {
+    // Scale the old rounded health, including every wave's gain, by exactly
+    // four. Rounding after scaling would distort the increase on some waves.
+    return 4 * Math.max(1, Math.round(TYPES[type].hp / 4 * waveDifficulty(wave).hp * (type === 'boss' ? 20 : 1)));
   }
   // Deterministic slots introduce a readable mix and bound the durable units.
   // Every 7th wave leads with one Boss marching alongside its regular horde.
@@ -71,7 +76,7 @@
   }
   M.enemyRules = { types: TYPES, maxEnemies: MAX_ENEMIES, firstWaveDelay: 30,
     wormEmergence: { inner: 19, favor: 29, radius: 36, retries: 3 }, specialWaves: specialWaves,
-    waveSize: waveSize, wavePlan: wavePlan, waveDifficulty: waveDifficulty,
+    waveSize: waveSize, wavePlan: wavePlan, waveDifficulty: waveDifficulty, healthForWave: healthForWave,
     typeForWave: typeForWave, deliveryForWave: deliveryForWave, introduction: introduction,
     restAfter: function (wave) { return wave % 10 === 0 ? 60 : 10; },
     clearBonus: function (wave) { return Math.min(24, 4 + wave * 2); } };

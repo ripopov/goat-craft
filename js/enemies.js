@@ -493,7 +493,7 @@
     // A Boss multiplies the regular enemy health by twenty, so the 7th-wave
     // warboss is exactly twenty times as durable as a same-wave zombie.
     const difficulty = waveDifficulty(wave);
-    const hp = Math.max(1, Math.round(def.hp * difficulty.hp * (type === 'boss' ? 20 : 1)));
+    const hp = rules.healthForWave(type, wave);
     const zombie = { type: type, body: { radius: def.radius, height: def.height, skin: 0.002 }, id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: hp, maxHp: hp, speedScale: difficulty.speed,
       tint: 0.88 + Math.random() * 0.24, phase: Math.random() * 6.28, mode: 'walk', moving: false,
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,

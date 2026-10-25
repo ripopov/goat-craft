@@ -91,7 +91,7 @@
   let stars = null;
   let brightStars = null;
   let cloudLayer = null;
-  let cloudMat = null;
+  const cloudMats = [];
   const clouds = [];
   let coarse = false;
   let phase = START_PHASE;
@@ -384,42 +384,114 @@
     starGroup.add(brightStars);
   }
 
+  // A soft, irregular puff used as an alpha map: dense core, feathered rim
+  // and a random cauliflower silhouette, so no two puffs (or clouds) copy
+  // each other's exact shape. Callers get one unique alpha texture per cloud.
+  function makeCloudPuffTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const c = size / 2;
+    const r = size * 0.46;
+
+    const core = ctx.createRadialGradient(c, c, 0, c, c, r);
+    core.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    core.addColorStop(0.55, 'rgba(255, 255, 255, 0.95)');
+    core.addColorStop(0.74, 'rgba(255, 255, 255, 0.7)');
+    core.addColorStop(0.89, 'rgba(255, 255, 255, 0.32)');
+    core.addColorStop(0.98, 'rgba(255, 255, 255, 0.08)');
+    core.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, size, size);
+
+    // Chunky lobes break the disc into a unique, cauliflower-like rim.
+    const lobes = 9 + Math.floor(Math.random() * 6);
+    for (let i = 0; i < lobes; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = r * (0.4 + Math.random() * 0.38);
+      const lr = r * (0.15 + Math.random() * 0.26);
+      const lg = ctx.createRadialGradient(
+        c + Math.cos(a) * d, c + Math.sin(a) * d, 0,
+        c + Math.cos(a) * d, c + Math.sin(a) * d, lr
+      );
+      lg.addColorStop(0, 'rgba(255, 255, 255, 0.62)');
+      lg.addColorStop(0.6, 'rgba(255, 255, 255, 0.3)');
+      lg.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath();
+      ctx.arc(c + Math.cos(a) * d, c + Math.sin(a) * d, lr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // A few faint wisps drift past the rim so edges never read as a hard cut.
+    const wisps = 4 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < wisps; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = r * (0.52 + Math.random() * 0.5);
+      const lr = r * (0.07 + Math.random() * 0.11);
+      const lg = ctx.createRadialGradient(
+        c + Math.cos(a) * d, c + Math.sin(a) * d, 0,
+        c + Math.cos(a) * d, c + Math.sin(a) * d, lr
+      );
+      lg.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+      lg.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath();
+      ctx.arc(c + Math.cos(a) * d, c + Math.sin(a) * d, lr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
   function makeClouds() {
-    // Detail 2 icosahedra give rounder, puffier bumps than the angular
-    // detail-1 hull, while flatShading keeps the blocky meadow look.
-    const geo = new THREE.IcosahedronGeometry(1, 2);
-    cloudMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 1,
-      metalness: 0,
-      flatShading: true,
-      emissive: 0x000000,
-      emissiveIntensity: 1
-    });
+    // Smooth, round icosahedra: the soft alpha texture does the fluff work, so
+    // the geometry just needs density instead of flat facets.
+    const geo = new THREE.IcosahedronGeometry(1, coarse ? 2 : 3);
 
     cloudLayer = new THREE.Group();
     sceneRef.add(cloudLayer);
 
     // A cloud is a loose cumulus mound: a cluster of bumpy puffs on a
-    // flattened underside. Higher up in the sky, so they ride well above the
-    // goat and towers instead of grazing the treetops.
+    // flattened underside, each cloud wearing its own alpha texture, puff
+    // count, spread and aspect so the sky never repeats a shape.
     function addCloud(x, y, z, scale) {
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 1,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.97,
+        depthWrite: false,
+        alphaMap: makeCloudPuffTexture(),
+        emissive: 0x000000,
+        emissiveIntensity: 1
+      });
+      cloudMats.push(mat);
+
       const g = new THREE.Group();
       const puffs = 6 + Math.floor(Math.random() * 4);
       for (let j = 0; j < puffs; j++) {
-        const puff = new THREE.Mesh(geo, cloudMat);
-        const size = rand(0.7, 1.15);
-        puff.scale.set(size * rand(1.05, 1.6), size * rand(0.95, 1.35), size * rand(1.05, 1.6));
+        const puff = new THREE.Mesh(geo, mat);
+        const size = rand(0.65, 1.1);
+        puff.scale.set(size * rand(1.05, 1.6), size * rand(0.95, 1.4), size * rand(1.05, 1.6));
         const bump = rand(-0.95, 0.95);
-        puff.position.set(rand(-1.5, 1.5), 0.2 + Math.abs(bump) * 0.34, rand(-0.85, 0.85));
+        puff.position.set(rand(-1.5, 1.5), 0.2 + Math.abs(bump) * 0.36, rand(-0.85, 0.85));
         g.add(puff);
       }
-      const base = new THREE.Mesh(geo, cloudMat);
-      base.scale.set(rand(2.1, 2.8), rand(0.5, 0.72), rand(1.6, 2.2));
-      base.position.set(0, rand(-0.45, -0.15), 0);
+      const base = new THREE.Mesh(geo, mat);
+      base.scale.set(rand(2.0, 2.8), rand(0.45, 0.7), rand(1.5, 2.2));
+      base.position.set(0, rand(-0.5, -0.2), 0);
       g.add(base);
+
+      // Unique overall aspect: wide or squarish, forward-tilted or level.
       g.position.set(x, y, z);
-      g.scale.setScalar(scale);
+      g.rotation.z = rand(-0.08, 0.08);
+      g.rotation.y = rand(0, Math.PI);
+      g.scale.set(scale * rand(1.0, 1.45), scale * rand(0.65, 0.95), scale * rand(0.8, 1.25));
       g.userData.baseY = y;
       g.userData.phase = Math.random() * Math.PI * 2;
       cloudLayer.add(g);
@@ -588,9 +660,10 @@
     hemi.intensity = 0.21 + 0.31 * daylight + 0.26 * twilight;
     nightFill.intensity = nightFactor * 0.15;
 
-    cloudMat.color.copy(skyCloud);
-    cloudMat.emissive.copy(skyHorizon).multiplyScalar(0.18);
-    cloudMat.emissiveIntensity = 1;
+    for (let i = 0; i < cloudMats.length; i++) {
+      cloudMats[i].color.copy(skyCloud);
+      cloudMats[i].emissive.copy(skyHorizon).multiplyScalar(0.18);
+    }
 
     if (goat) {
       const target = goat.position;

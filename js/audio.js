@@ -363,7 +363,7 @@
   // Each new silhouette has a matching acoustic material. Wind-ups rise in
   // pitch; casts resolve them, without long bass sweeps or permanent loops.
   function enemy(species, event, point) {
-    if (!['parachute', 'worm', 'binder', 'prismback', 'sower'].includes(species)) return;
+    if (!['parachute', 'worm', 'binder', 'prismback', 'sower', 'boss'].includes(species)) return;
     const warning = event === 'warn' || event === 'open';
     const death = event === 'death', hurt = event === 'hurt';
     nearby(point, 42, 'enemy-' + species + '-' + event, event === 'idle' ? 1.5 : .16, function (voice, when, level) {
@@ -391,6 +391,12 @@
           frequency: (warning ? 360 : 240) + i * 100, endFrequency: 150 + i * 50,
           duration: .18, level: gain * .55 / (1 + i * .3), attack: .014 });
         noise(voice, when + .04, { frequency: 1300, endFrequency: 500, duration: death ? .45 : .25, level: gain * .6, attack: .02 });
+      } else if (species === 'boss') {
+        body(voice, when, warning ? 190 : hurt ? 300 : 220, .42, gain * .85, 'stone');
+        body(voice, when + .05, warning ? 130 : 90, .55, gain * .55, 'wood');
+        noise(voice, when, { frequency: warning ? 640 : 420, endFrequency: warning ? 1250 : hurt ? 300 : 240,
+          duration: warning ? .8 : death ? .75 : .32, level: gain * .95, attack: warning ? .08 : .03 });
+        fragments(voice, when + .1, 700, gain * .3, death ? 5 : 2);
       }
     });
   }

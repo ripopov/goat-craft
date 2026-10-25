@@ -11,7 +11,8 @@
     worm: { name: 'Burrow Worm', unlock: 10, hp: 4, speed: 1.6, reward: 4, bite: 3.6, damage: 1, chew: 9, radius: .4, height: 1.4 },
     binder: { name: 'Briar Binder', unlock: 7, hp: 3, speed: 1.35, reward: 3, bite: 3.8, damage: 1, chew: 11, radius: .4, height: 2.8 },
     prismback: { name: 'Prismback', unlock: 12, hp: 4, speed: 1.25, reward: 4, bite: 3.8, damage: 1, chew: 9, radius: .44, height: 1.8 },
-    sower: { name: 'Mire Sower', unlock: 15, hp: 3, speed: 1.5, reward: 3, bite: 3.5, damage: 1, chew: 11, radius: .42, height: 2 }
+    sower: { name: 'Mire Sower', unlock: 15, hp: 3, speed: 1.5, reward: 3, bite: 3.5, damage: 1, chew: 11, radius: .42, height: 2 },
+    boss: { name: 'Boss', unlock: 7, hp: 2, speed: 1.2, reward: 20, bite: 4, damage: 2, chew: 6, radius: 0.46, height: 2.8 }
   };
   function waveSize(level) { return Math.min(MAX_ENEMIES, 2 + level * 4); }
   // Pressure comes from coordinated arrivals before it comes from stat growth.
@@ -32,7 +33,9 @@
     return { hp: 1 + 4 * health, speed: 1 + 2 * speed };
   }
   // Deterministic slots introduce a readable mix and bound the durable units.
+  // Every 7th wave leads with one Boss marching alongside its regular horde.
   function typeForWave(level, slot) {
+    if (level % 7 === 0 && slot === 0) return 'boss';
     if (level >= 10 && slot % 12 === 9) return 'worm';
     if (level >= 15 && slot % 20 === 17) return 'sower';
     if (level >= 12 && slot % 20 === 13) return 'prismback';
@@ -286,6 +289,18 @@
     part('brute', heavy ? -0.23 : 0.15, -0.25, 0.34, 0.05, 0.32, 0.035, 0x303e37, elbow).rz = heavy ? -0.4 : 0.5;
   });
 
+  // The wave-7 Boss reuses the brute's hulking articulation, recoated in char
+  // with a molten chest core and eyes that burn red. Joint ids are copied so
+  // poseJoints poses the clone independently of the original stone brute.
+  models.brute.joints.forEach(function (joint) {
+    models.boss.joints.push({ id: joint.id, kind: joint.kind, parent: joint.parent, x: joint.x, y: joint.y, z: joint.z,
+      side: joint.side, index: joint.index, rx: 0, ry: 0, rz: 0 });
+  });
+  models.brute.parts.forEach(function (part) {
+    models.boss.parts.push({ x: part.x, y: part.y, z: part.z, sx: part.sx, sy: part.sy, sz: part.sz,
+      tint: part.glow ? 0xff2517 : 0x241d16, joint: part.joint, glow: part.glow, rx: part.rx, ry: part.ry, rz: part.rz });
+  });
+
   // Original silhouettes: articulated tunnel segments, a lantern stump,
   // a faceted shield animal, and a walking seed amphora. All share one draw.
   let wormParent = 0;
@@ -469,7 +484,7 @@
         quaternion.setFromEuler(rotation);
         position.set(p.x, p.y + bob - collapse * (enemy.type === 'spider' ? -0.18 : 0.35), p.z);
         const shrink = dying ? 1 - Math.pow(clamp((death - 0.65) / 0.35, 0, 1), 2) : 1;
-        scale.setScalar(Math.max(0.001, shrink)); rootMatrix.compose(position, quaternion, scale);
+        scale.setScalar(Math.max(0.001, shrink) * (enemy.type === 'boss' ? 1.3 : 1)); rootMatrix.compose(position, quaternion, scale);
         poseJoints(enemy, model, time, motion, recoil);
         for (let partIndex = 0, count = model.parts.length + (enemy.airborne ? models.parachute.parts.length : 0); partIndex < count; partIndex++) {
           const part = partIndex < model.parts.length ? model.parts[partIndex] : models.parachute.parts[partIndex - model.parts.length];
@@ -784,7 +799,10 @@
       7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
       10: 'Burrow Worms — guard the inner five blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
-    if (M.ui) M.ui.showBubble('Wave ' + wave + ' — ' + (introductions[wave] || 'protect the Hearth!'));
+    let intro = introductions[wave] || 'protect the Hearth!';
+    if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +
+      (wave === 7 ? 'Briar Binders follow: interrupt their tower-snare chant.' : '');
+    if (M.ui) M.ui.showBubble('Wave ' + wave + ' — ' + intro);
     updateHud();
   }
   function startNextWave() {
@@ -804,7 +822,10 @@
     type = TYPES[type] ? type : 'zombie';
     const def = TYPES[type], start = navigation.nodeAt(node.x, node.y, node.z);
     // Difficulty is locked in at spawn so each enemy keeps its wave's stats.
-    const difficulty = waveDifficulty(wave), hp = Math.max(1, Math.round(def.hp * difficulty.hp));
+    // A Boss multiplies the regular enemy health by twenty, so the 7th-wave
+    // warboss is exactly twenty times as durable as a same-wave zombie.
+    const difficulty = waveDifficulty(wave);
+    const hp = Math.max(1, Math.round(def.hp * difficulty.hp * (type === 'boss' ? 20 : 1)));
     const zombie = { type: type, body: { radius: def.radius, height: def.height, skin: 0.002 }, id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: hp, maxHp: hp, speedScale: difficulty.speed,
       tint: 0.88 + Math.random() * 0.24, phase: Math.random() * 6.28, mode: 'walk', moving: false,
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,
@@ -926,7 +947,7 @@
     if (index < 0 || tree.health <= 0) return false;
     enemy.bite = 0; enemy.blockBite = 0;
     const killed = damageEnemy(enemy, damage, { origin: origin, area: area });
-    if (!['worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
+    if (!['boss', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
     updateHud(); render(elapsed);
     return killed;
   }
@@ -972,7 +993,7 @@
       hit = true; hits++;
       zombie.bite = 0; zombie.blockBite = 0;
       damageEnemy(zombie, damage, { origin: origin, area: stomp });
-      if (!['worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
+      if (!['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
     }
     if (hit) { updateHud(); render(elapsed); }
     return hit;
@@ -1162,18 +1183,18 @@
       zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);
       const footBeat = Math.floor(zombie.phase / Math.PI);
       if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat) {
-        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
+        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
         else if (M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
       }
       zombie.footBeat = footBeat;
       zombie.voiceTimer -= dt; zombie.chewTimer -= dt;
       if (zombie.voiceTimer <= 0) {
-        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
+        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie(zombie.type === 'spider' || zombie.type === 'skeleton' ? 'bite' : 'groan', zombie.position);
         zombie.voiceTimer = 7.5 + Math.sin(elapsed + zombie.id) * 3.5;
       }
       if (eating && zombie.chewTimer <= 0) {
-        if (['worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
+        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
@@ -1221,7 +1242,7 @@
     }
     enemy.hp -= amount; enemy.flash = .15;
     const killed = enemy.hp <= 0;
-    if (['worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
+    if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
     if (killed) removeEnemy(enemy, index, false);
     updateHud();
     return killed;

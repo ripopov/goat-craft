@@ -93,7 +93,7 @@ function harness({ suspended = false } = {}) {
 }
 
 const effects = [
-  ...['worm', 'binder', 'prismback', 'sower'].flatMap(species =>
+  ...['boss', 'worm', 'binder', 'prismback', 'sower'].flatMap(species =>
     ['warn', 'cast', 'hurt', 'death', 'idle', 'step', 'bite'].map(event => ['enemy', species, event, { x: 0, y: 0, z: 0 }])),
   ['enemy', 'parachute', 'open', { x: 0, y: 0, z: 0 }], ['enemy', 'parachute', 'land', { x: 0, y: 0, z: 0 }],
   ...['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'].map(id => ['towerImpact', { x: 0, y: 0, z: 0 }, id]),

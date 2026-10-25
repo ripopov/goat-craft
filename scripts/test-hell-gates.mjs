@@ -49,7 +49,7 @@ test('every surface species arrives inside a gate; parachutes and Worms keep sep
   M.hearthTree.damage = () => {};
   const seen = new Set(), species = new Set(), usedGates = new Set();
   let air = false, worm = false;
-  for (const wave of [1, 2, 3, 5, 8, 10, 12, 15]) {
+  for (const wave of [1, 2, 3, 5, 7, 8, 10, 12, 15]) {
     enemies.startWave(wave);
     for (let tick = 0; tick < 2000 && enemies.getState().pending; tick++) {
       enemies.update(.05);

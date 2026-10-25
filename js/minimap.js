@@ -30,6 +30,7 @@
       else if (kind === 'tree') { ctx.moveTo(0, -6); ctx.lineTo(5, 0); ctx.lineTo(0, 6); ctx.lineTo(-5, 0); ctx.closePath(); }
       else if (kind === 'air') { ctx.moveTo(-4, -3); ctx.lineTo(4, -3); ctx.lineTo(0, 5); ctx.closePath(); }
       else if (kind === 'burrow') { ctx.moveTo(-4, -2); ctx.lineTo(4, -2); ctx.lineTo(4, 2); ctx.lineTo(-4, 2); ctx.closePath(); }
+      else if (kind === 'boss') { ctx.moveTo(0, -6); ctx.lineTo(2, -2); ctx.lineTo(6, 0); ctx.lineTo(2, 2); ctx.lineTo(0, 6); ctx.lineTo(-2, 2); ctx.lineTo(-6, 0); ctx.lineTo(-2, -2); ctx.closePath(); }
       else ctx.arc(0, 0, kind === 'npc' ? 3.5 : kind === 'coin' ? 2.6 : 2.8, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
       if (kind === 'approach') {
@@ -48,7 +49,8 @@
       marker(drop.position, '#ffd45f', 'coin'); coinStacks++;
     });
     M.enemies.zombies.forEach(function (enemy) {
-      marker(enemy.position, enemy.burrowed ? '#d8ae70' : enemy.airborne ? '#deb6ff' : '#f58a72', enemy.burrowed ? 'burrow' : enemy.airborne ? 'air' : 'enemy');
+      marker(enemy.position, enemy.type === 'boss' ? '#ffd24d' : enemy.burrowed ? '#d8ae70' : enemy.airborne ? '#deb6ff' : '#f58a72',
+        enemy.type === 'boss' ? 'boss' : enemy.burrowed ? 'burrow' : enemy.airborne ? 'air' : 'enemy');
     });
     M.animals.list.forEach(function (animal) { marker(animal.group.position, '#9dd9a8', 'npc'); });
     marker(M.hearthTree.position, '#f3d17d', 'tree');
@@ -60,7 +62,7 @@
     ctx.fillStyle = '#afc4a5'; ctx.font = '9px system-ui, sans-serif'; ctx.fillText(RANGE + 'm', 0, radius - 8);
     ctx.restore();
     ctx.strokeStyle = '#d4c58999'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(center, center, radius, 0, Math.PI * 2); ctx.stroke();
-    canvas.setAttribute('aria-label', 'Minimap, north up, player centered. ' + M.enemies.zombies.length + ' enemies: red ground dots, lavender air triangles and amber burrow bars; ' + M.animals.list.length + ' animals in green, ' + coinStacks + ' coin stacks as gold dots, Hearth as a gold diamond, starter cave in cyan. Red horned arches mark permanent hell gates. Amber warning triangles mark incoming enemy approaches. Rings at the edge mark locations outside the 80 meter range.');
+    canvas.setAttribute('aria-label', 'Minimap, north up, player centered. ' + M.enemies.zombies.length + ' enemies: red ground dots, lavender air triangles, amber burrow bars and gold boss stars; ' + M.animals.list.length + ' animals in green, ' + coinStacks + ' coin stacks as gold dots, Hearth as a gold diamond, starter cave in cyan. Red horned arches mark permanent hell gates. Amber warning triangles mark incoming enemy approaches. Rings at the edge mark locations outside the 80 meter range.');
   }
   function init() { canvas = document.getElementById('minimap'); context = canvas && canvas.getContext('2d'); draw(); }
   function update(dt) { cooldown -= dt; if (cooldown > 0) return; cooldown = 0.1; draw(); }

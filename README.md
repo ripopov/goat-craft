@@ -199,8 +199,11 @@ Fleet hooves and Long horns training are visible on the goat **and on the traine
 | Burrow Worm | 10 | 4 | 1.6; 2.1 underground | 1 / 3.6s | 9s | 4 |
 | Prismback | 12 | 4 | 1.25; short 2× rush | 1 / 3.8s | 9s | 4 |
 | Mire Sower | 15 | 3 | 1.5 | 1 / 3.5s | 11s | 3 |
+| Boss | 7 | 20× a regular enemy | 1.2 | 2 / 4s | 6s | 20 |
 
 Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. Beveled voxel parts, hierarchical joints, species-specific silhouettes, layered faces, clothing, bone and rock details share one bounded instanced draw; fallen bodies do not count toward the live cap.
+
+From **wave 7 onward, every 7th wave leads with a Boss**: a hulking blackened war-brute (30% larger) with a molten chest core and **glowing red eyes**, marching ahead of the same wave's regular horde. It has **twenty times the health** of a regular enemy at that wave, keeps its punches reaching the Hearth at 2 HP per bite, chews walls in 6 seconds, and drops **20 coins**. A gold star on the minimap tracks it, and its deep stone-and-wood roar plays on idle, hurt and death. Focused stomps, splash damage, elemental chains and full tower fire all work; the same solid wall-chew rules and the 20-second progress watchdog apply. The Boss replaces exactly one ordinary slot — every 7th wave is that slot larger in spirit, not in count.
 
 From **wave 5**, some zombies and skeletons descend by parachute into the outer meadow. A lavender landing marker warns of their arrival; they can be shot during descent and recover for 0.9 seconds after landing. From **wave 10**, Worms spawn on the distant outer ring, at least 16 world units from the goat, and excavate covered tunnels toward the Hearth. Their segmented bodies remain modeled and animated inside the soil: **mine down into a tunnel to find and fight them normally**. Soil blocks attacks. Worms emerge only within **five blocks (10 world units)** of the Hearth, with a warning and a short recovery. Excavation preserves collectible materials, the protected Hearth foundation and a navigable step out of the exit shaft.
 

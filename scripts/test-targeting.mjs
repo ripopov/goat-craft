@@ -4,7 +4,7 @@ import { game } from './helpers/animal-game.mjs';
 
 function fixture() {
   const h = game(), { M, load, scene } = h;
-  load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/highlights.js'); M.highlights.init(scene);
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/highlights.js'); M.highlights.init(scene);
   M.goat.group.position.set(15, 14, 15); M.goat.state.manualHold = 1000;
   const camera = M.goat.aimCamera; camera.position.set(15, 15.75, 15);
   return { ...h, camera };

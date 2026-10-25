@@ -6,7 +6,7 @@ const root = new URL('../../', import.meta.url);
 // and independent game state for each scenario.
 const scripts = new Map();
 
-export function game({ seed, renderRadius = 1 } = {}) {
+export function classicModules({ seed } = {}) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
@@ -17,10 +17,16 @@ export function game({ seed, renderRadius = 1 } = {}) {
     if (!scripts.has(file)) scripts.set(file, new vm.Script(readFileSync(new URL(file, root), 'utf8'), { filename: file }));
     return scripts.get(file).runInContext(context);
   };
-  for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
+  for (const file of ['vendor/three.min.js', 'js/core.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;
+  return { M, THREE, load, context };
+}
+
+export function game({ seed, renderRadius = 1 } = {}) {
+  const fixture = classicModules({ seed }), { M, THREE, load } = fixture;
+  for (const file of ['js/actor-physics.js', 'js/voxel-water.js']) load(file);
   M.config.renderRadius = renderRadius;
-  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-navigation.js', 'js/animal-recovery.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemies.js']) load(file);
+  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-navigation.js', 'js/animal-recovery.js', 'js/animal-models.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemies.js']) load(file);
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);
@@ -32,7 +38,7 @@ export function game({ seed, renderRadius = 1 } = {}) {
   M.goat.state.manualHold = 1000;
   M.animals.init({ scene, world: M.world, audio, goat: M.goat });
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  return { M, THREE, scene, controls, input, load };
+  return { ...fixture, scene, controls, input };
 }
 
 export function isolatedAnimal(name = 'Mallow', options = {}) {

@@ -4,7 +4,7 @@ import { game } from './helpers/animal-game.mjs';
 
 function defense(rich = true) {
   const fixture = game(), { M, load, scene } = fixture;
-  load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.goat.group.position.set(-25, 14, -25);
   M.animals.list.forEach((animal, i) => animal.group.position.set(-25 + i * 3, 14, -20));
   if (rich) {

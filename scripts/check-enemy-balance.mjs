@@ -5,7 +5,7 @@ import { game } from './helpers/animal-game.mjs';
 // human's steering is fixed; the inner reserve must handle air and burrow lanes.
 export function runDefense(wave, seed = 42) {
   const { M, load, scene, controls } = game({ seed });
-  load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.enemies.addCoins(10000);
   for (const kind of ['log', 'stone', 'iron', 'copper']) M.items.addItem(kind, 1000);
   M.animals.list.forEach((animal, i) => animal.group.position.set(-35 + i * 3, 14, 35));

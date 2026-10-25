@@ -64,6 +64,9 @@ jobs:
       - name: Test herd combat, walls and paid builder towers
         run: node --test scripts/test-animals.mjs scripts/test-builder-towers.mjs
 
+      - name: Test standalone model modules
+        run: node --test scripts/test-model-modules.mjs
+
       - name: Test isolated NPC stuck recovery
         run: node --test scripts/test-animal-recovery.mjs
 

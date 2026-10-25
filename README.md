@@ -37,7 +37,10 @@ js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk st
 js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
 js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning
 js/hell-gates.js    four unbreakable forest portals, winding permanent roads and protected spawn openings
-js/enemies.js       eight instanced species, parachutes, tunnels, specialist abilities and waves
+js/enemy-rules.js   species stats, special-wave registry, difficulty, timers and rewards
+js/enemy-models.js  beveled voxel geometry and articulated enemy model construction
+js/enemies.js       nine instanced species, parachutes, tunnels, specialist abilities and combat
+js/coin-model.js    shared minted gold geometry, emissive finish and animated glint
 js/upgrades.js      individual training tiers, prices, resource purchases and nearby targeting
 js/upgrade-menu.js  accessible paused training menu, character switching and purchase feedback
 js/minimap.js       circular player-centered radar for enemies, herd, coin drops and the Hearth
@@ -46,6 +49,8 @@ js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimm
 js/environment.js   3-minute solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/animal-style.js shared speed-style glow, wheel rims and elemental horn styling for the goat and herd
 js/goat.js          goat rig, coat, gaits, swimming/buoyancy, physics, jumps, elemental spells, headbutt and hoof stomp
+js/animal-models.js species definitions, sheep/cow/stag rigs, shared materials and fitting scales
+js/animal-navigation.js cached body-sized visibility paths around the Hearth roots
 js/animal-recovery.js target-progress monitoring, jump/detour decisions, and dig/build escape target selection
 js/animals.js       specialized sheep, cow and stag NPCs: zombie hunting, spell casting, wall building, repairs and physical recovery
 js/controls.js      pointer-lock mouse look, third-/first-person cameras, keyboard and touch input
@@ -66,6 +71,7 @@ scripts/test-special-enemies.mjs  airdrops, physical Worm tunnels, mining combat
 scripts/check-enemy-balance-tests.mjs  separately runnable full-defense clearance regressions
 scripts/check-enemy-balance.mjs  staged loadout combat and CPU timing benchmark
 scripts/check-performance.mjs  sustained 200-enemy / 80-tower CPU and render-batch benchmark
+scripts/test-model-modules.mjs standalone model construction, joint validity, capacities and cache ownership
 scripts/test-upgrades.mjs training, atomic purchases, individual NPC effects, live combat and collectible coins
 scripts/test-caves.mjs    geology, exposed ore, protected roofs and actual player descent/exit
 scripts/test-targeting.mjs camera mining in every direction, obstruction, preview/action agreement and outlines
@@ -78,7 +84,7 @@ scripts/test-animal-recovery.mjs  isolated ledge, wall, pit, roof, crowd and hun
 .github/workflows/pages.yml builds and deploys the GitHub Pages site
 ```
 
-The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` namespace. They are deliberately not ES modules: browsers block `import` and `fetch` from `file://` for security reasons, which would require a local server. Classic `<script src>` tags work from disk, so this remains a zero-server static page.
+The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` namespace. They are deliberately not ES modules: browsers block `import` and `fetch` from `file://` for security reasons, which would require a local server. Classic `<script src>` tags work from disk, so this remains a zero-server static page. See [the architecture and extension guide](docs/architecture.md) for module responsibilities, dependency order, and adding species or special waves.
 
 ## Controls
 

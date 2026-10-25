@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { game, isolatedAnimal } from './helpers/animal-game.mjs';
+import { game, isolatedAnimal, classicModules } from './helpers/animal-game.mjs';
 
 function training(fixture = game()) {
   const { M, load, scene } = fixture;
-  load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
   return fixture;
 }
 function supplies(M, coins = 1000) {
@@ -283,7 +283,8 @@ test('each Quick strikes purchase immediately refits only the trained neck and r
 });
 
 test('Quick strikes tiers have distinct normalized motion, synchronized impacts and bounded recovery', () => {
-  const { M, THREE } = training();
+  const { M, THREE, load } = classicModules();
+  load('js/animal-style.js');
   const profiles = [];
   for (let tier = 1; tier <= 3; tier++) {
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(.17, .26, .58), M.std(0xffffff));

@@ -25,7 +25,7 @@ function harness(realWorld = false) {
     M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
     M.hearthTree.init(scene);
   }
-  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemies.js'].forEach(load);
+  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemies.js'].forEach(load);
   return { M, THREE, scene, drops, coinDrops, load, context };
 }
 function fixture() {
@@ -382,7 +382,7 @@ test('unrelated construction cannot reset an ongoing ten-second bite', () => {
 
 test('chewed drops stack, survive ordinary drop limits, and collect into placeable inventory', () => {
   const { M, THREE, scene, load } = harness(true);
-  load('js/items.js'); M.items.init(scene);
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene);
   for (let i = 0; i < 200; i++) M.items.dropBlock('stone', 5, 15, -25, { persistent: true });
   assert.equal(M.items.drops.length, 1);
   assert.equal(M.items.drops[0].userData.drop.count, 200);

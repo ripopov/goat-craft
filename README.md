@@ -5,7 +5,7 @@
 
 **Play online: [ripopov.github.io/goat-craft](https://ripopov.github.io/goat-craft/)**
 
-An endless blocky meadow with a procedural goat, winding rivers, deep seas, ponds full of fish, a wandering herd of animals, a one-minute day/night cycle, and growing enemy waves that attack a living Hearth Tree, built with three.js.
+An endless blocky meadow with a procedural goat, winding rivers, deep seas, ponds full of fish, a wandering herd of animals, a three-minute day/night cycle, and growing enemy waves that attack a living Hearth Tree, built with three.js.
 
 
 ## Run it
@@ -42,7 +42,7 @@ js/upgrade-menu.js  accessible paused training menu, character switching and pur
 js/minimap.js       circular player-centered radar for enemies, herd, coin drops and the Hearth
 js/fish.js          seeded pond fish, lily pads, ripples and shoal animation
 js/water.js         pooled swimming wakes/bubbles, underwater fog/tint and swimming status
-js/environment.js   60-second solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
+js/environment.js   3-minute solar cycle, dynamic sky/lighting, moon, stars, drifting clouds
 js/animal-style.js shared speed-style glow, wheel rims and elemental horn styling for the goat and herd
 js/goat.js          goat rig, coat, gaits, swimming/buoyancy, physics, jumps, elemental spells, headbutt and hoof stomp
 js/animal-recovery.js target-progress monitoring, jump/detour decisions, and dig/build escape target selection
@@ -207,7 +207,7 @@ An enemy watchdog measures meaningful progress rather than animation or tiny jit
 
 Below the meadow, deterministic winding caves cross chunk boundaries and open into chambers with four world units of headroom. Three-block-wide stair entrances lead underground; the starter entrance lies just southeast of spawn and has a clear exit. The Hearth foundation stays solid, and covered caves retain their soil/stone roof. Water can enter only if a player breaches the separating rock. Stone, coal ore, copper ore and iron ore have separate textures, drops, hotbar stacks and placeable block forms; exposed starter veins make each ore discoverable. Mining edits persist across chunk streaming. A warm player light makes underground exploration readable.
 
-The meadow runs a complete **60-second day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each 30 seconds long. An **oversized stylized sun** with a layered corona floats in the sky, kept subtly alive by a slow breathing pulse; the night brings an equally huge **cratered moon** with dark maria, rim-lit craters and a silver-blue halo.
+The meadow runs a complete **3-minute day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each a minute and a half long. An **oversized stylized sun** with a layered corona floats in the sky, kept subtly alive by a slow breathing pulse; the night brings an equally huge **cratered moon** with dark maria, rim-lit craters and a silver-blue halo.
 
 A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). Bramble and Poppy are hunters: they chase nearby zombies and headbutt them, casting the same elemental spells and wearing the same glow, wheel rims and charged horns as the goat once trained. Mallow and Clover are builders, who anchor the defense economy by quarrying and stacking walls.
 

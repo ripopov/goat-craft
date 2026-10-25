@@ -4,12 +4,12 @@
   const { clamp, rand } = M.utils;
   const DEG = Math.PI / 180;
 
-  // A full solar day lasts one minute. The meadow is the local tangent plane
+  // A full solar day lasts three minutes. The meadow is the local tangent plane
   // of a planet at 50°N; the ground stays put while the celestial sphere turns.
   // Sun position comes from the local hour angle, observer latitude and solar
   // declination, so the arc is tilted like a real sky instead of being an
   // arbitrary circle around the goat.
-  const DAY_SECONDS = 60;
+  const DAY_SECONDS = 180;
   const START_PHASE = 0.30;
   const LATITUDE = 50 * DEG;
   const AXIAL_TILT = 23.44 * DEG;

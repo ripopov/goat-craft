@@ -3,6 +3,13 @@
 
   const MAX_ENEMIES = 200, WATCHDOG_SECONDS = 20;
   const SIZE = 2;
+  // Worms surface anywhere in a band around the Hearth that covers about three
+  // times the surface area of the original five-voxel guard ring: nine two-unit
+  // voxels (18 world units) instead of five (5·√3 ≈ 8.7 voxels).
+  const EMERGENCE_RADIUS = 9 * SIZE;
+  const EMERGENCE_BAND_INNER = 9.5;  // just past the protected Hearth foundation
+  const EMERGENCE_BAND_FAVOR = 14.5; // biased outward: shorter tunnels, earlier digs
+  const EMERGENCE_RETRIES = 3;       // fresh surfacing attempts before the watchdog backstop
   const TYPES = {
     zombie: { name: 'Zombie', unlock: 1, hp: 2, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
     spider: { name: 'Spider', unlock: 3, hp: 2, speed: 2.7, reward: 2, bite: 3.5, damage: 1, chew: 12, radius: 0.42, height: 1.15 },
@@ -579,27 +586,39 @@
     let best = null, score = Infinity;
     for (const node of navigation.nodes) {
       const distance = Math.hypot(node.x - from.x, node.z - from.z);
-      if (distance < 1.6 || distance > 4.2 || Math.abs(node.y - height) > .1 ||
-          Math.hypot(node.x - tree.position.x, node.z - tree.position.z) > 9.8 ||
+      if (distance < 1.6 || distance > 8 || Math.abs(node.y - height) > .1 ||
+          Math.hypot(node.x - tree.position.x, node.z - tree.position.z) > EMERGENCE_RADIUS ||
+          world.waterDepthAt(node.x, node.z) >= .9 ||
+          world.isProtectedArea && world.isProtectedArea(node.bx, node.bz) ||
           !physics.clear(world, node.x, height, node.z, enemy.body) ||
           Math.abs(physics.support(world, node, height + .1, enemy.body) - height) > .1 ||
           !navigation.canWalk({ x: from.x, y: height, z: from.z }, node)) continue;
-      const value = distance + (Number.isFinite(node.distance) ? node.distance * .1 : 5);
+      // Prefer a nearby exit; the 8-unit ring is the robust fallback for
+      // pond edges, cliffs and player-built walls around the shaft.
+      const value = distance + (distance > 4.2 ? 6 : 0) + (Number.isFinite(node.distance) ? node.distance * .1 : 5);
       if (value < score) { best = new THREE.Vector3(node.x, height, node.z); score = value; }
     }
     return best;
   }
-  function emergencePoint(enemy) {
+  function emergencePoint(enemy, avoid) {
     const heading = Math.atan2(enemy.position.x - tree.position.x, enemy.position.z - tree.position.z);
     let best = null, score = Infinity;
     for (const node of navigation.nodes) {
       const distance = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
-      if (distance < 7 || distance > 9.8 || world.isProtectedArea && world.isProtectedArea(node.bx, node.bz)) continue;
-      const value = angleDistance(angleTo(node), heading) * 20 + Math.abs(distance - 9);
+      if (distance < EMERGENCE_BAND_INNER || distance > EMERGENCE_RADIUS ||
+          world.isProtectedArea && world.isProtectedArea(node.bx, node.bz) ||
+          world.waterDepthAt(node.x, node.z) >= .9) continue;
+      if (avoid && Math.hypot(node.x - avoid.x, node.z - avoid.z) < 12) continue;
+      const value = angleDistance(angleTo(node), heading) * 20 + Math.abs(distance - EMERGENCE_BAND_FAVOR);
       if (value < score) { best = node; score = value; }
     }
-    return best ? new THREE.Vector3(best.x, surfaceAt(best.x, best.z, best.y), best.z) :
-      new THREE.Vector3(tree.position.x + Math.sin(heading) * 8, surfaceAt(tree.position.x, tree.position.z, enemy.position.y), tree.position.z + Math.cos(heading) * 8);
+    if (best) return new THREE.Vector3(best.x, surfaceAt(best.x, best.z, best.y), best.z);
+    // Fallback on a fresh compass point outside the protected foundation; never
+    // aim through the tree's own reserved soil.
+    const radius = .5 * (EMERGENCE_BAND_INNER + EMERGENCE_RADIUS);
+    const angle = heading + (avoid ? .7 : 0);
+    const x = tree.position.x + Math.sin(angle) * radius, z = tree.position.z + Math.cos(angle) * radius;
+    return new THREE.Vector3(x, surfaceAt(x, z, enemy.position.y), z);
   }
   function releaseSpoil(enemy, point) {
     if (!enemy.spoil || !M.items || !M.items.dropBlock) return;
@@ -667,10 +686,28 @@
       } else { enemy.mode = 'emerge'; enemy.emergeTime = 0; enemy.shaft = p.clone(); sound('worm', 'warn', goal); }
     } else {
       enemy.emergeTime += dt; enemy.moving = false;
-      // The surface opens only inside five full voxels (10 world units).
+      // The surface opens only inside the emergence band (nine two-unit voxels).
       if (enemy.emergeTime >= 1.4 && excavate(new THREE.Vector3(enemy.shaft.x, goal.y - 4, enemy.shaft.z), 4 + enemy.body.height, enemy)) {
         if (!enemy.emergeExit) enemy.emergeExit = emergenceExit(enemy);
-        if (!enemy.emergeExit) return true;
+        if (!enemy.emergeExit) {
+          // Robust digging: never soft-lock underground. Fill the abandoned
+          // shaft, head for a fresh surfacing point and keep tunneling.
+          settleShaft(enemy);
+          const fresh = emergencePoint(enemy, enemy.emergence);
+          const distinct = fresh && (Math.abs(fresh.x - goal.x) > .01 || Math.abs(fresh.z - goal.z) > .01);
+          if (distinct && (enemy.emergeRetries || 0) < EMERGENCE_RETRIES) {
+            enemy.emergeRetries = (enemy.emergeRetries || 0) + 1;
+            enemy.emergence = fresh;
+            enemy.surfaceY = tunnelRoofAt(p.x, p.z, enemy.surfaceY);
+            enemy.mode = 'burrow'; enemy.emergeTime = 0; enemy.emergeExit = null;
+            return true;
+          }
+          // After bounded retries the watchdog's explosion still clears the
+          // Worm, so a sealed map can never lock a wave underground forever.
+          enemy.emergeRetries = (enemy.emergeRetries || 0) + 1;
+          enemy.emergeTime = 0;
+          return true;
+        }
         enemy.burrowed = false;
         const k = clamp((enemy.emergeTime - 1.4) / .8, 0, 1);
         const rise = clamp(k * 2, 0, 1), lurch = clamp(k * 2 - 1, 0, 1);
@@ -797,7 +834,7 @@
     if (M.audio && M.audio.cue) M.audio.cue('wave');
     const introductions = { 3: 'Spiders incoming!', 5: 'Skeletons and parachutes — watch the lavender landing rings.',
       7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
-      10: 'Burrow Worms — guard the inner five blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
+      10: 'Burrow Worms — guard the inner nine blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
     let intro = introductions[wave] || 'protect the Hearth!';
     if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +
@@ -1253,7 +1290,7 @@
     attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
     spellTargets: spellTargets, spellHit: spellHit, spellBlast: spellBlast,
     isTargetable: isTargetable, movementScale: movementScale, deliveryForWave: deliveryForWave,
-    get mudPools() { return mudPools; }, get signals() { return signals; }, emergenceRadius: 5 * SIZE,
+    get mudPools() { return mudPools; }, get signals() { return signals; }, emergenceRadius: EMERGENCE_RADIUS,
     watchdogSeconds: WATCHDOG_SECONDS, types: TYPES, waveSize: waveSize, wavePlan: wavePlan, waveDifficulty: waveDifficulty, typeForWave: typeForWave,
     startNextWave: startNextWave,
     startWave: startWave,

@@ -29,7 +29,7 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
     if (wave === 5) assert.equal(air.length, 1, 'the first airdrop is a single readable introduction');
     if (wave >= 10) assert.ok(count('worm') > 0);
   }
-  assert.equal(e.emergenceRadius, 10, 'five two-unit voxels, rather than five world units');
+  assert.equal(e.emergenceRadius, 18, 'nine two-unit voxels ≈ √3 × the former five, about three times the surface area');
   assert.deepEqual([1, 2, 3].map(wave => e.waveSize(wave)), [6, 10, 14]);
 });
 
@@ -52,7 +52,7 @@ test('airdrops enter actual wave five, remain vulnerable, and cannot bite before
   assert.ok(scene.getObjectByName('Enemy horde').count <= scene.getObjectByName('Enemy horde').instanceMatrix.count);
 });
 
-test('Worms excavate real covered tunnels, surface only within five blocks and allow an emergence response', () => {
+test('Worms excavate real covered tunnels, surface only within the nine-block band and allow an emergence response', () => {
   const { M, THREE } = defense();
   const cuts = [], original = M.world.breakBlockAt;
   M.world.breakBlockAt = function (bx, by, bz, opts) {
@@ -69,15 +69,19 @@ test('Worms excavate real covered tunnels, surface only within five blocks and a
     M.enemies.update(1 / 60);
     if (enemy.mode === 'emerge') {
       emerging = true;
-      assert.ok(Math.hypot(enemy.position.x, enemy.position.z) <= 10, 'no early surface breach');
+      assert.ok(Math.hypot(enemy.position.x, enemy.position.z) <= M.enemies.emergenceRadius + .01, 'no early surface breach');
     }
-    if (Math.hypot(enemy.position.x, enemy.position.z) > 10) assert.ok(enemy.position.y <= 10.01);
+    if (Math.hypot(enemy.position.x, enemy.position.z) > M.enemies.emergenceRadius) assert.ok(enemy.position.y <= 10.01);
   }
   assert.ok(emerging); assert.equal(enemy.burrowed, false); assert.ok(enemy.recoverTime > 0);
   assert.ok(cuts.length > 6, 'the route contains real excavated voxels');
+  const shaftX = enemy.emergence.x, shaftZ = enemy.emergence.z;
   for (const cell of cuts) {
     const radius = Math.hypot((cell.bx + .5) * 2, (cell.bz + .5) * 2);
-    if (radius > 11.5) assert.ok((cell.by + 1) * 2 <= cell.top - 2, 'outer tunnel retains a complete roof course');
+    // The emergence shaft breaks the roof course where the Worm digs out;
+    // every other cell beyond the tunnel's forecastle keeps a complete roof.
+    const shaftCell = Math.abs((cell.bx + .5) * 2 - shaftX) <= 1.6 && Math.abs((cell.bz + .5) * 2 - shaftZ) <= 1.6;
+    if (radius > 11.5 && !shaftCell) assert.ok((cell.by + 1) * 2 <= cell.top - 2, 'outer tunnel retains a complete roof course');
     assert.equal(M.world.isProtectedArea(cell.bx, cell.bz), false, 'Hearth foundation is untouched');
   }
   assert.ok(M.items.drops.length > 0, 'excavation leaves collectible resources');

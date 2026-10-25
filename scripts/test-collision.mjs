@@ -14,7 +14,7 @@ function game() {
   M.config.renderRadius = 1;
   load('js/caves.js');
   load('js/world.js'); load('js/hearth-tree.js'); load('js/targeting.js');
-  load('js/animal-style.js'); load('js/goat.js'); load('js/animal-recovery.js'); load('js/animals.js');
+  load('js/animal-style.js'); load('js/goat.js'); load('js/animal-recovery.js'); load('js/animal-navigation.js'); load('js/animals.js');
   const scene = new THREE.Scene(), input = new THREE.Vector2();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } }); M.hearthTree.init(scene);
   const controls = { firstPerson: false, running: false, swimVertical: 0, getMovement: () => input,

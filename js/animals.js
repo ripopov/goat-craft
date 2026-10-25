@@ -829,6 +829,7 @@
   let worldRef = null;
   let audioRef = null;
   let goatRef = null;
+  let navigation = null;
 
   function sizeOf() {
     return (worldRef && worldRef.blockSize) || BLOCK;
@@ -929,6 +930,19 @@
   function moveAnimal(animal, dx, dz, yaw) {
     const s = animal.state;
     const p = animal.group.position;
+    if (navigation && !s.swimming && s.grounded && ['walk', 'hunt', 'seekBreak', 'seekPlace'].includes(s.mode)) {
+      const motion = recoveryMotion(animal, true);
+      if (motion) {
+        const target = navigation.waypoint(p, motion.target, bodyOf(animal), s.navigation);
+        s.navigation.target = target;
+        const tx = target.x - p.x, tz = target.z - p.z, distance = Math.hypot(tx, tz);
+        if (distance > .001) {
+          const step = Math.min(distance, Math.hypot(dx, dz));
+          dx = tx / distance * step; dz = tz / distance * step; yaw = Math.atan2(tx, tz);
+          s.yaw = turnToward(s.yaw, yaw, (s.navigationDt || .05) * 5);
+        }
+      }
+    }
     if (s.swimming) {
       const exit = physics.shoreExit(worldRef, p, bodyOf(animal), dx, dz, s.waterLevel, GRAVITY);
       if (exit && exit.distance <= 1 && actorSpotClear(animal, exit.x, exit.z)) physics.launchShore(s, exit);
@@ -2646,7 +2660,8 @@
     }
 
     const combatRange = spellRange || 7.35 + upgrades.reach;
-    if (distance <= combatRange && Math.abs(q.y - p.y) <= 2.8) {
+    if (distance <= combatRange && Math.abs(q.y - p.y) <= 2.8 &&
+        M.enemies.canHit(zombie, p, yaw, true, combatRange)) {
       s.speed = damp(s.speed, 0, 10, dt);
       s.stuck = 0;
       // Spells aim themselves, so a trained hunter fires at any enemy in range;
@@ -2674,7 +2689,7 @@
     }
   }
 
-  function recoveryMotion(animal) {
+  function recoveryMotion(animal, direct) {
     const s = animal.state;
     const p = animal.group.position;
     let target = null;
@@ -2684,6 +2699,7 @@
     else if (s.mode === 'climbBuild') target = s.pendingClimb;
     else if (s.mode === 'descend') target = s.descendTarget;
     if (!target) return null;
+    if (!direct && s.navigation && s.navigation.path && s.navigation.path.length) target = s.navigation.path[0];
     const dx = target.x - p.x;
     const dz = target.z - p.z;
     if (Math.hypot(dx, dz) < 0.25) return null;
@@ -2705,6 +2721,7 @@
       s.recoveryJumps = 0;
     }
     if (!motion) return;
+    if (stage === 'clear' && (s.detourCount || 0) < 2) return;
 
     const solid = recovery.blockedAhead(worldRef, p, bodyOf(animal), motion.x, motion.z);
     s.recovery.solid = solid;
@@ -2779,6 +2796,8 @@
   function updateAnimal(animal, dt, t) {
     const s = animal.state;
     const p = animal.group.position;
+    if (!s.navigation) s.navigation = { retry: 0, path: null };
+    s.navigation.retry -= dt; s.navigationDt = dt;
     if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
     physics.updateSwimming(worldRef, p, bodyOf(animal), s, dt);
     if (s.swimming || s.shoreJump > 0) { updateSwimmingAnimal(animal, dt, t); return; }
@@ -3189,6 +3208,7 @@
     worldRef = deps.world;
     audioRef = deps.audio;
     goatRef = deps.goat;
+    navigation = M.animalNavigation.create(worldRef, M.hearthTree.position);
 
     const gx = goatRef.group.position.x;
     const gz = goatRef.group.position.z;

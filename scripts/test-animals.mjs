@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import vm from 'node:vm';
+import { readFileSync } from 'node:fs';
 import { game } from './helpers/animal-game.mjs';
 
 function advanceAnimals(M, seconds) {
@@ -71,43 +73,35 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
   assert.ok(M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz), 'missing wall block is rebuilt');
 });
 
-test('wandering animals detour around the hearth tree instead of grinding on its trunk', () => {
-  // Deterministic seed; the target sits straight across the trunk, which used
-  // to wedge walkers against the tree's curved edge forever. Recovery now
-  // detects the blockage and routes around it.
-  const { M } = game({ seed: 1 });
-  const animal = M.animals.list.find(candidate => candidate.name === 'Clover');
-  M.animals.list.forEach((other, i) => {
-    if (other === animal) return;
-    other.group.position.set(-20 + i * 3, 14, -18);
-    Object.assign(other.state, { mode: 'idle', wait: 1000, retired: true });
-  });
-  const s = animal.state;
-  Object.assign(s, { mode: 'idle', wait: 0.2, project: null, action: null, escape: null,
-    buildTimer: 1000, pitTimer: 1000 });
-  const tree = M.hearthTree.position;
-  const tv = {
-    x: tree.x, z: tree.z + 10, y: M.world.surfaceHeight(tree.x, tree.z + 10),
-    set(x, y, z) { this.x = x; this.y = y; this.z = z; },
-    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; }
-  };
-  animal.group.position.set(tree.x, M.world.surfaceHeight(tree.x, tree.z - 8), tree.z - 8);
-  s.target = tv;
-  s.mode = 'walk';
-  s.wait = 0;
-
-  let crossed = false;
-  for (let i = 0; i < 2600 && !crossed; i++) {
-    M.animals.update(.05, i * .05);
-    if (s.mode === 'idle' && s.wait <= 0 && !s.escape && !s.action && !s.pendingClimb) {
-      s.mode = 'walk';
-      s.wait = 0;
-      s.target.copy(tv);
+test('every NPC body routes across the Hearth from eight directions without jumping, digging or rescue', () => {
+  const { M } = game({ seed: 1 }), tree = M.hearthTree.position;
+  M.goat.group.position.set(24, 14, 24);
+  const revision = M.world.revision;
+  for (const animal of M.animals.list) {
+    for (let direction = 0; direction < 8; direction++) {
+      for (const [i, other] of M.animals.list.entries()) {
+        other.group.position.set(-24 + i * 3, 14, -24);
+        Object.assign(other.state, { mode: 'idle', wait: 1000, retired: true, pitTimer: 1000, buildTimer: 1000 });
+      }
+      const angle = direction * Math.PI / 4, dx = Math.sin(angle) * 10, dz = Math.cos(angle) * 10;
+      const p = animal.group.position, s = animal.state;
+      p.set(tree.x + dx, 14, tree.z + dz);
+      s.target.set(tree.x - dx, 14, tree.z - dz);
+      Object.assign(s, { mode: 'walk', wait: 0, grounded: true, vy: 0, speed: 0, escape: null,
+        detourTarget: null, detourTime: 0, navigation: null, jumpReason: null });
+      let arrived = false;
+      for (let i = 0; i < 500; i++) {
+        M.animals.update(.1, i * .1);
+        assert.equal(s.jumpReason, null, animal.name + ' should walk around roots');
+        assert.equal(s.escape, null, animal.name + ' should not excavate the tree');
+        assert.ok(M.actorPhysics.clear(M.world, p.x, p.y, p.z, M.animals.bodyOf(animal)));
+        if (Math.hypot(p.x - s.target.x, p.z - s.target.z) < .4) { arrived = true; break; }
+      }
+      assert.ok(arrived, animal.name + ' direction ' + direction + ' reached the opposite side: ' + JSON.stringify(p));
+      assert.equal(s.recovery.rescues, 0);
     }
-    const p = animal.group.position;
-    if (Math.hypot(tv.x - p.x, tv.z - p.z) < 5.6) crossed = true;
   }
-  assert.ok(crossed, 'animal reached the far side of the hearth tree');
+  assert.equal(M.world.revision, revision, 'routing does not alter terrain');
 });
 
 test('player and every NPC rig articulate through walk, airborne and action poses', () => {
@@ -148,4 +142,29 @@ test('player and every NPC rig articulate through walk, airborne and action pose
     M.animals.update(.2, 1.2);
     finiteRig(animal.group);
   }
+});
+
+test('Hearth routes cache collision work and invalidate immediately after construction or a changed goal', () => {
+  let probes = 0, solid = true;
+  const world = { revision: 0 };
+  const M = { utils: { clamp: (v, a, b) => Math.max(a, Math.min(b, v)) }, actorPhysics: {
+    clear: (_, x, y, z, body) => { probes++; return !solid || Math.hypot(x, z) > 3 + body.radius; },
+    support: () => 14
+  } };
+  const context = vm.createContext({ window: { Meadow: M } });
+  vm.runInContext(readFileSync(new URL('../js/animal-navigation.js', import.meta.url), 'utf8'), context);
+  const nav = M.animalNavigation.create(world, { x: 0, z: 0 });
+  const p = { x: 0, y: 14, z: -10 }, goal = { x: 0, y: 14, z: 10 }, body = { radius: .5, height: 2 };
+  const state = { retry: 0 };
+  const first = nav.waypoint(p, goal, body, state);
+  assert.notEqual(first, goal); assert.ok(state.path.length > 1);
+  const initial = probes;
+  for (let i = 0; i < 100; i++) assert.equal(nav.waypoint(p, goal, body, state), first);
+  assert.equal(probes, initial, 'following a committed route does no repeated world sweeps');
+  solid = false; world.revision++;
+  nav.waypoint(p, goal, body, state);
+  assert.equal(state.path.length, 0, 'construction invalidates stale routing immediately');
+  solid = true;
+  nav.waypoint(p, { x: 2, y: 14, z: 10 }, body, state);
+  assert.ok(state.path.length > 1, 'a moving hunt target replans');
 });

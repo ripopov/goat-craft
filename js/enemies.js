@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
 
-  const MAX_ENEMIES = 200, WATCHDOG_SECONDS = 20;
+  const MAX_ENEMIES = 200, WATCHDOG_SECONDS = 30, WATCHDOG_BLAST_RADIUS = 4;
   const SIZE = 2;
   // Worms surface anywhere in a band around the Hearth that covers about three
   // times the surface area of the original five-voxel guard ring: nine two-unit
@@ -25,12 +25,11 @@
   // Pressure comes from coordinated arrivals before it comes from stat growth.
   // Short squad gaps leave recovery time without feeding hunters single targets.
   function wavePlan(level) {
-    const radius = 36 + Math.min(8, Math.max(0, level - 3));
     // Separate larger squads and new fronts from species introductions (3/5/8).
     return { size: waveSize(level), squadSize: level < 4 ? 3 : level < 9 ? 4 : 5,
       memberInterval: Math.max(0.3, 0.6 - (level - 1) * 0.02),
       squadInterval: Math.max(2.4, 4.2 - (level - 1) * 0.15),
-      lanes: level === 1 ? 1 : level < 6 ? 2 : 3, minRadius: radius, maxRadius: radius + 8 };
+      lanes: level === 1 ? 1 : level < 6 ? 2 : 3 };
   }
   // Higher waves toughen enemies: health climbs toward 5x and speed toward 3x
   // of their level-1 values, easing in quickly at first and capping slowly.
@@ -61,7 +60,7 @@
   const zombies = [], fallen = [];
   let scene, world, tree, navigation, mesh, outlineMesh;
   let elapsed = 0, wave = 0, nextWave = 10, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
-  let plan = wavePlan(1), spawnLanes = [], burrowLanes = [];
+  let plan = wavePlan(1), spawnLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
@@ -539,14 +538,19 @@
     if (!scene || signals.length >= 64) return null;
     const group = new THREE.Group(), tint = kind === 'mud' ? 0xdcb276 : kind === 'air' ? 0xe1b8ff : kind === 'root' ? 0xb0d66c : kind === 'shield' ? 0xa6e9ff : 0xffc67c;
     group.name = 'Enemy ' + kind + ' signal'; group.position.copy(point); group.position.y += .05;
-    const rim = new THREE.Mesh(signalRing, signalMaterial(tint, .9)); rim.rotation.x = Math.PI / 2;
+    const rimMaterial = signalMaterial(tint, .9), bits = signalMaterial(tint, 1);
+    // Blasts fade independently; never fade the cached materials used by
+    // landing warnings and underground tremor markers.
+    const bitMaterial = kind === 'burst' ? bits.clone() : bits;
+    if (kind === 'burst') bitMaterial.transparent = true;
+    const rim = new THREE.Mesh(signalRing, kind === 'burst' ? rimMaterial.clone() : rimMaterial); rim.rotation.x = Math.PI / 2;
     rim.scale.setScalar(radius); group.add(rim);
     if (kind === 'mud') {
       const disk = new THREE.Mesh(signalDisk, signalMaterial(0x5b4835, .65)); disk.scale.set(radius, 1, radius); group.add(disk);
     }
     for (let i = 0; i < (kind === 'root' ? 6 : 4); i++) {
       const angle = i * Math.PI / (kind === 'root' ? 3 : 2);
-      const bit = new THREE.Mesh(signalCube, signalMaterial(tint, 1));
+      const bit = new THREE.Mesh(signalCube, bitMaterial);
       bit.position.set(Math.cos(angle) * radius * .75, kind === 'root' ? .45 : .05, Math.sin(angle) * radius * .75);
       bit.scale.set(kind === 'root' ? .1 : .14, kind === 'root' ? .9 : .1, .14); bit.rotation.y = angle;
       group.add(bit);
@@ -564,7 +568,18 @@
         fx.group.position.set(e.position.x, (e.airborne ? e.landingY : e.surfaceY) + .05, e.position.z);
       }
       if (!reducedMotion && !M.config.reducedMotion && fx.kind !== 'mud') fx.group.rotation.y += dt * .6;
-      if (done) { scene.remove(fx.group); signals.splice(i, 1); }
+      if (fx.kind === 'burst') {
+        const t = clamp(fx.age / fx.ttl, 0, 1), motion = !reducedMotion && !M.config.reducedMotion;
+        fx.group.scale.setScalar(motion ? .25 + t * 1.25 : 1);
+        fx.group.children.forEach((part, index) => {
+          part.material.opacity = 1 - t;
+          if (motion && index) part.position.y = .1 + Math.sin(t * Math.PI) * 1.5;
+        });
+      }
+      if (done) {
+        scene.remove(fx.group); signals.splice(i, 1);
+        if (fx.kind === 'burst') new Set(fx.group.children.map(part => part.material)).forEach(material => material.dispose());
+      }
     }
     for (let i = mudPools.length - 1; i >= 0; i--) {
       mudPools[i].life -= dt;
@@ -580,6 +595,18 @@
   }
   function tunnelRoofAt(x, z, fallback) {
     return world.terrainHeight ? world.terrainHeight(x, z) : surfaceAt(x, z, fallback);
+  }
+  function burrowHeightAt(x, z, fallback) {
+    let y = Math.floor((tunnelRoofAt(x, z, fallback) - 4) / SIZE) * SIZE;
+    // Graded paving can sit below the original terrain roof. Dig beneath its
+    // lowest overlapping foundation, including when straddling a block seam.
+    for (let bx = Math.floor((x - .42) / SIZE); bx <= Math.floor((x + .42) / SIZE); bx++) {
+      for (let bz = Math.floor((z - .42) / SIZE); bz <= Math.floor((z + .42) / SIZE); bz++) {
+        const road = M.hellGates.roadHeightAt(bx, bz);
+        if (road) y = Math.min(y, Math.floor((road - SIZE - TYPES.worm.height - .01) / SIZE) * SIZE);
+      }
+    }
+    return y;
   }
   function emergenceExit(enemy) {
     const from = enemy.shaft, height = enemy.emergence.y;
@@ -608,6 +635,9 @@
       if (distance < EMERGENCE_BAND_INNER || distance > EMERGENCE_RADIUS ||
           world.isProtectedArea && world.isProtectedArea(node.bx, node.bz) ||
           world.waterDepthAt(node.x, node.z) >= .9) continue;
+      const roof = Math.floor(surfaceAt(node.x, node.z, node.y) / SIZE) - 1;
+      if (node.road || world.blockInfoAt(node.bx, roof, node.bz)?.unbreakable ||
+          world.blockInfoAt(node.bx, Math.floor(node.y / SIZE) - 1, node.bz)?.unbreakable) continue;
       if (avoid && Math.hypot(node.x - avoid.x, node.z - avoid.z) < 12) continue;
       const value = angleDistance(angleTo(node), heading) * 20 + Math.abs(distance - EMERGENCE_BAND_FAVOR);
       if (value < score) { best = node; score = value; }
@@ -665,7 +695,7 @@
       if (p.y > floor + .01) physics.moveVertical(world, p, enemy.body, next);
       if (p.y <= floor + .02 || next <= floor) {
         p.y = floor; enemy.landingY = floor; enemy.airborne = false; enemy.grounded = true;
-        enemy.recoverTime = .9; enemy.mode = 'recover'; enemy.target = null; enemy.progressAt = elapsed;
+        enemy.recoverTime = .9; enemy.mode = 'recover'; enemy.target = null;
         signal('land', p, 1.15, .45); sound('parachute', 'land', p);
       }
       return true;
@@ -680,7 +710,7 @@
       if (distance > .15) {
         const step = Math.min(distance, 2.1 * enemy.speedScale * dt);
         const next = new THREE.Vector3(p.x + dx / distance * step, 0, p.z + dz / distance * step);
-        next.y = Math.floor((tunnelRoofAt(next.x, next.z, enemy.surfaceY) - 4) / SIZE) * SIZE;
+        next.y = burrowHeightAt(next.x, next.z, enemy.surfaceY);
         if (excavate(next, enemy.body.height, enemy)) { p.copy(next); enemy.moving = true; enemy.phase += dt * 7; }
         enemy.yaw = Math.atan2(dx, dz);
       } else { enemy.mode = 'emerge'; enemy.emergeTime = 0; enemy.shaft = p.clone(); sound('worm', 'warn', goal); }
@@ -717,7 +747,7 @@
         p.y = goal.y - 4 + 4 * lift + Math.sin(shift * Math.PI) * .6;
         if (k >= 1) {
           p.y = goal.y; enemy.mode = 'walk'; enemy.grounded = true; enemy.target = null;
-          enemy.recoverTime = .7; enemy.progressAt = elapsed; settleShaft(enemy); sound('worm', 'emerge', p);
+          enemy.recoverTime = .7; settleShaft(enemy); sound('worm', 'emerge', p);
         }
       }
     }
@@ -744,7 +774,7 @@
         enemy.yaw = Math.atan2(tower.position.x - p.x, tower.position.z - p.z);
         if (enemy.charge >= 1.25) {
           tower.snareTime = 3; tower.snareOwner = enemy; enemy.snareTarget = null;
-          enemy.abilityTimer = 7; enemy.casts++; enemy.progressAt = elapsed;
+          enemy.abilityTimer = 7; enemy.casts++;
           signal('root', tower.position, 1.2, 3, enemy); sound('binder', 'cast', p);
         }
         return true;
@@ -795,12 +825,6 @@
   }
   function angleTo(node) { return Math.atan2(node.x - tree.position.x, node.z - tree.position.z); }
   function angleDistance(a, b) { return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))); }
-  function ringNodes() {
-    return navigation.nodes.filter(function (node) {
-      const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
-      return d >= plan.minRadius && d <= plan.maxRadius && world.waterDepthAt(node.x, node.z) < 0.9;
-    });
-  }
   function chooseSpawnLanes(pool, level) {
     const lanes = [];
     for (let i = 0; i < plan.lanes && pool.length; i++) {
@@ -821,9 +845,6 @@
   }
   function prepareSpawns(level) {
     plan = wavePlan(level);
-    // Burrowers retain their original ring and approach selection.
-    const candidates = ringNodes(), reachable = candidates.filter(node => Number.isFinite(node.distance));
-    burrowLanes = chooseSpawnLanes(reachable.length ? reachable : candidates, level);
     spawnLanes = chooseSpawnLanes(M.hellGates.gates, level);
   }
   function beginWave(level) {
@@ -857,7 +878,7 @@
   function spawnAt(node, type, options) {
     if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || !node) return null;
     type = TYPES[type] ? type : 'zombie';
-    const def = TYPES[type], start = navigation.nodeAt(node.x, node.y, node.z);
+    const def = TYPES[type];
     // Difficulty is locked in at spawn so each enemy keeps its wave's stats.
     // A Boss multiplies the regular enemy health by twenty, so the 7th-wave
     // warboss is exactly twenty times as durable as a same-wave zombie.
@@ -870,14 +891,13 @@
       jump: null, vy: 0, grounded: true, retry: 0, stuck: 0, stride: 0, eatBlend: 0,
       voiceTimer: 1 + (nextId * 1.71) % 5, chewTimer: 0,
       abilityTimer: 4, charge: 0, casts: 0, prismPhase: 'march', prismTimer: 6, recoverTime: 0,
-      progressAt: elapsed, progressRevision: navigation.revision, progressPath: null,
-      bestTreeDistance: Math.hypot(node.x - tree.position.x, node.z - tree.position.z),
-      bestRouteDistance: start && Number.isFinite(start.distance) ? start.distance * SIZE + Math.hypot(node.x - start.x, node.z - start.z) : Infinity };
+      progressAt: elapsed,
+      bestTreeDistance: Math.hypot(node.x - tree.position.x, node.z - tree.position.z) };
     zombies.push(zombie);
     if (type === 'worm' && !(options && options.surface)) {
       zombie.spoil = [];
       zombie.surfaceY = tunnelRoofAt(node.x, node.z, node.y); zombie.emergence = emergencePoint(zombie);
-      zombie.burrowed = true; zombie.mode = 'burrow'; zombie.position.y = Math.floor((zombie.surfaceY - 4) / SIZE) * SIZE;
+      zombie.burrowed = true; zombie.mode = 'burrow'; zombie.position.y = burrowHeightAt(node.x, node.z, zombie.surfaceY);
       signal('burrow', new THREE.Vector3(node.x, zombie.surfaceY, node.z), .9, 40, zombie);
       sound('worm', 'dig', new THREE.Vector3(node.x, zombie.surfaceY, node.z));
     }
@@ -899,49 +919,27 @@
       const reachable = targets.filter(node => Number.isFinite(node.distance)), pool = reachable.length ? reachable : targets;
       return pool.length ? !!spawnAt(pool[Math.floor(Math.random() * pool.length)], type, { airborne: true }) : false;
     }
-    if (type !== 'worm') {
-      const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
-      if (!lane) return false;
-      const gate = lane.gate, node = navigation.nodeAt(gate.x, gate.y, gate.z);
-      if (!node || world.waterDepthAt(node.x, node.z) >= .9 || zombies.some(enemy => enemy.position.distanceToSquared(node) < .81)) return false;
-      const path = Number.isFinite(node.distance) ? null : navigation.breach(node);
-      if (path && !path.length) return false;
-      const enemy = spawnAt(node, type);
-      if (!enemy) return false;
-      enemy.gateId = gate.id;
-      if (path) enemy.path = path;
-      return true;
+    const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
+    if (!lane) return false;
+    const gate = lane.gate;
+    if (type === 'worm') {
+      // Burrowers share the announced gate, but appear beneath its immutable
+      // plinth. Surface walls cannot block delivery into the covered tunnel.
+      const y = burrowHeightAt(gate.x, gate.z, gate.y);
+      if (zombies.some(e => Math.hypot(e.position.x - gate.x, e.position.y - y, e.position.z - gate.z) < .9)) return false;
+      const enemy = spawnAt(gate, type);
+      if (enemy) enemy.gateId = gate.id;
+      return !!enemy;
     }
-    const candidates = ringNodes().filter(function (node) {
-      if (type === 'worm' && M.goat && M.goat.group &&
-          Math.hypot(node.x - M.goat.group.position.x, node.z - M.goat.group.position.z) < 16) return false;
-      return !zombies.some(function (z) { return z.position.distanceToSquared(node) < 2.25; });
-    });
-    if (!candidates.length) return false;
-    // Canopies can be isolated high above the ground. Prefer proven routes so
-    // a last enemy on a treetop cannot lock a clear-to-advance wave forever.
-    const reachable = candidates.filter(function (node) { return Number.isFinite(node.distance); });
-    const pool = reachable.length ? reachable : candidates;
-    const lane = burrowLanes[Math.floor(waveSpawned / plan.squadSize) % burrowLanes.length];
-    const heading = lane ? lane.angle : (wave - 1) * 2.3999632297;
-    let closest = Math.PI;
-    pool.forEach(function (node) { closest = Math.min(closest, angleDistance(angleTo(node), heading)); });
-    const local = pool.filter(function (node) { return angleDistance(angleTo(node), heading) <= closest + 0.16; });
-    // Favor comparable route lengths so squad members reach the battle together.
-    if (reachable.length) {
-      const shortest = Math.min.apply(null, local.map(function (node) { return node.distance; }));
-      const group = local.filter(function (node) { return node.distance <= shortest + 4; });
-      return !!spawnAt(group[Math.floor(Math.random() * group.length)], typeForWave(wave, waveSpawned));
-    }
-    // A sealed defense must still receive enemies that can chew a real breach.
-    for (let attempt = 0; local.length && attempt < 6; attempt++) {
-      const index = Math.floor(Math.random() * local.length), node = local.splice(index, 1)[0];
-      const path = navigation.breach(node);
-      if (!path.length) continue;
-      const enemy = spawnAt(node, typeForWave(wave, waveSpawned));
-      if (enemy) { enemy.path = path; return true; }
-    }
-    return false;
+    const node = navigation.nodeAt(gate.x, gate.y, gate.z);
+    if (!node || world.waterDepthAt(node.x, node.z) >= .9 || zombies.some(enemy => enemy.position.distanceToSquared(node) < .81)) return false;
+    const path = Number.isFinite(node.distance) ? null : navigation.breach(node);
+    if (path && !path.length) return false;
+    const enemy = spawnAt(node, type);
+    if (!enemy) return false;
+    enemy.gateId = gate.id;
+    if (path) enemy.path = path;
+    return true;
   }
   function lineClear(a, b) {
     const distance = Math.hypot(b.x - a.x, b.z - a.z);
@@ -1045,31 +1043,32 @@
     zombies.splice(index, 1);
     if (M.towers) M.towers.list.forEach(tower => { if (tower.snareOwner === enemy) { tower.snareOwner = null; tower.snareTime = 0; } });
     if (M.items && M.items.dropCoins) M.items.dropCoins(enemy.position, TYPES[enemy.type].reward);
-    if (exploded && M.audio && M.audio.enemyBurst) M.audio.enemyBurst(enemy.position);
+    if (exploded) {
+      const center = enemy.position.clone(); center.y += enemy.body.height * .5;
+      const r = WATCHDOG_BLAST_RADIUS;
+      // Use the world's normal destruction path: permanent paving, portals
+      // and the Hearth foundation retain the same protection as when mined.
+      for (let bx = Math.floor((center.x - r) / SIZE); bx <= Math.floor((center.x + r) / SIZE); bx++) {
+        for (let bz = Math.floor((center.z - r) / SIZE); bz <= Math.floor((center.z + r) / SIZE); bz++) {
+          for (let by = Math.max(0, Math.floor((center.y - r) / SIZE)); by <= Math.floor((center.y + r) / SIZE); by++) {
+            if (Math.hypot(bx * SIZE + 1 - center.x, by * SIZE + 1 - center.y, bz * SIZE + 1 - center.z) > r) continue;
+            const info = world.blockInfoAt(bx, by, bz);
+            if (info && !info.unbreakable) world.breakBlockAt(bx, by, bz, { persistentDrop: true });
+          }
+        }
+      }
+      signal('burst', enemy.position, r, .6);
+      if (M.audio && M.audio.enemyBurst) M.audio.enemyBurst(enemy.position);
+    }
   }
   function watchdog(enemy) {
     const p = enemy.position;
     const direct = Math.hypot(p.x - tree.position.x, p.z - tree.position.z);
-    const node = navigation.nodeAt(p.x, p.y, p.z);
-    let route = node && Number.isFinite(node.distance) ? node.distance * SIZE + Math.hypot(p.x - node.x, p.z - node.z) : Infinity;
-    const path = enemy.path && enemy.path.length ? enemy.path : null;
-    if (path) {
-      const first = path[0];
-      route = Math.min(route, path.length * SIZE + Math.hypot(p.x - first.x, p.z - first.z));
-    }
-    if (enemy.progressRevision !== navigation.revision || enemy.progressPath !== path) {
-      // New construction can force a longer route. Rebase its distance, but
-      // leave the deadline alone until the enemy actually advances.
-      enemy.bestRouteDistance = route;
-      enemy.progressRevision = navigation.revision;
-      enemy.progressPath = path;
-    }
-    // Measure real advance, not animation, tiny jitter, taking damage or replans.
-    // Route distance also recognizes a valid detour away from the tree.
-    if (direct < enemy.bestTreeDistance - 0.5 || route < enemy.bestRouteDistance - 0.5) {
+    // Only a new closest approach counts. Circling, chewing, casting, tree
+    // bites and navigation rebuilds cannot keep a stranded enemy alive.
+    if (direct < enemy.bestTreeDistance - 0.5) {
       enemy.progressAt = elapsed;
-      enemy.bestTreeDistance = Math.min(enemy.bestTreeDistance, direct);
-      enemy.bestRouteDistance = Math.min(enemy.bestRouteDistance, route);
+      enemy.bestTreeDistance = direct;
     }
     return elapsed - enemy.progressAt + 0.000001 >= WATCHDOG_SECONDS;
   }
@@ -1104,7 +1103,7 @@
     zombie.yaw = turnToward(zombie.yaw, Math.atan2(target.x - p.x, target.z - p.z), dt * 5);
     zombie.blockBite += dt;
     if (zombie.blockBite + 0.000001 >= TYPES[zombie.type].chew) {
-      if (world.breakBlockAt(block.bx, block.by, block.bz, { persistentDrop: true })) zombie.progressAt = elapsed;
+      world.breakBlockAt(block.bx, block.by, block.bz, { persistentDrop: true });
       zombie.blockBite = 0; zombie.path = null; zombie.target = null;
     }
     return true;
@@ -1194,7 +1193,7 @@
         zombie.yaw = turnToward(zombie.yaw, Math.atan2(tree.position.x - zombie.position.x, tree.position.z - zombie.position.z), dt * 5);
         zombie.bite += dt;
         while (zombie.bite + 0.000001 >= TYPES[zombie.type].bite && tree.health > 0) {
-          tree.damage(TYPES[zombie.type].damage); zombie.progressAt = elapsed; zombie.bite = Math.max(0, zombie.bite - TYPES[zombie.type].bite);
+          tree.damage(TYPES[zombie.type].damage); zombie.bite = Math.max(0, zombie.bite - TYPES[zombie.type].bite);
         }
         return;
       }
@@ -1250,7 +1249,7 @@
     scene = options.scene; world = options.world; tree = options.tree;
     // The shared field must clear the widest species as well as the walkers.
     M.hellGates.init(scene, world, tree);
-    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.gates });
+    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.gates, roads: M.hellGates.roads });
     navigation.rebuild();
     prepareSpawns(1);
     mesh = new THREE.InstancedMesh(beveledVoxelGeometry(), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * maxParts);

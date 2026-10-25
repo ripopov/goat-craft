@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { game, isolatedAnimal } from './helpers/animal-game.mjs';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import { isolatedAnimal } from './helpers/animal-game.mjs';
 
 function clearBody(M, animal) {
   const p = animal.group.position;
@@ -8,7 +10,9 @@ function clearBody(M, animal) {
 }
 
 test('progress monitor ignores idle animals and escalates only sustained blockage', () => {
-  const { M } = game();
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(readFileSync(new URL('../js/animal-recovery.js', import.meta.url), 'utf8'), context);
+  const M = context.window.Meadow;
   const monitor = M.animalRecovery.create();
   const position = { x: 1, y: 14, z: 1 };
   for (let i = 0; i < 100; i++) M.animalRecovery.update(monitor, position, 'idle', false, .05);
@@ -51,18 +55,19 @@ test('a walker digs through a tall solid wall and continues past it', () => {
 
 test('a trapped builder digs and places steps to climb out of a deep pit', () => {
   const { M, animal, advanceUntil, walkTo } = isolatedAnimal('Clover');
-  for (const [bx, bz] of [[9, 0], [9, 1], [10, 0], [10, 1]]) {
-    M.world.breakBlockAt(bx, 6, bz, { drop: false });
-    M.world.breakBlockAt(bx, 5, bz, { drop: false });
+  // Dig beside the permanent road, which deliberately cannot become a pit.
+  for (const [bx, bz] of [[9, -6], [9, -5], [10, -6], [10, -5]]) {
+    assert.ok(M.world.breakBlockAt(bx, 6, bz, { drop: false }));
+    assert.ok(M.world.breakBlockAt(bx, 5, bz, { drop: false }));
   }
-  animal.group.position.set(19, 10, 1);
+  animal.group.position.set(19, 10, -11);
   animal.state.carryCount = 0;
   animal.state.carry = null;
-  walkTo(27, 1);
+  walkTo(27, -11);
   const escaped = advanceUntil(35, () => animal.group.position.y >= 13.9);
   assert.ok(escaped, JSON.stringify({ p: animal.group.position, recovery: animal.state.recovery, escape: animal.state.escape }));
   let placedStep = false;
-  for (let bx = 9; bx <= 12; bx++) for (let bz = -1; bz <= 2; bz++) for (let by = 5; by <= 7; by++) {
+  for (let bx = 9; bx <= 12; bx++) for (let bz = -7; bz <= -4; bz++) for (let by = 5; by <= 7; by++) {
     if (M.world.blockInfoAt(bx, by, bz)?.type === 'placed') placedStep = true;
   }
   assert.ok(placedStep, 'recovered material was placed as an escape step');

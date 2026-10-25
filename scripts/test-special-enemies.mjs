@@ -118,16 +118,31 @@ test('digging a shaft reveals a rendered Worm and lets the real player controlle
   assert.ok(M.items.drops.some(drop => drop.userData.drop.kind === 'coin' && drop.position.y < 12), 'loot stays in the accessible tunnel');
 });
 
-test('wave-ten Worms spawn on the outer ring and keep an interception gap from the player', () => {
+test('wave-ten Worms spawn beneath their gate, tunnel inward and surface in the unchanged emergence band', () => {
   const { M } = defense();
+  M.hearthTree.damage = () => {};
   M.enemies.startWave(10);
   const lane = M.enemies.getState().spawnLanes[1];
   M.goat.group.position.set(lane.x, 14, lane.z);
   let worm;
-  for (let i = 0; i < 1200 && !worm; i++) { M.enemies.update(1 / 60); worm = M.enemies.zombies.find(e => e.type === 'worm'); }
+  for (let i = 0; i < 400 && !worm; i++) { M.enemies.update(.05); worm = M.enemies.zombies.find(e => e.type === 'worm'); }
   assert.ok(worm);
-  assert.ok(Math.hypot(worm.position.x, worm.position.z) >= M.enemies.wavePlan(10).minRadius - .1);
-  assert.ok(Math.hypot(worm.position.x - lane.x, worm.position.z - lane.z) >= 15.9, 'camping a spawn lane cannot put a Worm directly under the player');
+  const gate = M.hellGates.gates.find(g => g.id === worm.gateId);
+  assert.ok(gate);
+  assert.ok(Math.hypot(worm.position.x - gate.x, worm.position.z - gate.z) < .2);
+  assert.ok(worm.position.y + worm.body.height < gate.y - 2, 'the full body is under the permanent gate foundation');
+  assert.equal(worm.burrowed, true);
+  const goalDistance = Math.hypot(worm.emergence.x, worm.emergence.z);
+  assert.ok(goalDistance >= 9.5 && goalDistance <= 18, 'the emergence distance has not moved');
+  for (let i = 0; i < 800 && worm.mode !== 'walk'; i++) M.enemies.update(.05);
+  assert.equal(worm.burrowed, false); assert.equal(worm.mode, 'walk');
+  assert.equal(worm.exploded, undefined);
+  const distance = Math.hypot(worm.position.x, worm.position.z);
+  assert.ok(distance >= 9.5 && distance <= 18);
+  step(M, 3);
+  assert.ok(Math.hypot(worm.position.x, worm.position.z) < distance, 'the surfaced Worm crawls toward the Hearth');
+  for (const c of [...M.hellGates.cells, ...M.hellGates.roadCells])
+    assert.equal(M.world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
 });
 
 test('Briar Binder charges before a temporary single-tower snare, and killing it clears the snare', () => {

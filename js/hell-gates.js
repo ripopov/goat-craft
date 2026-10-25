@@ -1,10 +1,87 @@
 (function (M) {
   'use strict';
 
-  const gates = [], cells = [], clearance = [], cleared = new Set(), reserved = new Set();
+  const gates = [], cells = [], roads = [], roadCells = [], roadColumns = new Map();
+  const clearance = [], cleared = new Set(), reserved = new Set();
   const time = { value: 0 }, reducedMotion = M.config.reducedMotion;
   function key(bx, by, bz) { return bx + ',' + by + ',' + bz; }
   function isReserved(bx, by, bz) { return reserved.has(key(bx, by, bz)); }
+
+  function buildRoads(world, tree) {
+    // The lightweight navigation fixtures have no terrain to pave.
+    if (!world.addPermanentBlocks || !world.surfaceHeight) return;
+    const columns = new Map(), gateBlocks = new Set(cells.map(c => key(c.bx, c.by, c.bz)));
+    const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    function column(bx, bz) {
+      const id = bx + ',' + bz;
+      if (!columns.has(id)) {
+        const x = bx * 2 + 1, z = bz * 2 + 1;
+        const water = world.waterLevelAt(x, z);
+        columns.set(id, { bx, bz, top: Math.max(1, Math.ceil(Math.max(world.surfaceHeight(x, z), water ? water + .15 : 0) / 2)) });
+      }
+      return columns.get(id);
+    }
+    gates.forEach(gate => {
+      const dx = tree.position.x - gate.x, dz = tree.position.z - gate.z, length = Math.hypot(dx, dz);
+      const endX = tree.position.x - dx / length * 8, endZ = tree.position.z - dz / length * 8;
+      const path = [], seen = new Set();
+      let bx = gate.bx, bz = gate.bz;
+      function append() {
+        const id = bx + ',' + bz;
+        if (seen.has(id)) return;
+        seen.add(id); path.push(column(bx, bz));
+        // A six-unit lane gives even the largest enemy room at the bends.
+        for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) column(bx + x, bz + z);
+      }
+      append();
+      for (let i = 1; i <= Math.ceil(length * 2); i++) {
+        const t = i / Math.ceil(length * 2);
+        const bend = Math.sin(t * Math.PI * 2) * Math.sin(t * Math.PI) * 12;
+        const x = gate.x + (endX - gate.x) * t - dz / length * bend;
+        const z = gate.z + (endZ - gate.z) * t + dx / length * bend;
+        const tx = Math.floor(x / 2), tz = Math.floor(z / 2);
+        while (bx !== tx || bz !== tz) {
+          if (bx !== tx && (bz === tz || Math.abs(tx - bx) >= Math.abs(tz - bz))) bx += Math.sign(tx - bx);
+          else bz += Math.sign(tz - bz);
+          append();
+        }
+      }
+      roads.push({ gateId: gate.id, path });
+    });
+    // Grade adjacent paving by at most one voxel. Cut high ground rather than
+    // leaving a cliff; the endpoint anchors keep portal thresholds unchanged.
+    const queue = Array.from(columns.values());
+    for (let i = 0; i < queue.length; i++) {
+      const a = queue[i];
+      directions.forEach(d => {
+        const b = columns.get((a.bx + d[0]) + ',' + (a.bz + d[1]));
+        if (b && b.top > a.top + 1) { b.top = a.top + 1; queue.push(b); }
+      });
+    }
+    const anchors = [];
+    gates.forEach(gate => {
+      for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
+        const c = columns.get((gate.bx + x) + ',' + (gate.bz + z));
+        if (c) { c.top = gate.by; anchors.push(c); }
+      }
+    });
+    for (let i = 0; i < anchors.length; i++) {
+      const a = anchors[i];
+      directions.forEach(d => {
+        const b = columns.get((a.bx + d[0]) + ',' + (a.bz + d[1]));
+        if (b && b.top < a.top - 1) { b.top = a.top - 1; anchors.push(b); }
+      });
+    }
+    columns.forEach(c => {
+      const cell = { bx: c.bx, by: c.top - 1, bz: c.bz, kind: 'roadstone' };
+      // The Hearth's roots and the portal plinth retain ownership of their cells.
+      if (gateBlocks.has(key(cell.bx, cell.by, cell.bz)) || tree.intersectsBlock(cell.bx, cell.by, cell.bz)) return;
+      roadColumns.set(c.bx + ',' + c.bz, c.top * 2);
+      roadCells.push(cell);
+      const roof = Math.max(c.top + 3, Math.ceil(world.surfaceHeight(c.bx * 2 + 1, c.bz * 2 + 1) / 2) + 3);
+      for (let by = c.top - 1; by <= roof; by++) clearance.push({ bx: c.bx, by, bz: c.bz, excavate: by >= c.top });
+    });
+  }
 
   function init(scene, world, tree) {
     if (gates.length) return;
@@ -64,8 +141,23 @@
         reserved.add(key(gate.bx + u * tx, gate.by + y, gate.bz + u * tz));
       }
     }
+    buildRoads(world, tree);
     clearance.forEach(cell => cleared.add(key(cell.bx, cell.by, cell.bz)));
-    if (world.addPermanentBlocks) world.addPermanentBlocks(cells, 'hellstone', clearance);
+    if (world.addPermanentBlocks) world.addPermanentBlocks(cells.concat(roadCells), 'hellstone', clearance);
+
+    // One static batch, with warm worn paving distinct from the dark gates.
+    if (roadCells.length) {
+      const paving = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), M.std(0xffffff, .96), roadCells.length);
+      const transform = new THREE.Matrix4();
+      paving.name = 'Unbreakable winding gate roads'; paving.frustumCulled = false;
+      paving.castShadow = paving.receiveShadow = true;
+      roadCells.forEach((c, i) => {
+        transform.makeTranslation(c.bx * 2 + 1, c.by * 2 + 1, c.bz * 2 + 1); paving.setMatrixAt(i, transform);
+        const shade = Math.abs(c.bx * 17 + c.bz * 31) % 5;
+        paving.setColorAt(i, new THREE.Color([0x8d8175, 0x9e9281, 0x746d68, 0xa29583, 0x847b71][shade]));
+      });
+      scene.add(paving);
+    }
 
     const geometry = new THREE.BoxGeometry(2, 2, 2), matrix = new THREE.Matrix4();
     const frame = new THREE.InstancedMesh(geometry, M.std(0xffffff, .88), cells.length);
@@ -116,7 +208,9 @@
     });
     scene.add(seams);
   }
-  M.hellGates = { init: init, gates: gates, cells: cells, isReserved: isReserved,
+  M.hellGates = { init: init, gates: gates, cells: cells, roads: roads, roadCells: roadCells, isReserved: isReserved,
+    isRoad: function (bx, bz, y) { return roadColumns.get(bx + ',' + bz) === y; },
+    roadHeightAt: function (bx, bz) { return roadColumns.get(bx + ',' + bz) || 0; },
     isCleared: function (bx, by, bz) { return cleared.has(key(bx, by, bz)); },
     update: function (elapsed) { time.value = reducedMotion ? 0 : elapsed; } };
 })(window.Meadow = window.Meadow || {});

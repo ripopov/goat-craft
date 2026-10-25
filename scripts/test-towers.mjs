@@ -125,8 +125,10 @@ test('cannons auto-target within range, obey walls and award normal physical coi
 });
 
 test('frost slows actual walking, poison and fire linger, and splash / chain / beam hit groups', () => {
+  // These independent shots share the same arena. Pack each source, remove
+  // its targets and drain effects rather than generating eight full forests.
+  const { M, THREE } = defense();
   for (const id of ['frost', 'venom', 'ember', 'mortar', 'storm', 'sun', 'earth', 'arcane']) {
-    const { M, THREE } = defense();
     const tower = M.towers.place(id, 8, 7, 8); assert.ok(tower);
     const a = M.enemies.spawnAt(new THREE.Vector3(17, 14, 23), 'brute');
     const b = M.enemies.spawnAt(new THREE.Vector3(id === 'sun' ? 17 : 19, 14, 24), 'brute');
@@ -142,6 +144,9 @@ test('frost slows actual walking, poison and fire linger, and splash / chain / b
       const hp = a.hp; M.towers.dismantle(tower); step(M, 1);
       assert.ok(a.hp < hp, id + ' effect survives packing source');
     }
+    if (M.towers.list.includes(tower)) assert.ok(M.towers.dismantle(tower));
+    M.enemies.zombies.slice().forEach(enemy => M.enemies.damageEnemy(enemy, 1000));
+    step(M, 6);
   }
 });
 

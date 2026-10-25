@@ -4,11 +4,12 @@ import { game } from './helpers/animal-game.mjs';
 
 test('stone is guaranteed beneath two soil layers, and mining returns the actual rock', () => {
   const { M } = game(), w = M.world;
-  assert.equal(w.breakBlockAt(8, 6, 0, { drop: false }), 'grass');
-  assert.equal(w.breakBlockAt(8, 5, 0, { drop: false }), 'dirt');
-  assert.equal(w.blockInfoAt(8, 4, 0).kind, 'stone');
-  assert.equal(w.breakBlockAt(8, 4, 0, { drop: false }), 'stone');
-  assert.equal(w.blockInfoAt(8, 4, 0), null);
+  // Quarry ordinary meadow soil beside the permanent eastern road.
+  assert.equal(w.breakBlockAt(8, 6, 6, { drop: false }), 'grass');
+  assert.equal(w.breakBlockAt(8, 5, 6, { drop: false }), 'dirt');
+  assert.equal(w.blockInfoAt(8, 4, 6).kind, 'stone');
+  assert.equal(w.breakBlockAt(8, 4, 6, { drop: false }), 'stone');
+  assert.equal(w.blockInfoAt(8, 4, 6), null);
 });
 
 test('starter entrance has descending walkable floors and connects to a roofed mineral chamber', () => {

@@ -4,7 +4,7 @@ import { game } from './helpers/animal-game.mjs';
 
 test('four permanent forest gates have dry ground routes, collision and protected openings', () => {
   const { M, THREE, scene } = game({ renderRadius: 3 });
-  const { gates, cells } = M.hellGates, world = M.world, nav = M.enemies.navigation;
+  const { gates, cells, roads, roadCells } = M.hellGates, world = M.world, nav = M.enemies.navigation;
   assert.equal(gates.length, 4);
   assert.equal(new Set(gates.map(g => g.x + ',' + g.z)).size, 4);
   const distances = gates.map(g => Math.hypot(g.x, g.z));
@@ -16,7 +16,27 @@ test('four permanent forest gates have dry ground routes, collision and protecte
     assert.equal(world.canPlaceBlock(gate.bx, gate.by, gate.bz), false);
     assert.equal(world.navigationBlockedAt(gate.x, gate.z, gate.y + .01, gate.y + 2.8), false);
   }
-  for (const cell of cells) {
+  assert.equal(roads.length, 4);
+  for (const road of roads) {
+    const gate = gates.find(g => g.id === road.gateId), path = road.path;
+    assert.equal(path[0].bx, gate.bx); assert.equal(path[0].bz, gate.bz);
+    assert.ok(Math.hypot(path.at(-1).bx * 2 + 1, path.at(-1).bz * 2 + 1) < 10);
+    const dx = path.at(-1).bx - gate.bx, dz = path.at(-1).bz - gate.bz;
+    assert.ok(path.some(c => Math.abs((c.bx - gate.bx) * dz - (c.bz - gate.bz) * dx) / Math.hypot(dx, dz) > 3), 'visible bends on every road');
+    for (let i = 0; i < path.length; i++) {
+      const c = path[i], point = { x: c.bx * 2 + 1, y: c.top * 2, z: c.bz * 2 + 1 };
+      assert.ok(Number.isFinite(nav.nodeAt(point.x, point.y, point.z)?.distance), 'every road tile reaches the Hearth');
+      if (i) {
+        const p = path[i - 1];
+        assert.equal(Math.abs(c.bx - p.bx) + Math.abs(c.bz - p.bz), 1);
+        assert.ok(nav.canWalk({ x: p.bx * 2 + 1, y: p.top * 2, z: p.bz * 2 + 1 }, point), 'walkable grade and headroom');
+      }
+    }
+    let node = nav.nodeAt(gate.x, gate.y, gate.z), paved = 0, steps = 0;
+    while (node.next) { paved += Number(node.road); steps++; node = node.next; assert.ok(steps < 150); }
+    assert.ok(node.goal); assert.ok(paved / steps > .8, 'enemies favor the winding road');
+  }
+  for (const cell of [...cells, ...roadCells]) {
     assert.equal(world.blockInfoAt(cell.bx, cell.by, cell.bz).unbreakable, true);
     assert.equal(world.breakBlockAt(cell.bx, cell.by, cell.bz, { towerInternal: true, drop: false }), null);
     assert.equal(world.canPlaceBlock(cell.bx, cell.by, cell.bz), false);
@@ -25,7 +45,7 @@ test('four permanent forest gates have dry ground routes, collision and protecte
   // Terrain must never draw a face already owned by an overlapping plinth.
   const gateFaces = new Set();
   const directions = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-  for (const cell of cells) for (const n of directions) gateFaces.add(
+  for (const cell of [...cells, ...roadCells]) for (const n of directions) gateFaces.add(
     [cell.bx * 2 + 1 + n[0], cell.by * 2 + 1 + n[1], cell.bz * 2 + 1 + n[2], ...n].join(','));
   const terrainGroup = scene.children.find(object => object.isGroup && object !== M.hearthTree.group);
   for (const chunk of terrainGroup.children) {
@@ -39,12 +59,48 @@ test('four permanent forest gates have dry ground routes, collision and protecte
       assert.equal(gateFaces.has(face), false, 'no coplanar soil/gate face: ' + face);
     }
   }
+  // Walls may occupy the lane even though its paving cannot be mined.
+  const tile = roadCells.find(c => Math.hypot(c.bx * 2 + 1, c.bz * 2 + 1) > 20 &&
+    world.canPlaceBlock(c.bx, c.by + 1, c.bz) && world.canPlaceBlock(c.bx, c.by + 2, c.bz));
+  assert.ok(tile);
+  assert.equal(world.placeBlock('stone', tile.bx, tile.by + 1, tile.bz), true);
+  assert.equal(world.placeBlock('stone', tile.bx, tile.by + 2, tile.bz), true);
+  assert.ok(world.navigationBlockedAt(tile.bx * 2 + 1, tile.bz * 2 + 1, tile.by * 2 + 2.01, tile.by * 2 + 4.8));
+  world.breakBlockAt(tile.bx, tile.by + 1, tile.bz, { drop: false });
+  world.breakBlockAt(tile.bx, tile.by + 2, tile.bz, { drop: false });
+
+  // Exercise real blast destruction beside a portal and again at the tree.
+  M.actorPhysics.moveHorizontal = () => false;
+  const health = M.hearthTree.health, treeGeometry = M.hearthTree.group.children.map(c => c.geometry);
+  const gate = gates[0], inward = Math.sign(-gate.z);
+  const wall = { bx: gate.bx, by: gate.by, bz: gate.bz + inward };
+  assert.equal(world.placeBlock('stone', wall.bx, wall.by, wall.bz), true);
+  const enemy = M.enemies.spawnAt({ x: gate.x, y: gate.y, z: gate.z });
+  enemy.progressAt = -30; M.enemies.update(.05);
+  assert.equal(enemy.exploded, true);
+  assert.equal(world.blockInfoAt(wall.bx, wall.by, wall.bz), null, 'blast destroys a player wall');
+  assert.ok(scene.getObjectByName('Enemy burst signal'));
+  const nearTree = roads[0].path.at(-1);
+  const attacker = M.enemies.spawnAt({ x: nearTree.bx * 2 + 1, y: nearTree.top * 2, z: nearTree.bz * 2 + 1 });
+  attacker.progressAt = -30; M.enemies.update(.05);
+  assert.equal(attacker.exploded, true);
+  assert.equal(M.hearthTree.health, health, 'blast cannot damage the objective');
+  assert.deepEqual(M.hearthTree.group.children.map(c => c.geometry), treeGeometry);
+  // At this grade the Worm straddles two road columns with different heights.
+  // Its tunnel must clear the lower paving before its center crosses the seam.
+  const worm = M.enemies.spawnAt({ x: -5, y: world.terrainHeight(-5, -50.45), z: -50.45 }, 'worm');
+  for (let i = 0; i < 20; i++) M.enemies.update(.05);
+  assert.ok(worm.position.z > -48.45, 'underground movement passes beneath the road step');
+  assert.equal(worm.burrowed, true); assert.equal(worm.exploded, undefined);
+  assert.equal(scene.getObjectByName('Enemy burst signal'), undefined, 'blast effects expire');
+  assert.equal(scene.getObjectByName('Enemy burrow signal').children[0].material.opacity, .9, 'blast fading cannot fade the shared Worm warning');
+  for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
   world.update(new THREE.Vector3(600, 14, 600), .05, 1);
-  for (const gate of gates) assert.equal(world.blockInfoAt(gate.bx, gate.by - 1, gate.bz).unbreakable, true);
+  for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz).unbreakable, true);
   assert.equal(scene.getObjectByName('Living hell gate portals').count, 4);
 });
 
-test('every surface species arrives inside a gate; parachutes and Worms keep separate delivery', () => {
+test('surface enemies arrive inside gates, Worms below them, and parachutes retain air delivery', () => {
   const { M } = game({ seed: 17 }), enemies = M.enemies;
   M.hearthTree.damage = () => {};
   const seen = new Set(), species = new Set(), usedGates = new Set();
@@ -61,7 +117,11 @@ test('every surface species arrives inside a gate; parachutes and Worms keep sep
             assert.ok(Math.hypot(enemy.position.x, enemy.position.z) >= 18);
             assert.ok(Math.hypot(enemy.position.x, enemy.position.z) <= 26);
           } else if (enemy.type === 'worm') {
-            worm = true; assert.equal(enemy.gateId, undefined); assert.equal(enemy.burrowed, true);
+            worm = true; assert.equal(enemy.burrowed, true);
+            const gate = M.hellGates.gates.find(g => g.id === enemy.gateId);
+            assert.ok(gate);
+            assert.ok(Math.hypot(enemy.position.x - gate.x, enemy.position.z - gate.z) < .3);
+            assert.ok(enemy.position.y + enemy.body.height < gate.y - 2, 'the whole body spawns below the plinth');
           } else {
             const gate = M.hellGates.gates.find(g => g.id === enemy.gateId);
             assert.ok(gate, enemy.type + ' comes from a hell gate');

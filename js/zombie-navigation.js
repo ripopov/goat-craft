@@ -10,6 +10,10 @@
     // Only extend the shared field along broad forest approaches. Sampling a
     // larger square everywhere would multiply startup and rebuild costs.
     const corridors = (options && options.gates || []).map(gate => ({ x: gate.x / size - .5, z: gate.z / size - .5 }));
+    const roadArea = new Set();
+    (options && options.roads || []).forEach(road => road.path.forEach(c => {
+      for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) roadArea.add((c.bx + x) + ',' + (c.bz + z));
+    }));
     const limit = Math.max(radius, ...corridors.map(gate => Math.ceil(Math.max(Math.abs(gate.x - cx), Math.abs(gate.z - cz))) + 4));
     const height = 2.8, bodyRadius = (options && options.bodyRadius) || 0.34;
     const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -19,6 +23,7 @@
     function key(bx, bz) { return bx + ',' + bz; }
     function inside(bx, bz) {
       if (Math.abs(bx - cx) <= radius && Math.abs(bz - cz) <= radius) return true;
+      if (roadArea.has(key(bx, bz))) return true;
       return corridors.some(gate => {
         const dx = gate.x - cx, dz = gate.z - cz, length = dx * dx + dz * dz;
         const t = Math.max(0, Math.min(1, ((bx - cx) * dx + (bz - cz) * dz) / length));
@@ -70,7 +75,7 @@
         if (!clear(x, y, z)) return;
         column.push({ bx: bx, bz: bz, x: x, y: y, z: z, incoming: [], edges: [], next: null, distance: Infinity,
           swim: swimming && y === surface, waterLevel: swimming ? water.level : 0,
-          goal: contact(x, y, z) });
+          road: !!(M.hellGates && M.hellGates.isRoad(bx, bz, y)), goal: contact(x, y, z) });
       });
       return column;
     }
@@ -122,16 +127,23 @@
         }
         nodes.forEach(link);
       }
-      const queue = [];
+      // Integer-cost buckets keep the shared field cheap while favoring the
+      // winding roads. Open forest remains available when walls block paving.
+      const queue = [[]];
       nodes.forEach(function (node) {
         node.next = null; node.distance = node.goal ? 0 : Infinity;
-        if (node.goal) queue.push(node);
+        if (node.goal) queue[0].push(node);
       });
-      for (let i = 0; i < queue.length; i++) {
-        const b = queue[i];
-        b.incoming.forEach(function (a) {
-          if (a.distance !== Infinity) return;
-          a.distance = b.distance + 1; a.next = b; queue.push(a);
+      for (let distance = 0; distance < queue.length; distance++) {
+        (queue[distance] || []).forEach(function (b) {
+          if (b.distance !== distance) return;
+          b.incoming.forEach(function (a) {
+            const cost = distance + (roadArea.size && !a.road ? 3 : 1);
+            if (a.distance <= cost) return;
+            a.distance = cost; a.next = b;
+            if (!queue[cost]) queue[cost] = [];
+            queue[cost].push(a);
+          });
         });
       }
       revision = world.revision;

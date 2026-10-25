@@ -4,11 +4,15 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const root = new URL('../', import.meta.url);
+const scripts = new Map();
 function harness(realWorld = false) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
-  const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
+  const load = file => {
+    if (!scripts.has(file)) scripts.set(file, new vm.Script(readFileSync(new URL(file, root), 'utf8'), { filename: file }));
+    return scripts.get(file).runInContext(context);
+  };
   ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js'].forEach(load);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = 1;
@@ -190,7 +194,6 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
     const plan = M.enemies.wavePlan(wave), difficulty = M.enemies.waveDifficulty(wave);
     assert.ok(plan.size <= M.enemies.maxEnemies && plan.size >= 6);
     assert.ok(plan.squadSize <= 5 && plan.memberInterval >= .3 && plan.squadInterval >= 2.4);
-    assert.ok(plan.minRadius >= 36 && plan.maxRadius <= 52);
     assert.ok(difficulty.hp >= 1 && difficulty.hp < 5 && difficulty.speed >= 1 && difficulty.speed < 3);
     if (wave <= 3) assert.equal(difficulty.hp, 1, 'early zombies remain vulnerable to one stomp');
     if (wave >= 6) assert.equal(plan.lanes, 3);
@@ -206,9 +209,12 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
 test('the actual terrain delivers opening threats promptly without an immediate defeat', () => {
   const { M, scene } = harness(true);
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  let swam = false;
-  for (let i = 0; i < 1400; i++) { M.enemies.update(.05); swam ||= M.enemies.zombies.some(enemy => enemy.swimming); }
-  assert.ok(swam, 'the forest approach crosses the real river by swimming');
+  let usedRoad = false;
+  for (let i = 0; i < 1600; i++) {
+    M.enemies.update(.05);
+    usedRoad ||= M.enemies.zombies.some(e => M.hellGates.isRoad(Math.floor(e.position.x / 2), Math.floor(e.position.z / 2), e.position.y));
+  }
+  assert.ok(usedRoad, 'gate arrivals use the winding paved approaches');
   assert.ok(M.hearthTree.health < 100, 'distant gate arrivals reach the Hearth without defenders');
   assert.ok(M.hearthTree.health >= 70, 'the first wave still leaves time to respond');
   assert.equal(M.enemies.getState().pending, 0);
@@ -530,15 +536,15 @@ test('automatic waves skip isolated canopy surfaces that would stall wave comple
   assert.notEqual(node, stranded);
 });
 
-test('twenty seconds without real progress explodes stalled enemies, drops loot once and frees the cap', () => {
+test('thirty seconds without getting closer explodes every stalled species, drops loot once and frees the cap', () => {
   for (const type of Object.keys(harness().M.enemies.types)) {
     const { M, scene, world, tree, coinDrops } = fixture();
     const blasts = []; M.audio = { enemyBurst: point => blasts.push(point.clone()) };
     M.enemies.init({ scene, world, tree });
     const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type, { surface: true });
     M.actorPhysics.moveHorizontal = () => false;
-    advance(M, 19.95); assert.ok(M.enemies.zombies.includes(enemy), type + ' survives until the full deadline');
-    advance(M, .05); assert.equal(M.enemies.zombies.includes(enemy), false, type + ' explodes at 20 seconds');
+    advance(M, 29.95); assert.ok(M.enemies.zombies.includes(enemy), type + ' survives until the full deadline');
+    advance(M, .05); assert.equal(M.enemies.zombies.includes(enemy), false, type + ' explodes at 30 seconds');
     assert.equal(enemy.hp, 0); assert.equal(enemy.exploded, true);
     assert.equal(blasts.length, 1); assert.equal(coinDrops.length, 1);
     assert.equal(coinDrops[0].count, M.enemies.types[type].reward);
@@ -562,12 +568,12 @@ test('watchdog ignores jitter and replans, but resets after meaningful movement'
   assert.ok(M.enemies.zombies.includes(enemy));
   enemy.position.x = 13; M.enemies.update(.05);
   const progressAt = enemy.progressAt;
-  advance(M, 19.9); assert.ok(M.enemies.zombies.includes(enemy));
+  advance(M, 29.9); assert.ok(M.enemies.zombies.includes(enemy));
   advance(M, .1); assert.equal(M.enemies.zombies.includes(enemy), false);
-  assert.ok(progressAt > 15, 'real movement earns another 20-second window');
+  assert.ok(progressAt > 15, 'real movement earns another 30-second window');
 });
 
-test('productive wall breaches and Hearth bites remain alive beyond twenty seconds', () => {
+test('wall breaks and Hearth bites cannot reset the distance watchdog', () => {
   const { M, scene, world, tree } = fixture();
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) {
     if (Math.max(Math.abs(x), Math.abs(z)) !== 3) continue;
@@ -576,31 +582,34 @@ test('productive wall breaches and Hearth bites remain alive beyond twenty secon
   M.enemies.init({ scene, world, tree });
   const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 });
   advance(M, 25);
-  assert.ok(M.enemies.zombies.includes(enemy), 'successful block breaks are progress');
-  assert.ok(enemy.progressAt > 10);
-  enemy.position.set(3, 0, 1); enemy.target = null; enemy.path = null;
-  advance(M, 21);
-  assert.ok(M.enemies.zombies.includes(enemy), 'attacking the objective is progress');
-  assert.equal(enemy.exploded, undefined); assert.ok(tree.health < 100);
+  assert.ok(M.enemies.zombies.includes(enemy), 'the enemy advances through the breach before its deadline');
+  assert.ok(enemy.progressAt > 10, 'advancing through the breach gets closer');
+  M.enemies.damageEnemy(enemy, 1000);
+  const biter = M.enemies.spawnAt({ x: 3, y: 0, z: 1 }), progressAt = biter.progressAt;
+  advance(M, 29.95); assert.ok(M.enemies.zombies.includes(biter));
+  assert.equal(biter.progressAt, progressAt, 'bites do not decrease distance');
+  advance(M, .05); assert.equal(biter.exploded, true); assert.ok(tree.health < 100);
 });
 
-test('watchdog accepts progress along a longer detour after construction changes the route', () => {
+test('advancing along a detour without getting closer cannot extend the watchdog', () => {
   const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
   const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
   advance(M, .05);
   // Closing the short western route requires walking away from the Hearth
-  // for more than twenty seconds before reaching the other side of this wall.
-  for (let z = -10; z <= 10; z++) for (let y = 0; y < 3; y++) world.place(5, y, z);
-  advance(M, 23);
-  assert.ok(M.enemies.zombies.includes(enemy), 'a moving enemy must not expire against its old shorter route');
-  assert.ok(enemy.progressAt > 20, 'advancing along the new route resets the watchdog');
+  // for more than thirty seconds before reaching the other side of this wall.
+  for (let z = -20; z <= 20; z++) for (let y = 0; y < 3; y++) world.place(5, y, z);
+  advance(M, 2); const progressAt = enemy.progressAt;
+  advance(M, 27.9);
+  assert.ok(M.enemies.zombies.includes(enemy));
+  assert.equal(enemy.progressAt, progressAt, 'route distance does not count as a closer approach');
+  advance(M, 2); assert.equal(enemy.exploded, true);
 });
 
 test('unrelated navigation revisions cannot extend a stalled enemy watchdog', () => {
   const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
   const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
   M.actorPhysics.moveHorizontal = () => false;
-  for (let i = 0; i < 4; i++) { world.place(22, i % 3, 10 + i); advance(M, 5); }
+  for (let i = 0; i < 4; i++) { world.place(22, i % 3, 10 + i); advance(M, 7.5); }
   assert.equal(M.enemies.zombies.includes(enemy), false);
 });
 

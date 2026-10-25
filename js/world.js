@@ -518,21 +518,27 @@
     return chunks.get(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS)) || null;
   }
 
-  const permanentBlocks = new Map();
+  const permanentBlocks = new Map(), permanentChunks = new Set();
   function addPermanentBlocks(cells, kind, clearance) {
+    const affected = new Set();
     (clearance || []).forEach(function (cell) {
+      if (cell.excavate && isSolidBlock(cell.bx, cell.by, cell.bz)) {
+        removedBlocks.add(blockKey(cell.bx, cell.by, cell.bz));
+        affected.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
+        recordChange(cell.bx, cell.bz);
+      }
       const info = blockInfoAt(cell.bx, cell.by, cell.bz);
       if (!info || info.type !== 'prop') return;
       removePropBlock(cell.bx, cell.by, cell.bz);
       dirtyPropChunks.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
     });
-    const affected = new Set();
     cells.forEach(function (cell) {
-      affected.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
-      permanentBlocks.set(blockKey(cell.bx, cell.by, cell.bz), kind);
+      const id = Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS);
+      affected.add(id); permanentChunks.add(id);
+      permanentBlocks.set(blockKey(cell.bx, cell.by, cell.bz), cell.kind || kind);
       recordChange(cell.bx, cell.bz);
     });
-    // Terrain yields ownership of these voxels to the stone plinth. Rebuild
+    // Terrain yields ownership of these voxels to permanent paving/plinths. Rebuild
     // before the first draw so no coplanar soil caps can flicker through it.
     affected.forEach(function (id) {
       const [cx, cz] = id.split(',').map(Number);
@@ -565,7 +571,7 @@
     const prop = propKindAt(bx, by, bz);
     if (prop) {
       const placed = placedBlocks.has(key);
-      return { bx: bx, by: by, bz: bz, kind: prop, type: permanentBlocks.has(key) ? 'gate' : placed ? 'placed' : 'prop', placed: placed, unbreakable: permanentBlocks.has(key) };
+      return { bx: bx, by: by, bz: bz, kind: prop, type: permanentBlocks.has(key) ? (prop === 'roadstone' ? 'road' : 'gate') : placed ? 'placed' : 'prop', placed: placed, unbreakable: permanentBlocks.has(key) };
     }
     if (!isSolidBlock(bx, by, bz)) return null;
     return {
@@ -1280,6 +1286,9 @@
         // Leave room for the whole canopy outside the 15-block lawn.
         if (Math.hypot(wx - START.x, wz - START.z) < (START.radiusBlocks + 3) * BLOCK) continue;
         if (M.hearthTree && M.hearthTree.isReserved(wx, wz, 11)) continue;
+        // Omit the whole tree when its trunk would be cut by a road or gate;
+        // clearing just the lower blocks would leave a floating canopy.
+        if (M.hellGates && M.hellGates.isCleared(worldBX, heightBlocks(worldBX, worldBZ), worldBZ)) continue;
         if (M.caves.entranceClearance(worldBX, worldBZ) || isPondArea(worldBX, worldBZ) || topSolidY(worldBX, worldBZ) !== heightBlocks(worldBX, worldBZ) - 1) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
         ok = true;
@@ -1495,7 +1504,7 @@
       chunks.forEach(function (ch, key) {
         const home = M.hearthTree && M.hearthTree.position;
         const gateNearby = M.hellGates && M.hellGates.gates.some(gate => Math.abs(ch.cx - Math.floor(gate.x / CHUNK_SIZE)) <= 1 && Math.abs(ch.cz - Math.floor(gate.z / CHUNK_SIZE)) <= 1);
-        const retained = gateNearby || home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
+        const retained = gateNearby || permanentChunks.has(key) || home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
           Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
         if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
           worldGroup.remove(ch.group);

@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const root = new URL('../../', import.meta.url);
+// Compile the classic scripts once per test file while retaining a fresh VM
+// and independent game state for each scenario.
+const scripts = new Map();
 
 export function game({ seed, renderRadius = 1 } = {}) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
@@ -10,7 +13,10 @@ export function game({ seed, renderRadius = 1 } = {}) {
   if (Number.isInteger(seed)) vm.runInContext(`{ let state = ${seed >>> 0}; Math.random = () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state / 4294967296;
   }; }`, context);
-  const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
+  const load = file => {
+    if (!scripts.has(file)) scripts.set(file, new vm.Script(readFileSync(new URL(file, root), 'utf8'), { filename: file }));
+    return scripts.get(file).runInContext(context);
+  };
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;
   M.config.renderRadius = renderRadius;
@@ -29,8 +35,8 @@ export function game({ seed, renderRadius = 1 } = {}) {
   return { M, THREE, scene, controls, input, load };
 }
 
-export function isolatedAnimal(name = 'Mallow') {
-  const fixture = game();
+export function isolatedAnimal(name = 'Mallow', options = {}) {
+  const fixture = game(options);
   const { M } = fixture;
   const animal = M.animals.list.find(candidate => candidate.name === name);
   M.animals.list.forEach((other, i) => {

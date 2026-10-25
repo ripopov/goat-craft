@@ -32,7 +32,7 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
     if (wave === 5) assert.equal(air.length, 1, 'the first airdrop is a single readable introduction');
     if (wave >= 10) assert.ok(count('worm') > 0);
   }
-  assert.equal(e.emergenceRadius, 18, 'nine two-unit voxels ≈ √3 × the former five, about three times the surface area');
+  assert.equal(e.emergenceRadius, 36, 'dig-outs occur at twice the previous distance');
   assert.deepEqual([1, 2, 3].map(wave => e.waveSize(wave)), [6, 10, 14]);
   for (const wave of [30, 70, 130]) {
     for (let slot = 0; slot < e.waveSize(wave); slot++) {
@@ -88,7 +88,7 @@ test('airdrops enter actual wave five, remain vulnerable, and cannot bite before
   assert.ok(scene.getObjectByName('Enemy horde').count <= scene.getObjectByName('Enemy horde').instanceMatrix.count);
 });
 
-test('Worms excavate real covered tunnels, surface only within the nine-block band and allow an emergence response', () => {
+test('Worms excavate real covered tunnels, surface only within the doubled emergence band and allow an emergence response', () => {
   const { M, THREE } = defense();
   const cuts = [], original = M.world.breakBlockAt;
   M.world.breakBlockAt = function (bx, by, bz, opts) {
@@ -96,10 +96,10 @@ test('Worms excavate real covered tunnels, surface only within the nine-block ba
     const kind = original(bx, by, bz, opts);
     if (kind) cuts.push({ bx, by, bz, top }); return kind;
   };
-  const enemy = M.enemies.spawnAt({ x: 31, y: 14, z: 1 }, 'worm');
-  assert.equal(enemy.burrowed, true); assert.equal(enemy.position.y, 10);
-  assert.equal(M.enemies.spellTargets(new THREE.Vector3(31, 14, 1), 30, 10).includes(enemy), false);
-  assert.equal(M.enemies.isTargetable(enemy, new THREE.Vector3(31, 10, 1)), true, 'underground defenders can intercept a visible tunnel');
+  const enemy = M.enemies.spawnAt({ x: 51, y: 14, z: 1 }, 'worm');
+  assert.equal(enemy.burrowed, true); assert.ok(enemy.position.y <= M.world.terrainHeight(51, 1) - 4);
+  assert.equal(M.enemies.spellTargets(new THREE.Vector3(51, 14, 1), 30, 10).includes(enemy), false);
+  assert.equal(M.enemies.isTargetable(enemy, enemy.position.clone()), true, 'underground defenders can intercept a visible tunnel');
   let emerging = false;
   for (let i = 0; i < 1200 && enemy.mode !== 'walk'; i++) {
     M.enemies.update(1 / 60);
@@ -107,7 +107,8 @@ test('Worms excavate real covered tunnels, surface only within the nine-block ba
       emerging = true;
       assert.ok(Math.hypot(enemy.position.x, enemy.position.z) <= M.enemies.emergenceRadius + .01, 'no early surface breach');
     }
-    if (Math.hypot(enemy.position.x, enemy.position.z) > M.enemies.emergenceRadius) assert.ok(enemy.position.y <= 10.01);
+    if (Math.hypot(enemy.position.x, enemy.position.z) > M.enemies.emergenceRadius)
+      assert.ok(enemy.position.y + enemy.body.height < M.world.terrainHeight(enemy.position.x, enemy.position.z) - .5);
   }
   assert.ok(emerging); assert.equal(enemy.burrowed, false); assert.ok(enemy.recoverTime > 0);
   assert.ok(cuts.length > 6, 'the route contains real excavated voxels');
@@ -136,6 +137,8 @@ test('digging a shaft reveals a rendered Worm and lets the real player controlle
   const { M, controls, scene, THREE } = defense();
   M.goat.group.position.set(25, 14, 1); controls.firstPerson = true; controls.getFacingYaw = () => Math.PI / 2;
   const enemy = M.enemies.spawnAt({ x: 29, y: 14, z: 1 }, 'worm');
+  // A legal inner-band exit leaves time to intercept this manually placed Worm.
+  enemy.emergence.set(19, 14, 1);
   assert.equal(M.enemies.spellTargets(M.goat.group.position, 9, 3).includes(enemy), false, 'unbroken soil occludes the buried model');
   const camera = M.goat.aimCamera; camera.position.set(25, 15.8, 1); camera.lookAt(25, 0, 1);
   M.goat.mine(); M.goat.mine();
@@ -154,7 +157,7 @@ test('digging a shaft reveals a rendered Worm and lets the real player controlle
   assert.ok(M.items.drops.some(drop => drop.userData.drop.kind === 'coin' && drop.position.y < 12), 'loot stays in the accessible tunnel');
 });
 
-test('wave-ten Worms spawn beneath their gate, tunnel inward and surface in the unchanged emergence band', () => {
+test('wave-ten Worms spawn beneath their gate, tunnel inward and surface in the doubled emergence band', () => {
   const { M } = defense();
   M.hearthTree.damage = () => {};
   M.enemies.startWave(10);
@@ -169,12 +172,12 @@ test('wave-ten Worms spawn beneath their gate, tunnel inward and surface in the 
   assert.ok(worm.position.y + worm.body.height < gate.y - 2, 'the full body is under the permanent gate foundation');
   assert.equal(worm.burrowed, true);
   const goalDistance = Math.hypot(worm.emergence.x, worm.emergence.z);
-  assert.ok(goalDistance >= 9.5 && goalDistance <= 18, 'the emergence distance has not moved');
+  assert.ok(goalDistance >= 19 && goalDistance <= 36, 'both emergence bounds are doubled');
   for (let i = 0; i < 800 && worm.mode !== 'walk'; i++) M.enemies.update(.05);
   assert.equal(worm.burrowed, false); assert.equal(worm.mode, 'walk');
   assert.equal(worm.exploded, undefined);
   const distance = Math.hypot(worm.position.x, worm.position.z);
-  assert.ok(distance >= 9.5 && distance <= 18);
+  assert.ok(distance >= 19 && distance <= 36);
   step(M, 3);
   assert.ok(Math.hypot(worm.position.x, worm.position.z) < distance, 'the surfaced Worm crawls toward the Hearth');
   for (const c of [...M.hellGates.cells, ...M.hellGates.roadCells])

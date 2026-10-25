@@ -3,12 +3,11 @@
 
   const MAX_ENEMIES = 200, WATCHDOG_SECONDS = 30, WATCHDOG_BLAST_RADIUS = 4;
   const SIZE = 2;
-  // Worms surface anywhere in a band around the Hearth that covers about three
-  // times the surface area of the original five-voxel guard ring: nine two-unit
-  // voxels (18 world units) instead of five (5·√3 ≈ 8.7 voxels).
-  const EMERGENCE_RADIUS = 9 * SIZE;
-  const EMERGENCE_BAND_INNER = 9.5;  // just past the protected Hearth foundation
-  const EMERGENCE_BAND_FAVOR = 14.5; // biased outward: shorter tunnels, earlier digs
+  // Keep the entire emergence band twice as far from the Hearth: Worms
+  // leave their tunnels earlier, then crawl the longer surface approach.
+  const EMERGENCE_RADIUS = 18 * SIZE;
+  const EMERGENCE_BAND_INNER = 19;
+  const EMERGENCE_BAND_FAVOR = 29;
   const EMERGENCE_RETRIES = 3;       // fresh surfacing attempts before the watchdog backstop
   const TYPES = {
     zombie: { name: 'Zombie', unlock: 1, hp: 2, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
@@ -718,7 +717,7 @@
       } else { enemy.mode = 'emerge'; enemy.emergeTime = 0; enemy.shaft = p.clone(); sound('worm', 'warn', goal); }
     } else {
       enemy.emergeTime += dt; enemy.moving = false;
-      // The surface opens only inside the emergence band (nine two-unit voxels).
+      // The surface opens only inside the emergence band (eighteen two-unit voxels).
       if (enemy.emergeTime >= 1.4 && excavate(new THREE.Vector3(enemy.shaft.x, goal.y - 4, enemy.shaft.z), 4 + enemy.body.height, enemy)) {
         if (!enemy.emergeExit) enemy.emergeExit = emergenceExit(enemy);
         if (!enemy.emergeExit) {
@@ -857,7 +856,7 @@
     if (M.audio && M.audio.cue) M.audio.cue('wave');
     const introductions = { 3: 'Spiders incoming!', 5: 'Skeletons and parachutes — watch the lavender landing rings.',
       7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
-      10: 'Burrow Worms — guard the inner nine blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
+      10: 'Burrow Worms — watch for dig-outs 19–36 units from the Hearth.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
     let intro = introductions[wave] || 'protect the Hearth!';
     if (wave === 20 || wave === 40 || wave === 60 || wave === 80) intro = 'Air invasion! Every enemy arrives by parachute — watch the landing rings.';

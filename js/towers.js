@@ -24,10 +24,83 @@
       damage: .5 * tier, interval: 1.3 - (tier - 1) * .15 };
   }
   const list = [], cells = new Map(), effects = [], projectiles = [], motion = new WeakMap();
+  const renderBatches = new Map();
+  const enemyGrid = new Map(), liveEnemies = new Set(), gridPool = [];
+  const projectileCandidates = [], splashCandidates = [], chainCandidates = [], shotCandidates = [], collisions = [];
+  const GRID_SIZE = 6;
+  let maxEnemyRadius = 0;
   const MAX_TOWERS = 80, SIZE = 2;
   let scene, removing = false, visualTime = 0;
   const cube = new THREE.BoxGeometry(1, 1, 1), materials = new Map(), templates = new Map();
   const crystal = new THREE.OctahedronGeometry(1), hoop = new THREE.TorusGeometry(1, .065, 4, 8);
+  // Keep independently animated rigs for aiming and previews, but submit each
+  // shared geometry/material only once for all deployed towers (and shadows).
+  function registerTower(tower) {
+    tower.renderBindings = [];
+    tower.group.traverse(node => {
+      if (!node.isMesh) return;
+      let materials = renderBatches.get(node.geometry);
+      if (!materials) { materials = new Map(); renderBatches.set(node.geometry, materials); }
+      let batch = materials.get(node.material);
+      if (!batch) {
+        const mesh = new THREE.InstancedMesh(node.geometry, node.material, MAX_TOWERS * 4);
+        mesh.name = 'Tower batch'; mesh.count = 0; mesh.frustumCulled = false;
+        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.matrixAutoUpdate = false;
+        batch = { mesh, sources: [] }; materials.set(node.material, batch); scene.add(mesh);
+      }
+      batch.sources.push(node); tower.renderBindings.push({ node, batch }); node.visible = false;
+    });
+  }
+  function unregisterTower(tower) {
+    for (const { node, batch } of tower.renderBindings) {
+      batch.sources.splice(batch.sources.indexOf(node), 1);
+      batch.mesh.count = 0;
+    }
+    tower.renderBindings.length = 0;
+  }
+  function syncRender() {
+    for (const tower of list) tower.group.updateMatrixWorld(true);
+    for (const materials of renderBatches.values()) for (const batch of materials.values()) {
+      const mesh = batch.mesh;
+      let count = 0;
+      for (const source of batch.sources) {
+        // Earthshaker hides its loaded stone during recoil. Preserve visibility
+        // inherited from animated mechanisms as well as their transforms.
+        let visible = true;
+        for (let parent = source.parent; parent && parent !== scene; parent = parent.parent) {
+          if (!parent.visible) { visible = false; break; }
+        }
+        if (visible) mesh.setMatrixAt(count++, source.matrixWorld);
+      }
+      mesh.count = count; mesh.visible = count > 0;
+      if (mesh.count) {
+        mesh.instanceMatrix.updateRange.count = mesh.count * 16; mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+  }
+  function indexEnemies() {
+    for (const bucket of enemyGrid.values()) { bucket.length = 0; gridPool.push(bucket); }
+    enemyGrid.clear(); liveEnemies.clear(); maxEnemyRadius = 0;
+    for (const enemy of M.enemies.zombies) {
+      if (enemy.hp <= 0) continue;
+      liveEnemies.add(enemy); maxEnemyRadius = Math.max(maxEnemyRadius, enemy.body.radius);
+      const p = enemy.position, key = Math.floor(p.x / GRID_SIZE) + ',' + Math.floor(p.z / GRID_SIZE);
+      let bucket = enemyGrid.get(key);
+      if (!bucket) { bucket = gridPool.pop() || []; enemyGrid.set(key, bucket); }
+      bucket.push(enemy);
+    }
+  }
+  function queryEnemies(minX, maxX, minZ, maxZ, result) {
+    result.length = 0;
+    for (let z = Math.floor(minZ / GRID_SIZE); z <= Math.floor(maxZ / GRID_SIZE); z++) {
+      for (let x = Math.floor(minX / GRID_SIZE); x <= Math.floor(maxX / GRID_SIZE); x++) {
+        const bucket = enemyGrid.get(x + ',' + z);
+        if (bucket) for (const enemy of bucket) if (enemy.hp > 0) result.push(enemy);
+      }
+    }
+    return result;
+  }
   function material(color, glow) {
     const key = color + '/' + !!glow;
     const metal = [0x34434b, 0x526575, 0xa9bac1, 0xb88a49, 0xd9b875].includes(color);
@@ -316,7 +389,7 @@
     tower.group.position.set((bx + .5) * SIZE, by * SIZE, (bz + .5) * SIZE);
     tower.position = tower.group.position;
     for (let y = by; y < by + def.height; y++) cells.set(bx + ',' + y + ',' + bz, tower);
-    scene.add(tower.group); list.push(tower);
+    scene.add(tower.group); list.push(tower); registerTower(tower);
     if (M.audio && M.audio.pickup) M.audio.pickup();
     return tower;
   }
@@ -352,11 +425,13 @@
     if (!def) return;
     for (const tower of list) if (tower.builder === animal && tower.def.builderTier < def.builderTier) {
       const previous = tower.group;
+      unregisterTower(tower);
       tower.id = def.id; tower.def = def; tower.group = model(def.id);
       tower.group.position.copy(tower.position); tower.position = tower.group.position;
       tower.mechanism = null; tower.cooldown = Math.min(tower.cooldown, def.interval);
-      scene.remove(previous); scene.add(tower.group);
+      scene.remove(previous); scene.add(tower.group); registerTower(tower);
     }
+    syncRender();
   }
   function dismantle(tower) {
     if (removing || !list.includes(tower)) return false;
@@ -367,6 +442,9 @@
     }
     removing = false;
     list.splice(list.indexOf(tower), 1); scene.remove(tower.group);
+    unregisterTower(tower);
+    // Packing must remove its visual immediately, even while paused.
+    syncRender();
     M.items.dropBlock('tower_' + tower.id, tower.position.x, tower.position.y + .7, tower.position.z, { persistent: true });
     return true;
   }
@@ -386,7 +464,7 @@
     }
     return true;
   }
-  function alive(enemy) { return enemy.hp > 0 && M.enemies.zombies.includes(enemy); }
+  function alive(enemy) { return enemy.hp > 0 && liveEnemies.has(enemy); }
   function aimAt(enemy) {
     return enemy.position.clone().add(new THREE.Vector3(0, Math.min(1.25, enemy.body.height * .6), 0));
   }
@@ -725,16 +803,17 @@
   // enemies. Wall samples and enemy intersections share the same segment ordering.
   function bodyIntersection(from, to, enemy, padding) {
     const r = enemy.body.radius + padding, pos = enemy.position;
-    const min = [pos.x - r, pos.y - padding, pos.z - r];
-    const max = [pos.x + r, pos.y + enemy.body.height + padding, pos.z + r];
-    const a = [from.x, from.y, from.z], b = [to.x, to.y, to.z];
     let enter = 0, leave = 1;
     for (let axis = 0; axis < 3; axis++) {
-      const d = b[axis] - a[axis];
-      if (Math.abs(d) < 1e-8) { if (a[axis] < min[axis] || a[axis] > max[axis]) return null; }
+      const a = axis === 0 ? from.x : axis === 1 ? from.y : from.z;
+      const b = axis === 0 ? to.x : axis === 1 ? to.y : to.z;
+      const min = axis === 0 ? pos.x - r : axis === 1 ? pos.y - padding : pos.z - r;
+      const max = axis === 0 ? pos.x + r : axis === 1 ? pos.y + enemy.body.height + padding : pos.z + r;
+      const d = b - a;
+      if (Math.abs(d) < 1e-8) { if (a < min || a > max) return null; }
       else {
-        let t1 = (min[axis] - a[axis]) / d, t2 = (max[axis] - a[axis]) / d;
-        if (t1 > t2) [t1, t2] = [t2, t1];
+        let t1 = (min - a) / d, t2 = (max - a) / d;
+        if (t1 > t2) { const swap = t1; t1 = t2; t2 = swap; }
         enter = Math.max(enter, t1); leave = Math.min(leave, t2); if (enter > leave) return null;
       }
     }
@@ -756,16 +835,16 @@
     if (def.splash) {
       // Evaluate victims at impact, not launch. The struck enemy is always in
       // the blast; other victims need an unobstructed path from the near side.
-      M.enemies.zombies.slice().forEach(e => {
+      queryEnemies(point.x - def.splash, point.x + def.splash, point.z - def.splash, point.z + def.splash, splashCandidates).forEach(e => {
         if (e === enemy || aimAt(e).distanceTo(point) <= def.splash && lineClear(point, aimAt(e), null)) hit(tower, e, def.damage);
       });
     } else if (enemy) hit(tower, enemy, def.damage);
     if (def.chain && enemy) {
       p.visited.add(enemy);
       if (p.visited.size < def.chain) {
-        const next = M.enemies.zombies.filter(e => alive(e) && !p.visited.has(e) &&
+        const next = queryEnemies(enemy.position.x - 7, enemy.position.x + 7, enemy.position.z - 7, enemy.position.z + 7, chainCandidates).filter(e => alive(e) && !p.visited.has(e) &&
           e.position.distanceTo(enemy.position) < 7 && lineClear(point, aimAt(e), null))
-          .sort((a, b) => a.position.distanceToSquared(enemy.position) - b.position.distanceToSquared(enemy.position))[0];
+          .sort((a, b) => a.position.distanceToSquared(enemy.position) - b.position.distanceToSquared(enemy.position) || a.id - b.id)[0];
         if (next) launch(tower, next, point, p.visited);
       }
     }
@@ -806,10 +885,18 @@
       to.addScaledVector(p.direction, Math.min(travel, distance)); finished = distance <= travel;
     }
     const wallT = wallIntersection(from, to, p.tower);
-    const collisions = M.enemies.zombies.filter(e => alive(e) && !p.hits.has(e) && !p.visited.has(e)).map(enemy =>
-      ({ enemy, t: bodyIntersection(from, to, enemy, p.id === 'earth' ? .28 : .09) }))
-      .filter(c => c.t !== null && c.t < wallT).sort((a, b) => a.t - b.t);
+    const padding = p.id === 'earth' ? .28 : .09, margin = maxEnemyRadius + padding;
+    queryEnemies(Math.min(from.x, to.x) - margin, Math.max(from.x, to.x) + margin,
+      Math.min(from.z, to.z) - margin, Math.max(from.z, to.z) + margin, projectileCandidates);
+    collisions.length = 0;
+    for (const enemy of projectileCandidates) {
+      if (!alive(enemy) || p.hits.has(enemy) || p.visited.has(enemy)) continue;
+      const t = bodyIntersection(from, to, enemy, padding);
+      if (t !== null && t < wallT) collisions.push({ enemy, t });
+    }
+    collisions.sort((a, b) => a.t - b.t || a.enemy.id - b.enemy.id);
     for (const collision of collisions) {
+      if (!alive(collision.enemy)) continue;
       const point = from.clone().lerp(to, collision.t);
       p.hits.add(collision.enemy); impact(p, point, collision.enemy, false);
       if (!p.tower.def.pierce || p.hits.size >= 3) { flightEffects(p, from, point, dt, true); p.position.copy(point); return true; }
@@ -830,9 +917,9 @@
   function shoot(tower) {
     if (projectiles.length >= MAX_PROJECTILES) return false;
     const def = tower.def, center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
-    const enemies = M.enemies.zombies.filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && Math.hypot(e.position.x - center.x, e.position.z - center.z) <= def.range &&
+    const enemies = queryEnemies(center.x - def.range, center.x + def.range, center.z - def.range, center.z + def.range, shotCandidates).filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && (e.position.x - center.x) ** 2 + (e.position.z - center.z) ** 2 <= def.range ** 2 &&
       Math.abs(e.position.y - tower.position.y) < 15);
-    enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq());
+    enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq() || a.id - b.id);
     const target = enemies.find(e => lineClear(center, aimAt(e), tower));
     if (!target) return false;
     const aim = aimAt(target), turret = tower.group.userData.turret;
@@ -889,8 +976,9 @@
       }
     }
   }
-  function update(dt) {
+  function update(dt, deferRender) {
     visualTime += dt;
+    indexEnemies();
     for (const enemy of M.enemies.zombies.slice()) {
       let movement = motion.get(enemy);
       if (!movement) { movement = { position: enemy.position.clone(), velocity: new THREE.Vector3() }; motion.set(enemy, movement); }
@@ -956,11 +1044,12 @@
       }
     }
     updateParticles(dt);
+    if (!deferRender) syncRender();
   }
   M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget,
     builderDefinition, placeBuilder, trainBuilder,
     model, lineClear, maxTowers: MAX_TOWERS, init: function (value) {
       scene = value;
       if (!particlePools.length) { particlePool(false, 900); particlePool(true, 220); }
-    }, update };
+    }, update, syncRender };
 })(window.Meadow = window.Meadow || {});

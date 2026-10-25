@@ -372,8 +372,19 @@
 
   const maxParts = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].parts.length; })) + models.parachute.parts.length;
   const maxJoints = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].joints.length; }));
+  // Voxel offsets and palette colors are immutable. Compose/convert them once,
+  // rather than repeating Euler and sRGB work for every part of 200 actors.
+  Object.keys(models).forEach(function (type) {
+    models[type].parts.forEach(function (part) {
+      position.set(part.x, part.y, part.z); scale.set(part.sx, part.sy, part.sz);
+      rotation.set(part.rx, part.ry, part.rz); quaternion.setFromEuler(rotation);
+      part.matrix = new THREE.Matrix4().compose(position, quaternion, scale);
+      part.color = new THREE.Color(part.tint);
+    });
+  });
   const jointMatrices = [rootMatrix];
   for (let i = 1; i <= maxJoints; i++) jointMatrices.push(new THREE.Matrix4());
+  let renderDeferred = false;
 
   function poseJoints(enemy, model, time, motion, recoil) {
     const gait = Math.sin(enemy.phase) * enemy.stride * motion;
@@ -430,7 +441,7 @@
   }
 
   function render(time) {
-    if (!mesh) return;
+    if (!mesh || renderDeferred) return;
     let index = 0;
     for (let list = 0; list < 2; list++) {
       const actors = list ? fallen : zombies;
@@ -451,18 +462,18 @@
         poseJoints(enemy, model, time, motion, recoil);
         for (let partIndex = 0, count = model.parts.length + (enemy.airborne ? models.parachute.parts.length : 0); partIndex < count; partIndex++) {
           const part = partIndex < model.parts.length ? model.parts[partIndex] : models.parachute.parts[partIndex - model.parts.length];
-          position.set(part.x, part.y, part.z); scale.set(part.sx, part.sy, part.sz);
           if (enemy.exploded) {
+            position.set(part.x, part.y, part.z); scale.set(part.sx, part.sy, part.sz);
             const burst = death * (2 - death), angle = partIndex * 2.39996 + enemy.id;
             position.x += Math.sin(angle) * burst * (1.5 + partIndex % 3 * 0.4);
             position.z += Math.cos(angle) * burst * (1.5 + partIndex % 3 * 0.4);
             position.y += burst * (1 + partIndex % 4 * 0.35) - death * death * 1.8;
             scale.multiplyScalar(1 - death * 0.75);
-          }
-          rotation.set(part.rx, part.ry, part.rz); quaternion.setFromEuler(rotation);
-          matrix.compose(position, quaternion, scale).premultiply(part.joint ? jointMatrices[part.joint] : rootMatrix);
+            rotation.set(part.rx, part.ry, part.rz); quaternion.setFromEuler(rotation);
+            matrix.compose(position, quaternion, scale).premultiply(part.joint ? jointMatrices[part.joint] : rootMatrix);
+          } else matrix.multiplyMatrices(part.joint ? jointMatrices[part.joint] : rootMatrix, part.matrix);
           mesh.setMatrixAt(index, matrix);
-          color.setHex(part.tint).multiplyScalar(enemy.tint);
+          color.copy(part.color).multiplyScalar(enemy.tint);
           if (part.glow) color.multiplyScalar(1 + Math.sin(time * 3 + enemy.id) * 0.1 * motion);
           if (enemy.exploded) color.lerp(blastColor, (1 - death) * 0.85);
           if (enemy.flash > 0 && !reducedMotion) color.lerp(hitColor, 0.65);
@@ -471,8 +482,12 @@
       }
     }
     mesh.count = index;
+    mesh.instanceMatrix.updateRange.count = index * 16;
     mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (mesh.instanceColor) {
+      mesh.instanceColor.updateRange.count = index * 3;
+      mesh.instanceColor.needsUpdate = true;
+    }
   }
 
   const signals = [], mudPools = [];
@@ -1144,6 +1159,7 @@
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.castShadow = true; mesh.receiveShadow = true;
     // Allocate instance colors before the first empty draw compiles its shader.
     mesh.setColorAt(0, new THREE.Color(0xffffff));
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     scene.add(mesh);
     outlineMesh = new THREE.InstancedMesh(mesh.geometry, new THREE.MeshBasicMaterial({ color: 0xf5b17c, side: THREE.BackSide,
       transparent: true, opacity: .65, depthWrite: false }), MAX_ENEMIES * maxParts);
@@ -1169,7 +1185,10 @@
     updateHud();
     return killed;
   }
-  M.enemies = { init: init, update: update, attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
+  M.enemies = { init: init, update: update,
+    beginFrame: function () { renderDeferred = true; },
+    syncRender: function () { renderDeferred = false; render(elapsed); },
+    attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,
     spellTargets: spellTargets, spellHit: spellHit, spellBlast: spellBlast,
     isTargetable: isTargetable, movementScale: movementScale, deliveryForWave: deliveryForWave,
     get mudPools() { return mudPools; }, get signals() { return signals; }, emergenceRadius: 5 * SIZE,

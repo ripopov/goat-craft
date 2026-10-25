@@ -138,14 +138,22 @@
       accumulator = 0; return;
     }
     accumulator += dt;
+    const willStep = accumulator + 0.000001 >= STEP;
+    if (willStep) M.enemies.beginFrame();
     while (accumulator + 0.000001 >= STEP) {
       elapsed += STEP;
       M.goat.update(STEP, elapsed);
       M.enemies.update(STEP, elapsed);
-      M.towers.update(STEP);
+      M.towers.update(STEP, true);
       M.items.update(STEP, elapsed, M.goat.group);
       M.animals.update(STEP, elapsed, M.goat.group);
       accumulator -= STEP;
+    }
+    // Catch-up ticks advance combat at 60 Hz; upload only the final pose that
+    // will actually be displayed, including damage dealt by this tick's towers.
+    if (willStep) {
+      M.enemies.syncRender();
+      M.towers.syncRender();
     }
     M.world.update(M.goat.group.position, dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);

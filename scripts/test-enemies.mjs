@@ -620,3 +620,25 @@ test('all enemy species animate hierarchical joints with finite colors and align
     assert.ok(Math.abs(matrix.elements[14] - expected.elements[14]) < .001);
   }
 });
+
+test('catch-up simulation and multi-target spells upload just one final horde pose per frame', () => {
+  const { M, THREE, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const origin = new THREE.Vector3(15, 0, 1);
+  for (let i = 0; i < 12; i++) M.enemies.spawnAt(origin, 'brute');
+  const mesh = scene.getObjectByName('Enemy horde');
+  M.enemies.update(1 / 60);
+  const version = mesh.instanceMatrix.version;
+  M.enemies.beginFrame();
+  for (let i = 0; i < 4; i++) {
+    M.enemies.update(1 / 60);
+    M.enemies.spellBlast(origin, 4, .5);
+  }
+  assert.equal(mesh.instanceMatrix.version, version, 'neither catch-up ticks nor individual spell victims rebuild the horde');
+  assert.ok(M.enemies.zombies.every(e => e.hp === 5), 'all four combat ticks still resolve');
+  M.enemies.syncRender();
+  assert.equal(mesh.instanceMatrix.version, version + 1);
+  assert.equal(mesh.instanceMatrix.updateRange.count, mesh.count * 16, 'only populated instance data is uploaded');
+  assert.equal(mesh.instanceColor.updateRange.count, mesh.count * 3);
+  M.enemies.update(1 / 60);
+  assert.equal(mesh.instanceMatrix.version, version + 2, 'standalone simulation keeps its normal rendering behavior');
+});

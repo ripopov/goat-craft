@@ -122,7 +122,7 @@ test('tower construction validates local funds, materials and the entire site be
 });
 
 test('each Practiced builder tier strengthens its own standing towers and their real attacks', () => {
-  const { M, animal, THREE } = builders();
+  const { M, animal, THREE, scene } = builders();
   M.goat.group.position.set(-25, 14, -25); animal.group.position.set(-20, 14, -20);
   Object.assign(animal.state, { coins: 12, towerStone: 3 });
   const tower = M.towers.placeBuilder(animal, 8, 7, 8);
@@ -131,8 +131,12 @@ test('each Practiced builder tier strengthens its own standing towers and their 
   const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 25), 'brute');
   normal.cooldown = 1000;
   let interval = Infinity;
+  const countInstances = () => scene.children.filter(n => n.name === 'Tower batch').reduce((sum, n) => sum + n.count, 0);
+  M.towers.syncRender();
+  const initialInstances = countInstances();
   for (let tier = 1; tier <= 3; tier++) {
     if (tier > 1) assert.equal(M.upgrades.buy(animal, 'craft'), true);
+    assert.equal(countInstances(), initialInstances + tier - 1, 'training replaces the old rig and adds exactly one visible tier mark');
     assert.equal(tower.def.builderTier, tier);
     assert.equal(tower.def.damage, .5 * tier); assert.ok(tower.def.interval < interval);
     interval = tower.def.interval;
@@ -144,6 +148,8 @@ test('each Practiced builder tier strengthens its own standing towers and their 
     for (let i = 0; i < 120 && enemy.hp === hp; i++) M.towers.update(1 / 60);
     assert.equal(hp - enemy.hp, .5 * tier, 'higher tier damage reaches the enemy on impact');
   }
+  M.towers.dismantle(tower); M.towers.dismantle(normal);
+  assert.equal(countInstances(), 0, 'packing trained towers leaves no old models in the batches');
 });
 
 test('packing and redeploying a trained tower preserves its tier without a second payment', () => {

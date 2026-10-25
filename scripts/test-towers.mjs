@@ -291,6 +291,66 @@ test('animated models share baked geometry without moving previews or other towe
   assert.equal(preview.getObjectByName('Mechanism').rotation.y, 0);
 });
 
+test('deployed towers share GPU batches with exact independent poses, packing and reuse', () => {
+  const { M, THREE, scene } = defense();
+  const first = M.towers.place('arcane', 8, 7, 8);
+  M.towers.update(.1);
+  const batches = scene.children.filter(node => node.name === 'Tower batch');
+  const second = M.towers.place('arcane', 10, 7, 8);
+  M.towers.update(.1);
+  assert.equal(scene.children.filter(node => node.name === 'Tower batch').length, batches.length,
+    'a second identical tower adds no draw submissions');
+  const actual = new THREE.Matrix4();
+  for (const tower of [first, second]) tower.group.traverse(node => {
+    if (!node.isMesh) return;
+    assert.equal(node.visible, false, 'rig meshes are submitted only through their batch');
+    const batch = batches.find(b => b.geometry === node.geometry && b.material === node.material);
+    assert.ok(batch && batch.castShadow && batch.receiveShadow);
+    let found = false;
+    for (let i = 0; i < batch.count; i++) {
+      batch.getMatrixAt(i, actual);
+      if (actual.elements.every((v, j) => Math.abs(v - node.matrixWorld.elements[j]) < .00001)) found = true;
+    }
+    assert.ok(found, 'the displayed instance matches its own animated rig');
+    assert.ok(batch.count <= batch.instanceMatrix.count);
+  });
+  M.towers.dismantle(first);
+  assert.ok(batches.every(batch => batch.count === 1), 'packing immediately removes only its own instances');
+  M.towers.dismantle(second);
+  assert.ok(batches.every(batch => batch.count === 0 && !batch.visible), 'empty batches stop drawing');
+  assert.ok(M.towers.place('arcane', 8, 7, 8)); M.towers.update(.1);
+  assert.ok(batches.every(batch => batch.count === 1), 'redeployment reuses the allocated buffers');
+});
+
+test('spatial projectile queries include moving interceptors across negative cell boundaries', () => {
+  const { M, THREE } = defense();
+  const tower = M.towers.place('ballista', -9, 7, -9); assert.ok(tower);
+  const target = M.enemies.spawnAt(new THREE.Vector3(-17, 14, -31), 'brute');
+  const interceptor = M.enemies.spawnAt(new THREE.Vector3(45, 14, 45), 'brute');
+  fireOnce(M, tower);
+  interceptor.position.set(-17, 14, -24);
+  M.towers.update(.6); // Sweeps through several grid cells in a single tick.
+  assert.equal(interceptor.hp, 6, 'the fresh spatial index catches a newly arrived body');
+  assert.equal(target.hp, 7, 'the nearer interceptor protects the original target');
+});
+
+test('tower batches preserve hidden loading mechanisms and repeated builder trim instances', () => {
+  const { M, scene } = defense();
+  const earth = M.towers.place('earth', 8, 7, 8);
+  M.items.addItem('tower_builder_frost_3', 1);
+  assert.ok(M.towers.place('builder_frost_3', 10, 7, 8));
+  M.towers.update(.1);
+  const mechanism = earth.group.getObjectByName('Mechanism');
+  const batches = scene.children.filter(node => node.name === 'Tower batch');
+  const mechanismBatches = mechanism.children.filter(n => n.isMesh).map(n => batches.find(b => b.geometry === n.geometry && b.material === n.material));
+  assert.ok(mechanismBatches.length > 0);
+  mechanism.visible = false; M.towers.syncRender();
+  assert.ok(mechanismBatches.every(b => b.count === 0), 'an unloaded cradle hides its stone');
+  mechanism.visible = true; M.towers.syncRender();
+  assert.ok(mechanismBatches.every(b => b.count === 1), 'the loaded stone returns');
+  assert.ok(batches.some(b => b.count === 3), 'all three shared-geometry builder tier marks render');
+});
+
 test('sustained rapid combat keeps particles bounded, reuses buffers and drains every effect after packing', () => {
   const { M, THREE, scene } = defense();
   const tower = M.towers.place('ember', 8, 7, 8);

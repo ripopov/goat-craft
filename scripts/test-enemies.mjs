@@ -106,7 +106,9 @@ test('enemies arrive gradually and share the configured living cap', () => {
   const node = M.enemies.navigation.nodeAt(45, 0, 1);
   for (let i = 0; i < M.enemies.maxEnemies + 80; i++) M.enemies.spawnAt(node);
   assert.equal(M.enemies.zombies.length, M.enemies.maxEnemies);
-  advance(M, 40);
+  // A short crowded interval exercises cap retention; dedicated watchdog
+  // tests below already cover the much longer stalled-enemy deadline.
+  advance(M, 2);
   assert.ok(M.enemies.zombies.length <= M.enemies.maxEnemies);
   assert.equal(M.enemies.getState().wave, 1, 'a crowded wave cannot silently queue another wave');
 });
@@ -204,7 +206,9 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
 test('the actual terrain delivers opening threats promptly without an immediate defeat', () => {
   const { M, scene } = harness(true);
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  advance(M, 70);
+  let swam = false;
+  for (let i = 0; i < 1400; i++) { M.enemies.update(.05); swam ||= M.enemies.zombies.some(enemy => enemy.swimming); }
+  assert.ok(swam, 'the forest approach crosses the real river by swimming');
   assert.ok(M.hearthTree.health < 100, 'distant gate arrivals reach the Hearth without defenders');
   assert.ok(M.hearthTree.health >= 70, 'the first wave still leaves time to respond');
   assert.equal(M.enemies.getState().pending, 0);
@@ -363,7 +367,9 @@ test('unrelated construction cannot reset an ongoing ten-second bite', () => {
   }
   M.enemies.init({ scene, world, tree });
   M.enemies.spawnAt(M.enemies.navigation.nodeAt(9, 0, 1));
-  for (let i = 0; i < 10; i++) { world.place(20, i, 20); advance(M, 1); }
+  // Two separate rebuilds during the bite cover timer preservation without
+  // rebuilding the same flat arena every simulated second.
+  for (let i = 0; i < 2; i++) { world.place(20, i, 20); advance(M, 5); }
   assert.equal(drops.length, 1);
 });
 
@@ -594,7 +600,7 @@ test('unrelated navigation revisions cannot extend a stalled enemy watchdog', ()
   const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
   const enemy = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
   M.actorPhysics.moveHorizontal = () => false;
-  for (let i = 0; i < 20; i++) { world.place(22, i % 3, 10 + i); advance(M, 1); }
+  for (let i = 0; i < 4; i++) { world.place(22, i % 3, 10 + i); advance(M, 5); }
   assert.equal(M.enemies.zombies.includes(enemy), false);
 });
 

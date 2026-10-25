@@ -16,14 +16,22 @@ function defense(rich = true) {
 function step(M, duration) { for (let i = 0; i < duration * 60; i++) M.towers.update(1 / 60); }
 
 test('a fresh run can purchase any tower using only its starting resources', () => {
-  const ids = ['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun'];
-  for (const id of ids) {
-    const { M } = defense(false);
-    M.upgrades.init();
-    assert.ok(M.towers.definitions.every(def => M.towers.available(def)), 'every opening choice is affordable');
-    const def = M.towers.byId[id], coins = M.enemies.getState().coins;
-    assert.ok(M.towers.place(id, 8, 7, 8), def.name + ' can be built immediately');
+  const { M } = defense(false);
+  M.upgrades.init();
+  const coins = M.enemies.getState().coins;
+  const stock = Object.fromEntries(['log', 'stone', 'dirt', 'coal', 'iron', 'copper'].map(kind => [kind, M.items.count(kind)]));
+  assert.ok(M.towers.definitions.every(def => M.towers.available(def)), 'every opening choice is affordable');
+  for (const def of M.towers.definitions) {
+    assert.equal(M.enemies.getState().coins, coins);
+    for (const [kind, count] of Object.entries(stock)) assert.equal(M.items.count(kind), count, 'restore the opening stock');
+    const tower = M.towers.place(def.id, 8, 7, 8);
+    assert.ok(tower, def.name + ' can be built immediately');
     assert.equal(M.enemies.getState().coins, coins - def.cost.coins);
+    // Only the purchase changes state here. Pack it and restore the exact
+    // opening budget instead of generating the same forest ten times.
+    assert.ok(M.towers.dismantle(tower));
+    M.enemies.addCoins(def.cost.coins);
+    for (const [kind, count] of Object.entries(def.cost)) if (kind !== 'coins') M.items.addItem(kind, count);
   }
 });
 

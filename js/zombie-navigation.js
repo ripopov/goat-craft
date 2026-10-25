@@ -50,8 +50,9 @@
       return false;
     }
     function canWalk(a, b, excavated) {
-      if (b.y - a.y > size + 0.01 || a.y - b.y > size * 3 + 0.01) return false;
-      const y = Math.max(a.y, b.y);
+      const shoreRise = a.swim && !b.swim && b.y >= a.waterLevel - .1 && b.y <= a.waterLevel + size + .01;
+      if ((!shoreRise && b.y - a.y > size + 0.01) || a.y - b.y > size * 3 + 0.01) return false;
+      const y = Math.max(a.y, b.y) + (shoreRise ? .6 : 0);
       for (let i = 0; i <= 4; i++) {
         const k = i / 4;
         if (!clear(a.x + (b.x - a.x) * k, y, a.z + (b.z - a.z) * k, true, excavated)) return false;
@@ -60,9 +61,15 @@
     }
     function makeColumn(bx, bz) {
       const x = (bx + 0.5) * size, z = (bz + 0.5) * size, column = [];
-      world.navigationSurfaces(bx, bz).forEach(function (y) {
+      const water = world.waterInfoAtBlock && world.waterInfoAtBlock(bx, bz);
+      const swimming = water && water.depth > 1.3;
+      const surface = swimming ? water.level - 1.3 : null;
+      const floors = world.navigationSurfaces(bx, bz).filter(y => !swimming || y < water.top - .1 || y >= water.level);
+      if (swimming) floors.push(surface);
+      floors.forEach(function (y) {
         if (!clear(x, y, z)) return;
         column.push({ bx: bx, bz: bz, x: x, y: y, z: z, incoming: [], edges: [], next: null, distance: Infinity,
+          swim: swimming && y === surface, waterLevel: swimming ? water.level : 0,
           goal: contact(x, y, z) });
       });
       return column;
@@ -131,6 +138,8 @@
     }
     function nodeAt(x, y, z) {
       const column = columns.get(key(Math.floor(x / size), Math.floor(z / size))) || [];
+      const water = column.find(node => node.swim && y >= node.y - 1.5 && y < node.waterLevel + .1);
+      if (water) return water;
       return column.find(function (node) { return Math.abs(node.y - y) < 0.6; }) || null;
     }
     function blocksFor(bx, bz, y) {

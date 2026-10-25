@@ -24,7 +24,7 @@ js/music.js         original adaptive three-movement Dorian soundtrack (WebAudio
 js/ui.js            hint, speech bubble and "Say hi" button
 js/console.js       / developer console with money and spawn shortcuts
 js/items.js         ten-slot hotbar, block drops, pickup and item stacking
-js/actor-physics.js shared upright body collision, swept movement, wall sliding, support and local overlap recovery
+js/actor-physics.js shared body collision, buoyancy, shore jumps, swept movement, support and overlap recovery
 js/voxel-water.js   queued voxel fluid simulation, downward flow, spreading, containment and draining
 js/caves.js         deterministic tunnels, chambers, entrances and coal/copper/iron geology
 js/targeting.js     camera voxel ray traversal and physical reach checks
@@ -55,6 +55,7 @@ scripts/check-site.mjs  checks local asset references in the built site
 scripts/helpers/animal-game.mjs  reusable real-world fixtures with one independently controllable NPC
 scripts/test-collision.mjs corner escapes, wall seams, corridors, all herd species, bridges and root collision
 scripts/test-fluids.mjs source spreading, waterfalls, walls, tunnels, draining and bounded simulation work
+scripts/test-swimming.mjs surface routes, enemy/NPC paddling, high shore exits, headroom and airdrop water landings
 scripts/test-water.mjs  dependency-free terrain, bank leaks, swimming, collision, input and camera regression tests
 scripts/test-audio.mjs  dependency-free audio scheduling, fade, mixing and voice-lifetime regression tests
 scripts/test-console.mjs keyboard capture, command history and resource/wave console shortcuts
@@ -83,7 +84,7 @@ The modules are **classic scripts** (IIFEs) sharing a small `window.Meadow` name
 
 - **WASD / arrow keys** — move
 - **Shift** — gallop (2× speed, four-beat gait), or swim faster in water
-- **Space** — jump (up to three times in the air); hold to swim toward the surface
+- **Space** — jump (up to three times in the air); hold to swim toward the surface. Near shore, jump toward a surface block to climb out, or keep moving into the bank for an automatic shore jump.
 - **Ctrl** — hold to dive deeper; WASD still works while Ctrl is held
 - **W / S + mouse look** — swim along the view pitch; A / D strafe horizontally. Space / Ctrl override vertical steering.
 - **Left click / tap / E** — mine the block under the center reticle (up to 5.5 units away, aimed in any direction from the camera), or place the selected block on the aimed face instead. Attacks are never bound to input here: the goat fights automatically. P gives an unobstructed first-person view for precise mining.
@@ -166,7 +167,7 @@ Ground enemies emerge from **four permanent hell gates** deep in the forest, rou
 
 Health stays at its base value through **wave three**, letting the opening teach positioning and squad control before durability starts increasing. Health then grows toward **5&times;**, while speed grows more gradually toward **3&times;** its wave-one value. Enemy stats are fixed when they spawn. Each zombie follows the terrain toward the tree and eats **1 HP every 3 seconds** while in contact with its trunk or roots. At zero HP, attacks and spawning stop and **Defend again** restarts the game.
 
-Zombies walk around high walls and hills, jump up **one block**, and cannot jump up two. Shared navigation covers the defense arena and extends along the four forest approaches to the distant gates; it updates locally when blocks change. If no walking route exists, zombies plan a breach and chew each obstructing block for **10 seconds**. Terrain can be tunneled and player-built walls can be dismantled. Every chewed block becomes a **persistent collectible drop**; nearby matching materials stack and can be collected and placed again. The tree's protected foundation and the hell gates remain intact, and the arena stays loaded while the goat explores elsewhere.
+Zombies walk around high walls and hills, jump up **one block**, and cannot jump up two. All surface enemy species swim across deep water with buoyancy and paddling animations, then jump onto a clear bank up to one block above the waterline. NPCs that fall into water paddle back toward a shore and use the same exit check; normal wandering still avoids entering water. Shore jumps need a nearby solid landing and clear headroom. Shared navigation covers the defense arena and extends along the four forest approaches to the distant gates; it updates locally when blocks change. If no walking route exists, zombies plan a breach and chew each obstructing block for **10 seconds**. Terrain can be tunneled and player-built walls can be dismantled. Every chewed block becomes a **persistent collectible drop**; nearby matching materials stack and can be collected and placed again. The tree's protected foundation and the hell gates remain intact, and the arena stays loaded while the goat explores elsewhere.
 
 Select **Horns & Hooves** to fight — the goat attacks **fully automatically**, Vampire-Survivors style, whenever an enemy is in reach: two headbutts or one stomp kill a zombie, headbutts hit up to three enemies and stomps up to eight, and NPC hunters strike one target at a time; closest valid targets take priority. The goat never turns you toward a target: your facing stays fully mouse-controlled, bolts and fireballs auto-aim at the nearest enemy, melee headbutts swing at what you look at, and the stomp pounds everything in range all around. All attack ranges are **tripled**: the default headbutt reaches about 8.4 units and the stomp 9.3, so the goat clears a wide circle around your position while you build and mine. **Long horns** training re-forges the horns of the player **and every trained hunter** into an elemental caster: tier 1 throws a lightning bolt at the nearest enemy within **9 blocks**, tier 2 chains electricity across up to three foes within **12 blocks**, and tier 3 lobs a fireball up to **30 blocks** that bursts with a **3-block blast radius**. Walls stop the bolt; a fireball instead bursts on the wall and burns whatever sits near the impact. Killed enemies leave **physical gold pickups**, including kills made by hunters. Walk close to attract and collect them, just like blocks; they never take a hotbar slot. Coin stacks persist and retain their full value. The wallet changes when coins are collected, rather than on a kill. Wave-clear bonuses are paid directly.
 

@@ -433,6 +433,16 @@
         j.rx = Math.sin(enemy.phase * 0.5) * 0.04 * enemy.stride * motion;
         j.ry = Math.sin(time * 1.8 + enemy.id) * 0.025 * motion;
       }
+      const swim = enemy.swimBlend * motion, paddle = enemy.swimPhase + j.side * Math.PI + j.index * .7;
+      if (swim > .001) {
+        if (j.kind === 'arm') { j.rx += (-1.2 + Math.sin(paddle) * .85 - j.rx) * swim; j.rz += j.side * .35 * swim; }
+        else if (j.kind === 'elbow') j.rx += (-.5 + Math.cos(paddle) * .35 - j.rx) * swim;
+        else if (j.kind === 'leg' || j.kind === 'quadruped') j.rx += (.3 + Math.sin(paddle) * .65 - j.rx) * swim;
+        else if (j.kind === 'knee') j.rx += (.55 + Math.cos(paddle) * .3 - j.rx) * swim;
+        else if (j.kind === 'spiderLeg') { j.rz += j.side * .25 * Math.sin(paddle) * swim; j.ry += Math.cos(paddle) * .35 * swim; }
+        else if (j.kind === 'spiderKnee') j.rz += j.side * .25 * Math.cos(paddle) * swim;
+        else if (j.kind === 'wormSegment') j.ry += Math.sin(paddle - j.index) * .2 * swim;
+      }
       position.set(j.x, j.y, j.z); rotation.set(j.rx, j.ry, j.rz); quaternion.setFromEuler(rotation);
       matrix.compose(position, quaternion, scale.set(1, 1, 1));
       if (j.parent) matrix.premultiply(jointMatrices[j.parent]); else matrix.premultiply(rootMatrix);
@@ -453,8 +463,9 @@
         const bob = Math.abs(Math.sin(enemy.phase)) * (enemy.type === 'brute' ? 0.075 : enemy.type === 'spider' ? 0.025 : 0.045) * enemy.stride * motion;
         const collapse = enemy.exploded ? 0 : death;
         const roll = Math.sin(enemy.phase) * (enemy.type === 'brute' ? 0.075 : 0.04) * enemy.stride * motion;
-        rotation.set(-recoil - (enemy.type === 'spider' ? 0 : collapse * 1.45), enemy.yaw,
-          roll + collapse * (enemy.type === 'spider' ? 2.7 : 0.22));
+        const swim = enemy.swimBlend * motion;
+        rotation.set(-.18 * swim - recoil - (enemy.type === 'spider' ? 0 : collapse * 1.45), enemy.yaw,
+          roll + Math.sin(enemy.swimPhase) * .045 * swim + collapse * (enemy.type === 'spider' ? 2.7 : 0.22));
         quaternion.setFromEuler(rotation);
         position.set(p.x, p.y + bob - collapse * (enemy.type === 'spider' ? -0.18 : 0.35), p.z);
         const shrink = dying ? 1 - Math.pow(clamp((death - 0.65) / 0.35, 0, 1), 2) : 1;
@@ -614,7 +625,8 @@
     const p = enemy.position;
     if (enemy.airborne) {
       enemy.mode = 'air'; enemy.moving = false;
-      const floor = world.landingHeight(p.x, p.z, p.y + .01);
+      const water = world.waterInfoAtBlock && world.waterInfoAtBlock(Math.floor(p.x / SIZE), Math.floor(p.z / SIZE));
+      const floor = Math.max(world.landingHeight(p.x, p.z, p.y + .01), water && water.depth > 1.3 ? water.level - physics.swimDepth(enemy.body) : 0);
       const next = Math.max(floor, p.y - 3.8 * dt);
       if (p.y > floor + .01) physics.moveVertical(world, p, enemy.body, next);
       if (p.y <= floor + .02 || next <= floor) {
@@ -796,6 +808,7 @@
     const zombie = { type: type, body: { radius: def.radius, height: def.height, skin: 0.002 }, id: nextId++, position: new THREE.Vector3(node.x, node.y, node.z), yaw: 0, hp: hp, maxHp: hp, speedScale: difficulty.speed,
       tint: 0.88 + Math.random() * 0.24, phase: Math.random() * 6.28, mode: 'walk', moving: false,
       bite: 0, blockBite: 0, blockKey: '', path: null, target: null, revision: navigation.revision, flash: 0,
+      swimming: false, swimBlend: 0, swimPhase: 0, shoreJump: 0, shoreTarget: null,
       jump: null, vy: 0, grounded: true, retry: 0, stuck: 0, stride: 0, eatBlend: 0,
       voiceTimer: 1 + (nextId * 1.71) % 5, chewTimer: 0,
       abilityTimer: 4, charge: 0, casts: 0, prismPhase: 'march', prismTimer: 6, recoverTime: 0,
@@ -1044,7 +1057,7 @@
     zombie.yaw = turnToward(zombie.yaw, Math.atan2(dx, dz), dt * 5);
     if (d < 0.055) {
       p.x = target.x; p.z = target.z;
-      if (zombie.grounded) { zombie.target = null; if (zombie.path && zombie.path[0] === target) zombie.path.shift(); }
+      if (zombie.grounded || zombie.swimming) { zombie.target = null; if (zombie.path && zombie.path[0] === target) zombie.path.shift(); }
       zombie.moving = false; return;
     }
     if (target.y - p.y > SIZE + 0.05 && zombie.grounded) { zombie.target = null; zombie.path = null; return; }
@@ -1053,8 +1066,12 @@
       // rejected by navigation before the jump is attempted.
       zombie.vy = 10.6; zombie.grounded = false; zombie.jump = target;
     }
+    if (zombie.swimming) {
+      const exit = physics.shoreExit(world, p, zombie.body, dx, dz, zombie.waterLevel, 20);
+      if (exit && exit.distance <= 1) physics.launchShore(zombie, exit);
+    }
     const rush = zombie.type === 'prismback' ? zombie.prismPhase === 'rush' ? 2 : zombie.prismPhase === 'exposed' ? .65 : 1 : 1;
-    const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * rush * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
+    const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * (zombie.swimming ? .8 : 1) * rush * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
     const x = p.x + dx / d * step, z = p.z + dz / d * step;
     zombie.moving = physics.moveHorizontal(world, p, zombie.body, x - p.x, z - p.z);
     if (zombie.moving) zombie.phase += dt * (zombie.type === 'spider' ? 10 : 5);
@@ -1066,6 +1083,8 @@
   function updatePhysics(zombie, dt) {
     const p = zombie.position;
     if (physics.recover(world, p, zombie.body)) { zombie.vy = 0; zombie.target = null; zombie.path = null; }
+    physics.updateSwimming(world, p, zombie.body, zombie, dt);
+    if (zombie.swimming) { physics.float(world, p, zombie.body, zombie, dt); return; }
     const previousY = p.y;
     zombie.vy = Math.max(-38, zombie.vy - 20 * dt);
     const nextY = p.y + zombie.vy * dt;
@@ -1112,7 +1131,7 @@
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
       if (specialMovement(zombie, dt)) return;
       updatePhysics(zombie, dt);
-      if (zombie.grounded && navigation.contact(zombie.position.x, zombie.position.y, zombie.position.z)) {
+      if ((zombie.grounded || zombie.swimming) && navigation.contact(zombie.position.x, zombie.position.y, zombie.position.z)) {
         zombie.mode = 'tree'; zombie.moving = false; zombie.blockBite = 0;
         zombie.yaw = turnToward(zombie.yaw, Math.atan2(tree.position.x - zombie.position.x, tree.position.z - zombie.position.z), dt * 5);
         zombie.bite += dt;
@@ -1121,8 +1140,8 @@
         }
         return;
       }
-      zombie.bite = 0; zombie.mode = 'walk'; zombie.moving = false;
-      if (tacticalAbility(zombie, dt)) return;
+      zombie.bite = 0; zombie.mode = zombie.swimming ? 'swim' : 'walk'; zombie.moving = false;
+      if (!zombie.swimming && tacticalAbility(zombie, dt)) return;
       if (!zombie.target) zombie.target = chooseTarget(zombie);
       const target = zombie.target;
       if (!target) { zombie.blockBite = 0; return; }
@@ -1136,6 +1155,8 @@
       if (watchdog(zombies[i])) removeEnemy(zombies[i], i, true);
     }
     zombies.forEach(function (zombie) {
+      zombie.swimBlend = damp(zombie.swimBlend, zombie.swimming ? 1 : 0, 7, dt);
+      if (zombie.swimming) zombie.swimPhase += dt * 5;
       zombie.stride = damp(zombie.stride, zombie.moving ? 1 : 0, 8, dt);
       const eating = zombie.mode === 'tree' || zombie.mode === 'block';
       zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);

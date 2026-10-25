@@ -99,6 +99,68 @@
     return false;
   }
 
+  function swimDepth(body) { return Math.min(1.3, body.height * 0.65); }
+
+  function waterInfo(world, position) {
+    if (!world.waterInfoAtBlock) return null;
+    const size = world.blockSize || 2;
+    return world.waterInfoAtBlock(Math.floor(position.x / size), Math.floor(position.z / size), position.y + .1);
+  }
+
+  function updateSwimming(world, position, body, state, dt) {
+    state.shoreJump = Math.max(0, (state.shoreJump || 0) - dt);
+    const water = waterInfo(world, position), draft = swimDepth(body);
+    state.waterLevel = water ? water.level : 0;
+    state.swimming = state.shoreJump <= 0 && !!water && water.depth > Math.min(1.2, draft) &&
+      position.y < water.level - draft * (state.swimming ? .4 : .65);
+    if (state.swimming) state.grounded = false;
+    return water;
+  }
+
+  function float(world, position, body, state, dt) {
+    const target = state.waterLevel - swimDepth(body);
+    const wanted = Math.max(-3, Math.min(3, (target - position.y) * 4));
+    state.vy += (wanted - Math.max(-4.5, Math.min(4, state.vy))) * (1 - Math.exp(-6 * dt));
+    state.vy = Math.max(-4.5, Math.min(4, state.vy));
+    const floor = support(world, position, position.y + .002, body);
+    const next = Math.max(floor, Math.min(target + .08, position.y + state.vy * dt));
+    if (!moveVertical(world, position, body, next) || next <= floor || next >= target + .08) state.vy = 0;
+    state.grounded = false;
+  }
+
+  function shoreExit(world, position, body, dx, dz, waterLevel, gravity) {
+    const length = Math.hypot(dx, dz), size = world.blockSize || 2;
+    if (length < .00001 || position.y < waterLevel - swimDepth(body) - .55) return null;
+    dx /= length; dz /= length;
+    // Probe beyond the body into the actual next block, rather than testing
+    // the tiny movement delta at the near face of the bank.
+    for (let distance = body.radius + .2; distance <= size + body.radius + .4; distance += .2) {
+      const x = position.x + dx * distance, z = position.z + dz * distance;
+      const point = { x: x, y: position.y, z: z };
+      const top = support(world, point, waterLevel + size + .05, body);
+      if (top < waterLevel - .1 || top > waterLevel + size + .01 || top <= position.y + .1 ||
+          !clear(world, x, top, z, body)) continue;
+      const water = waterInfo(world, { x: x, y: top, z: z });
+      if (water && water.level > top + .1) continue;
+      const apex = top + .6;
+      let open = true;
+      for (let y = position.y; y <= apex; y += .2) if (!clear(world, position.x, y, position.z, body)) { open = false; break; }
+      for (let i = 1; open && i <= 5; i++) if (!clear(world,
+          position.x + dx * distance * i / 5, apex, position.z + dz * distance * i / 5, body)) open = false;
+      if (!open) continue;
+      const speed = Math.sqrt(2 * gravity * (apex - position.y));
+      return { x: x, y: top, z: z, distance: distance, speed: speed, duration: speed * 2 / gravity + .15 };
+    }
+    return null;
+  }
+
+  function launchShore(state, exit) {
+    if (!exit) return false;
+    state.shoreJump = exit.duration; state.shoreTarget = exit;
+    state.vy = exit.speed; state.grounded = false; state.swimming = false;
+    return true;
+  }
+
   function intersectsBlock(position, body, bx, by, bz, size) {
     return position.x + body.radius > bx * size + EPSILON && position.x - body.radius < (bx + 1) * size - EPSILON &&
       position.z + body.radius > bz * size + EPSILON && position.z - body.radius < (bz + 1) * size - EPSILON &&
@@ -106,5 +168,7 @@
   }
 
   M.actorPhysics = { clear: clear, support: support, moveVertical: moveVertical,
-    moveHorizontal: moveHorizontal, recover: recover, intersectsBlock: intersectsBlock };
+    moveHorizontal: moveHorizontal, recover: recover, intersectsBlock: intersectsBlock,
+    swimDepth: swimDepth, waterInfo: waterInfo, updateSwimming: updateSwimming, float: float,
+    shoreExit: shoreExit, launchShore: launchShore };
 })(window.Meadow = window.Meadow || {});

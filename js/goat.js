@@ -789,10 +789,9 @@
   function moveGoat(dx, dz) {
     const p = goat.position;
     const moved = physics.moveHorizontal(worldRef, p, BODY, dx, dz);
-    if (!moved && state.swimming && state.shoreJump <= 0 && p.y > state.waterLevel - 1.65 &&
-        canStandAt(p.x + dx, p.z + dz, p.y + worldRef.blockSize + 0.1)) {
-      state.shoreJump = 0.45; state.vy = JUMP_SPEED * 0.92;
-      state.grounded = false; state.swimming = false;
+    if (state.swimming && state.shoreJump <= 0) {
+      const exit = physics.shoreExit(worldRef, p, BODY, dx, dz, state.waterLevel, GRAVITY);
+      if (exit && exit.distance <= 1) physics.launchShore(state, exit);
     }
     return moved;
   }
@@ -865,6 +864,10 @@
         if (running) s.runPhase += s.speed * dt * 2.4;
         moving = true;
       }
+    } else if (s.shoreJump > 0 && s.shoreTarget) {
+      const dx = s.shoreTarget.x - goat.position.x, dz = s.shoreTarget.z - goat.position.z;
+      const distance = Math.hypot(dx, dz), step = Math.min(distance, 3.5 * dt);
+      if (distance > .02) moving = moveGoat(dx / distance * step, dz / distance * step);
     } else if (s.manualHold > 0) {
       // Just after steering, stand and let the player watch for a moment.
       s.manualHold = Math.max(0, s.manualHold - dt);
@@ -1200,6 +1203,12 @@
 
   function jump() {
     if (state.swimming) {
+      const input = controlsRef.getMovement(cameraRef);
+      const dx = input.lengthSq() ? input.x : Math.sin(state.yaw);
+      const dz = input.lengthSq() ? input.y : Math.cos(state.yaw);
+      if (physics.launchShore(state, physics.shoreExit(worldRef, goat.position, BODY, dx, dz, state.waterLevel, GRAVITY))) {
+        audioRef.unlock(); audioRef.jump();
+      }
       controlsRef.noteActivity();
       return;
     }

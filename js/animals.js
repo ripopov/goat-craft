@@ -882,7 +882,7 @@
       const floor = physics.support(worldRef, { x: x, y: p.y, z: z }, p.y + BODY_CLEARANCE, bodyOf(animal));
       return !!worldRef.waterAt(x, Math.min(p.y, floor) + 0.1, z);
     }
-    if (wetAt(nx, nz) && !wetAt(p.x, p.z)) return false;
+    if (!s.swimming && s.shoreJump <= 0 && wetAt(nx, nz) && !wetAt(p.x, p.z)) return false;
 
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
@@ -929,6 +929,10 @@
   function moveAnimal(animal, dx, dz, yaw) {
     const s = animal.state;
     const p = animal.group.position;
+    if (s.swimming) {
+      const exit = physics.shoreExit(worldRef, p, bodyOf(animal), dx, dz, s.waterLevel, GRAVITY);
+      if (exit && exit.distance <= 1 && actorSpotClear(animal, exit.x, exit.z)) physics.launchShore(s, exit);
+    }
     if (s.detourTarget && s.detourTime > 0) {
       const tx = s.detourTarget.x - p.x;
       const tz = s.detourTarget.z - p.z;
@@ -2002,6 +2006,7 @@
 
   function updateGravity(animal, dt) {
     const s = animal.state, p = animal.group.position, body = bodyOf(animal);
+    if (s.swimming) { physics.float(worldRef, p, body, s, dt); return; }
     let groundY = physics.support(worldRef, p, p.y + BODY_CLEARANCE, body);
     if (s.grounded) {
       if (p.y > groundY + 0.02) { s.grounded = false; s.vy = 0; }
@@ -2405,7 +2410,10 @@
       s.grazePose = damp(s.grazePose, 0, 8, dt);
     }
 
-    s.tuck = damp(s.tuck || 0, s.grounded ? 0 : 1, 11, dt);
+    s.swimBlend = damp(s.swimBlend || 0, s.swimming ? 1 : 0, 7, dt);
+    if (s.swimming) s.swimPhase += dt * (4 + s.speed);
+    const swim = M.config.reducedMotion ? 0 : s.swimBlend;
+    s.tuck = damp(s.tuck || 0, s.grounded || s.swimming ? 0 : 1, 11, dt);
     const tuck = s.tuck;
     // Fleet hooves and Long horns train the herd with the same visible
     // transformations as the player goat: glowing bands up the legs, wheel
@@ -2428,7 +2436,7 @@
     const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.014 * stride;
     parts.rig.position.x = damp(parts.rig.position.x, weightShift, 10, dt);
     parts.rig.rotation.x = damp(parts.rig.rotation.x,
-      (s.landPulse || 0) * -0.05 + (moving ? Math.sin(s.walkPhase * 2) * 0.012 * stride : 0) - tuck * 0.14,
+      (s.landPulse || 0) * -0.05 + (moving ? Math.sin(s.walkPhase * 2) * 0.012 * stride : 0) - tuck * 0.14 - swim * .1,
       9, dt);
     if (parts.chest.userData.restScale === undefined) parts.chest.userData.restScale = parts.chest.scale.x;
     const breath = 1 + Math.sin(t * 1.4 + animal.seed) * (moving ? 0.003 : 0.012);
@@ -2513,6 +2521,11 @@
         const kneeEnergy = 1 + speedLevel * 0.07;
         hipTarget = gait.hip * gaitShape * energy;
         kneeTarget = gait.knee * (animal.species === 'stag' ? 1.12 : 1) * kneeEnergy;
+      }
+      if (swim > .001) {
+        const paddle = s.swimPhase + leg.offset;
+        hipTarget += ((leg.front ? -.5 : .3) + Math.sin(paddle) * .65 - hipTarget) * swim;
+        kneeTarget += (.6 + Math.cos(paddle + .6) * .35 - kneeTarget) * swim;
       }
       if (actionLunge > 0 && tuck < 0.4 && !wheel) {
         hipTarget += (leg.front ? -0.18 : 0.12) * actionLunge;
@@ -2732,10 +2745,43 @@
     }
   }
 
+  function updateSwimmingAnimal(animal, dt, t) {
+    const s = animal.state, p = animal.group.position;
+    let goal = s.shoreJump > 0 && s.shoreTarget ? s.shoreTarget :
+      s.mode === 'walk' ? s.target : s.mode === 'hunt' && s.huntTarget ? s.huntTarget.position : null;
+    if (!goal || Math.hypot(goal.x - p.x, goal.z - p.z) < .3) {
+      s.swimSearch = (s.swimSearch || 0) - dt;
+      if (!s.swimTarget || s.swimSearch <= 0) {
+        s.swimSearch = 1; s.swimTarget = null;
+        for (let radius = 2; radius <= 14 && !s.swimTarget; radius += 2) for (let i = 0; i < 16; i++) {
+          const x = p.x + Math.sin(s.yaw + i * Math.PI / 8) * radius;
+          const z = p.z + Math.cos(s.yaw + i * Math.PI / 8) * radius;
+          const top = physics.support(worldRef, { x: x, z: z }, s.waterLevel + BLOCK + .01, bodyOf(animal));
+          if (top >= s.waterLevel - .1 && canStandAt(animal, x, z, top) && actorSpotClear(animal, x, z)) {
+            s.swimTarget = { x: x, y: top, z: z }; break;
+          }
+        }
+      }
+      goal = s.swimTarget || goatRef.group.position;
+    }
+    if (goal) {
+      const dx = goal.x - p.x, dz = goal.z - p.z, distance = Math.hypot(dx, dz);
+      s.yaw = turnToward(s.yaw, Math.atan2(dx, dz), dt * 4);
+      s.speed = damp(s.speed, Math.min(3.5, defWalkSpeed(animal)) * .8, 5, dt);
+      const step = Math.min(distance, s.speed * dt);
+      if (distance > .02) moveAnimal(animal, dx / distance * step, dz / distance * step, s.yaw);
+    } else s.speed = damp(s.speed, 0, 5, dt);
+    animal.group.rotation.y = s.yaw;
+    updateGravity(animal, dt);
+    updateVisual(animal, dt, t);
+  }
+
   function updateAnimal(animal, dt, t) {
     const s = animal.state;
     const p = animal.group.position;
     if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
+    physics.updateSwimming(worldRef, p, bodyOf(animal), s, dt);
+    if (s.swimming || s.shoreJump > 0) { updateSwimmingAnimal(animal, dt, t); return; }
     const player = goatRef.group.position;
     const playerDistance = Math.hypot(p.x - player.x, p.z - player.z);
     if (s.mode !== 'hunt') s.strikeTime = -1;
@@ -3118,6 +3164,7 @@
       escapeCooldown: 0,
       pitTimer: rand(0.2, 0.7),
       jumpCooldown: 0,
+      swimming: false, swimBlend: 0, swimPhase: 0, shoreJump: 0, shoreTarget: null, swimTarget: null,
       tuck: 0,
       jumpReason: null,
       climbTries: 0,

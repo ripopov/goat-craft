@@ -1129,7 +1129,7 @@
         }
       } else if (reachLevel >= 1 && castSpell(reachLevel)) {
         // Long horns channel an elemental strike instead of a melee lunge.
-      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: MELEE_RANGE, damage: 1 + upgrades.damage, maxTargets: 3 })) {
+      } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: MELEE_RANGE, damage: 1 + upgrades.damage, maxTargets: 1 })) {
         audioRef.thud();
       }
     }

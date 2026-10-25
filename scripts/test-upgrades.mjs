@@ -143,13 +143,20 @@ test('automatic attacks never rotate the player; the facing stays mouse-controll
   assert.equal(behind.hp, 0, 'the automatic stomp still clears enemies behind without turning the goat');
 });
 
-test('enemies straight ahead are headbutted automatically with no input', () => {
+test('starter horns automatically hit just one enemy and need two strikes to kill early mobs', () => {
   const { M, controls } = training(); supplies(M);
   controls.firstPerson = true;
   const p = M.goat.group.position; p.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
   const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 21 }); // 6 units ahead, inside tripled melee 8.4
+  const second = M.enemies.spawnAt({ x: 15, y: 14, z: 21.5 });
+  const third = M.enemies.spawnAt({ x: 15, y: 14, z: 22 });
+  M.goat.state.stompCooldown = 100; // Isolate the horn from the separate hoof attack.
   advancePlayer(M, .2);
   assert.equal(ahead.hp, 1, 'the automatic headbutt lands on what the player faces');
+  assert.equal(second.hp, 2); assert.equal(third.hp, 2);
+  advancePlayer(M, .55);
+  assert.equal(ahead.hp, 0, 'the second horn strike kills a wave-one zombie');
+  assert.equal(second.hp, 2); assert.equal(third.hp, 2, 'nearby enemies are not cleaved');
   assert.equal(M.goat.state.yaw, 0, 'the player direction is untouched');
 });
 

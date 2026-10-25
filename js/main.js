@@ -70,7 +70,6 @@
 
   M.enemies.init({ scene: scene, world: M.world, tree: M.hearthTree });
 
-  M.upgrades.init();
   M.upgradeMenu.init();
   M.minimap.init();
   M.highlights.init(scene);

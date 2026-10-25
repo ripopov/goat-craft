@@ -13,13 +13,13 @@ function supplies(M, coins = 1000) {
 function train(M, target, key, tiers = 3) { for (let i = 0; i < tiers; i++) assert.equal(M.upgrades.buy(target, key), true); }
 function advancePlayer(M, seconds) { for (let i = 0; i < Math.round(seconds * 60); i++) M.goat.update(1 / 60, i / 60); }
 
-test('starter resources are granted once, and purchases debit coins and the selected block stack', () => {
+test('fresh runs have no resources; purchases debit only earned coins and gathered blocks', () => {
   const { M } = training(), u = M.upgrades;
-  u.init(); u.init();
-  assert.equal(M.enemies.getState().coins, 45);
-  for (const [kind, count] of Object.entries({ log: 4, stone: 5, dirt: 4, coal: 2, copper: 3, iron: 3 }))
-    assert.equal(M.items.count(kind), count, kind + ' starting balance');
-  M.enemies.spendCoins(37); M.items.spend({ log: 2 });
+  assert.equal(M.enemies.getState().coins, 0);
+  for (const kind of ['log', 'stone', 'dirt', 'coal', 'copper', 'iron']) assert.equal(M.items.count(kind), 0);
+  assert.equal(M.items.slots.filter(slot => slot && slot.kind !== 'tool').length, 0);
+  assert.equal(u.buy(u.player, 'move'), false);
+  M.enemies.addCoins(8); M.items.addItem('log', 2); M.items.addItem('stone', 5);
   M.items.selectSlot(1);
   assert.equal(M.items.heldKind, 'log');
   assert.equal(u.buy(u.player, 'move'), true);

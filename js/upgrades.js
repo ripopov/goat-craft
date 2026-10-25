@@ -107,17 +107,7 @@
     });
     return best;
   }
-  let initialized = false;
-  function init() {
-    if (initialized) return;
-    initialized = true;
-    // Cover the highest individual cost of each material across the workshop,
-    // so the opening build can be any one of the ten towers.
-    M.enemies.addCoins(45);
-    const supplies = { log: 4, stone: 5, dirt: 4, coal: 2, copper: 3, iron: 3 };
-    Object.entries(supplies).forEach(([kind, count]) => M.items.addItem(kind, count));
-  }
   M.upgrades = { player: player, stats: stats, level: level, keys: keys, offer: offer, buy: buy,
-    canAfford: canAfford, nearest: nearest, init: init, maxLevel: MAX_LEVEL, talkRange: TALK_RANGE,
+    canAfford: canAfford, nearest: nearest, maxLevel: MAX_LEVEL, talkRange: TALK_RANGE,
     spellRanges: function () { return SPELL_RANGES; } };
 })(window.Meadow = window.Meadow || {});

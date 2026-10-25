@@ -60,7 +60,7 @@
   const { clamp, turnToward, damp } = M.utils;
   const zombies = [], fallen = [];
   let scene, world, tree, navigation, mesh, outlineMesh;
-  let elapsed = 0, wave = 0, nextWave = 10, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
+  let elapsed = 0, wave = 0, nextWave = 30, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
   let plan = wavePlan(1), spawnLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -822,7 +822,7 @@
       maxEnemies: MAX_ENEMIES, approaches: spawnLanes.map(function (lane) { return lane.label; }).join(' / '),
       spawnLanes: spawnLanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
       nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
-      nextWave: Number.isFinite(nextWave) ? Math.ceil(Math.max(0, nextWave - elapsed)) : 0, defeated: !!tree && tree.health <= 0 };
+      nextWave: Number.isFinite(nextWave) ? Math.ceil(Math.max(0, nextWave - elapsed - 1e-7)) : 0, defeated: !!tree && tree.health <= 0 };
   }
   function angleTo(node) { return Math.atan2(node.x - tree.position.x, node.z - tree.position.z); }
   function angleDistance(a, b) { return Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))); }
@@ -1242,10 +1242,11 @@
     });
     if (wave > 0 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
       const bonus = Math.min(24, 4 + wave * 2);
-      coins += bonus; nextWave = elapsed + 10;
+      const rest = wave % 10 === 0 ? 60 : 10;
+      coins += bonus; nextWave = elapsed + rest;
       prepareSpawns(wave + 1);
       if (M.audio && M.audio.cue) M.audio.cue('clear');
-      if (M.ui) M.ui.showBubble('Wave cleared! +' + bonus + ' coins · Q to upgrade');
+      if (M.ui) M.ui.showBubble('Wave cleared! +' + bonus + ' coins · ' + (rest === 60 ? 'One minute to regroup · ' : '') + 'Q to upgrade');
     }
     updateHud(); render(elapsed);
   }

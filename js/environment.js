@@ -217,19 +217,50 @@
   }
 
   function makeSunTexture() {
-    const size = 256;
+    const size = 512;
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
     const c = size / 2;
+
+    // Soft sunburst rays first: faint wedges that linger past the disc like a
+    // corona. The disc gradient painted afterwards dims them near the core,
+    // leaving just a delicate star-burst halo on the AdditiveBlending sprite.
+    const rayCount = 12;
+    for (let i = 0; i < rayCount; i++) {
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate((i / rayCount) * Math.PI * 2 + (i % 2) * 0.018);
+      const span = 0.42 * (1 + 0.35 * Math.sin(i * 2.61));
+      const length = size * (0.66 + span * 0.28);
+      const half = Math.atan(0.14);
+      const g = ctx.createLinearGradient(0, 0, length, 0);
+      g.addColorStop(0, 'rgba(255, 232, 165, 0)');
+      g.addColorStop(0.5, 'rgba(255, 224, 148, 0.055)');
+      g.addColorStop(0.92, 'rgba(255, 214, 128, 0.02)');
+      g.addColorStop(1, 'rgba(255, 210, 120, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(length, Math.tan(half) * length * 0.2);
+      ctx.lineTo(length, -Math.tan(half) * length * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // The disc: a hot white punctum, a golden face and a long warm corona
+    // that bleeds into the sky with no hard edge.
     const g = ctx.createRadialGradient(c, c, 0, c, c, c);
     g.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    g.addColorStop(0.11, 'rgba(255, 254, 239, 1)');
-    g.addColorStop(0.17, 'rgba(255, 244, 194, 1)');
-    g.addColorStop(0.26, 'rgba(255, 224, 148, 0.62)');
-    g.addColorStop(0.45, 'rgba(255, 190, 104, 0.2)');
-    g.addColorStop(0.72, 'rgba(255, 165, 70, 0.05)');
-    g.addColorStop(1, 'rgba(255, 150, 50, 0)');
+    g.addColorStop(0.07, 'rgba(255, 255, 248, 1)');
+    g.addColorStop(0.13, 'rgba(255, 248, 214, 1)');
+    g.addColorStop(0.19, 'rgba(255, 232, 168, 0.9)');
+    g.addColorStop(0.27, 'rgba(255, 216, 132, 0.45)');
+    g.addColorStop(0.42, 'rgba(255, 192, 104, 0.16)');
+    g.addColorStop(0.62, 'rgba(255, 168, 78, 0.05)');
+    g.addColorStop(0.86, 'rgba(255, 152, 58, 0.015)');
+    g.addColorStop(1, 'rgba(255, 146, 52, 0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
 
@@ -239,18 +270,21 @@
   }
 
   function makeMoonTexture() {
-    const size = 256;
+    const size = 512;
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
     const c = size / 2;
-    const disc = size * 0.19;
+    const disc = size * 0.21;
 
-    const glow = ctx.createRadialGradient(c, c, disc * 0.7, c, c, c);
-    glow.addColorStop(0, 'rgba(190, 215, 255, 0.32)');
-    glow.addColorStop(0.34, 'rgba(160, 195, 255, 0.12)');
-    glow.addColorStop(0.7, 'rgba(140, 180, 255, 0.025)');
-    glow.addColorStop(1, 'rgba(130, 170, 255, 0)');
+    // Cool silver-blue halo, soft and wide so the big disc floats instead of
+    // pasting onto the night sky.
+    const glow = ctx.createRadialGradient(c, c, disc * 0.62, c, c, c);
+    glow.addColorStop(0, 'rgba(196, 218, 255, 0.34)');
+    glow.addColorStop(0.3, 'rgba(168, 198, 255, 0.13)');
+    glow.addColorStop(0.62, 'rgba(150, 185, 255, 0.035)');
+    glow.addColorStop(0.85, 'rgba(140, 176, 255, 0.012)');
+    glow.addColorStop(1, 'rgba(136, 172, 255, 0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, size, size);
 
@@ -259,28 +293,64 @@
     ctx.arc(c, c, disc, 0, Math.PI * 2);
     ctx.clip();
 
-    const surface = ctx.createRadialGradient(c - disc * 0.35, c - disc * 0.4, disc * 0.1, c, c, disc);
+    // Moonlit surface washed by the sun from the upper-left.
+    const surface = ctx.createRadialGradient(c - disc * 0.38, c - disc * 0.42, disc * 0.08, c, c, disc);
     surface.addColorStop(0, '#ffffff');
-    surface.addColorStop(0.45, '#e9eef9');
-    surface.addColorStop(0.8, '#c8d4e9');
-    surface.addColorStop(1, '#aebdd7');
+    surface.addColorStop(0.4, '#edf1fb');
+    surface.addColorStop(0.72, '#ccd6ea');
+    surface.addColorStop(1, '#aebdd8');
     ctx.fillStyle = surface;
     ctx.fillRect(c - disc, c - disc, disc * 2, disc * 2);
 
+    // Maria: blurred dark volcanic plains swung toward the lower-right.
+    const maria = [
+      [0.1, 0.12, 0.30, 0.22],
+      [-0.26, 0.22, 0.24, 0.18],
+      [0.34, -0.18, 0.18, 0.14],
+      [-0.08, -0.34, 0.15, 0.12],
+      [0.02, 0.42, 0.13, 0.1]
+    ];
+    for (let i = 0; i < maria.length; i++) {
+      const m = maria[i];
+      const g = ctx.createRadialGradient(c + m[0] * disc, c + m[1] * disc, 0, c + m[0] * disc, c + m[1] * disc, m[2] * disc);
+      g.addColorStop(0, 'rgba(118, 136, 168, ' + m[3] + ')');
+      g.addColorStop(1, 'rgba(118, 136, 168, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(c - disc, c - disc, disc * 2, disc * 2);
+    }
+
+    // Craters with a lit rim on the sun side and a shaded bowl inside.
     const craters = [
       [-0.32, -0.08, 0.15, 0.16],
       [0.2, -0.32, 0.12, 0.13],
       [0.31, 0.18, 0.1, 0.12],
       [-0.1, 0.35, 0.14, 0.13],
       [-0.48, 0.28, 0.07, 0.08],
-      [0.02, 0.02, 0.08, 0.08]
+      [0.02, 0.02, 0.08, 0.08],
+      [0.42, -0.02, 0.06, 0.07],
+      [-0.18, -0.42, 0.05, 0.06]
     ];
     for (let i = 0; i < craters.length; i++) {
       const cr = craters[i];
-      ctx.fillStyle = 'rgba(112, 132, 166, ' + cr[3] + ')';
+      const x = c + cr[0] * disc, y = c + cr[1] * disc, r = cr[2] * disc;
+      ctx.fillStyle = 'rgba(96, 116, 150, ' + (cr[3] * 1.05) + ')';
       ctx.beginPath();
-      ctx.arc(c + cr[0] * disc, c + cr[1] * disc, cr[2] * disc, 0, Math.PI * 2);
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fill();
+      // Gentle crescent highlight hugging the upper-left rim.
+      ctx.strokeStyle = 'rgba(255, 255, 255, ' + (cr[3] * 1.1) + ')';
+      ctx.lineWidth = r * 0.34;
+      ctx.beginPath();
+      ctx.arc(x, y, r * 0.82, Math.PI * 0.95, Math.PI * 1.75);
+      ctx.stroke();
+    }
+
+    // Fine speckle for a rocky, non-plastic surface.
+    for (let i = 0; i < 340; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * disc * 0.92;
+      ctx.fillStyle = 'rgba(80, 100, 134, ' + (0.02 + Math.random() * 0.05) + ')';
+      ctx.fillRect(c + Math.cos(a) * rr, c + Math.sin(a) * rr, 1 + Math.random() * 1.6, 1 + Math.random() * 1.6);
     }
     ctx.restore();
 
@@ -304,7 +374,7 @@
       blending: THREE.AdditiveBlending
     });
     sunSprite = new THREE.Sprite(sunMat);
-    sunSprite.scale.set(11, 11, 1);
+    sunSprite.scale.set(33, 33, 1);
     sunSprite.renderOrder = -8;
     celestial.add(sunSprite);
 
@@ -319,7 +389,7 @@
       blending: THREE.NormalBlending
     });
     moonSprite = new THREE.Sprite(moonMat);
-    moonSprite.scale.set(8.5, 8.5, 1);
+    moonSprite.scale.set(25.5, 25.5, 1);
     moonSprite.renderOrder = -8;
     celestial.add(moonSprite);
 
@@ -553,7 +623,7 @@
       sunSprite.material.color.copy(sunDiscWarm).lerp(sunDiscDay, smoothstep(0.02, 0.55, sunAltitude));
       sunSprite.material.opacity = smoothstep(-0.02, 0.025, sunAltitude);
       sunSprite.visible = sunSprite.material.opacity > 0.01;
-      const sunScale = 10.5 + 1.5 * (1 - smoothstep(0.05, 0.55, sunAltitude));
+      const sunScale = (10.5 + 1.5 * (1 - smoothstep(0.05, 0.55, sunAltitude))) * 3 * (1 + 0.025 * Math.sin(t * 2.3));
       sunSprite.scale.set(sunScale, sunScale, 1);
     }
 

@@ -18,6 +18,7 @@ function step(M, seconds, extra) {
 test('specialist wave slots stay rare, unlock gradually and preserve early wave pacing', () => {
   const { M } = defense(), e = M.enemies;
   for (let wave = 1; wave <= 60; wave++) {
+    if (wave === 30) continue; // Dedicated Worm swarm overrides the normal mixed roster.
     const roster = Array.from({ length: e.waveSize(wave) }, (_, slot) => e.typeForWave(wave, slot));
     for (const type of roster) assert.ok(e.types[type].unlock <= wave);
     const count = type => roster.filter(t => t === type).length;
@@ -31,6 +32,21 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
   }
   assert.equal(e.emergenceRadius, 18, 'nine two-unit voxels ≈ √3 × the former five, about three times the surface area');
   assert.deepEqual([1, 2, 3].map(wave => e.waveSize(wave)), [6, 10, 14]);
+  for (const wave of [30, 70, 130]) {
+    for (let slot = 0; slot < e.waveSize(wave); slot++) {
+      assert.equal(e.typeForWave(wave, slot), 'worm', 'the entire special roster, including the usual wave-70 Boss');
+      assert.equal(e.deliveryForWave(wave, slot, 'worm'), 'ground');
+    }
+    M.enemies.startWave(wave);
+    M.enemies.update(.05);
+    const enemy = M.enemies.zombies.at(-1);
+    assert.equal(enemy.type, 'worm'); assert.equal(enemy.burrowed, true);
+    const gate = M.hellGates.gates.find(gate => gate.id === enemy.gateId);
+    assert.ok(gate); assert.ok(Math.hypot(enemy.position.x - gate.x, enemy.position.z - gate.z) < .4);
+    assert.ok(enemy.position.y + enemy.body.height < gate.y);
+    M.enemies.damageEnemy(enemy, enemy.hp);
+  }
+  for (const wave of [29, 31, 69, 71, 129, 131]) assert.equal(e.typeForWave(wave, 1), 'spider', 'neighboring waves keep their mix');
 });
 
 test('airdrops enter actual wave five, remain vulnerable, and cannot bite before landing recovery', () => {

@@ -41,6 +41,7 @@
   // Deterministic slots introduce a readable mix and bound the durable units.
   // Every 7th wave leads with one Boss marching alongside its regular horde.
   function typeForWave(level, slot) {
+    if (level === 30 || level === 70 || level === 130) return 'worm';
     if (level % 7 === 0 && slot === 0) return 'boss';
     if (level >= 10 && slot % 12 === 9) return 'worm';
     if (level >= 15 && slot % 20 === 17) return 'sower';
@@ -858,7 +859,8 @@
       10: 'Burrow Worms — guard the inner nine blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
     let intro = introductions[wave] || 'protect the Hearth!';
-    if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +
+    if (wave === 30 || wave === 70 || wave === 130) intro = 'Burrow swarm! Every enemy tunnels beneath the gates.';
+    else if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +
       (wave === 7 ? 'Briar Binders follow: interrupt their tower-snare chant.' : '');
     if (M.ui) M.ui.showBubble('Wave ' + wave + ' — ' + intro);
     updateHud();

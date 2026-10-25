@@ -384,62 +384,43 @@
     starGroup.add(brightStars);
   }
 
-  // A soft, irregular puff used as an alpha map: dense core, feathered rim
-  // and a random cauliflower silhouette, so no two puffs (or clouds) copy
-  // each other's exact shape. Callers get one unique alpha texture per cloud.
+  // A soft, organic cloud-sided blob used as a sprite texture: a wide
+  // base, a doming center, surrounding bumps and faint wisps. Every blob is
+  // a stack of smooth radial gradients that fade to zero alpha, so the
+  // silhouette is round and cloudy at every angle instead of faceted or
+  // rim-sharp. Each call rolls a unique shape.
   function makeCloudPuffTexture() {
     const size = 256;
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = size;
     const ctx = canvas.getContext('2d');
     const c = size / 2;
-    const r = size * 0.46;
 
-    const core = ctx.createRadialGradient(c, c, 0, c, c, r);
-    core.addColorStop(0, 'rgba(255, 255, 255, 1)');
-    core.addColorStop(0.55, 'rgba(255, 255, 255, 0.95)');
-    core.addColorStop(0.74, 'rgba(255, 255, 255, 0.7)');
-    core.addColorStop(0.89, 'rgba(255, 255, 255, 0.32)');
-    core.addColorStop(0.98, 'rgba(255, 255, 255, 0.08)');
-    core.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = core;
-    ctx.fillRect(0, 0, size, size);
-
-    // Chunky lobes break the disc into a unique, cauliflower-like rim.
-    const lobes = 9 + Math.floor(Math.random() * 6);
-    for (let i = 0; i < lobes; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = r * (0.4 + Math.random() * 0.38);
-      const lr = r * (0.15 + Math.random() * 0.26);
-      const lg = ctx.createRadialGradient(
-        c + Math.cos(a) * d, c + Math.sin(a) * d, 0,
-        c + Math.cos(a) * d, c + Math.sin(a) * d, lr
-      );
-      lg.addColorStop(0, 'rgba(255, 255, 255, 0.62)');
-      lg.addColorStop(0.6, 'rgba(255, 255, 255, 0.3)');
-      lg.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = lg;
-      ctx.beginPath();
-      ctx.arc(c + Math.cos(a) * d, c + Math.sin(a) * d, lr, 0, Math.PI * 2);
-      ctx.fill();
+    function blob(x, y, r, a) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(255, 255, 255, ' + a + ')');
+      g.addColorStop(0.45, 'rgba(255, 255, 255, ' + (a * 0.85).toFixed(3) + ')');
+      g.addColorStop(0.72, 'rgba(255, 255, 255, ' + (a * 0.45).toFixed(3) + ')');
+      g.addColorStop(0.9, 'rgba(255, 255, 255, ' + (a * 0.14).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
 
-    // A few faint wisps drift past the rim so edges never read as a hard cut.
-    const wisps = 4 + Math.floor(Math.random() * 4);
+    // Broad soft base, then a doming heart, then irregular bumps and wisps.
+    blob(c, c + size * 0.07, size * 0.44, 0.8);
+    blob(c, c - size * 0.04, size * 0.33, 0.85);
+    const bumps = 7 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < bumps; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = size * (0.15 + Math.random() * 0.18);
+      blob(c + Math.cos(a) * d, c + Math.sin(a) * d - size * 0.03, size * (0.11 + Math.random() * 0.13), 0.45 + Math.random() * 0.3);
+    }
+    const wisps = 5 + Math.floor(Math.random() * 5);
     for (let i = 0; i < wisps; i++) {
       const a = Math.random() * Math.PI * 2;
-      const d = r * (0.52 + Math.random() * 0.5);
-      const lr = r * (0.07 + Math.random() * 0.11);
-      const lg = ctx.createRadialGradient(
-        c + Math.cos(a) * d, c + Math.sin(a) * d, 0,
-        c + Math.cos(a) * d, c + Math.sin(a) * d, lr
-      );
-      lg.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
-      lg.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = lg;
-      ctx.beginPath();
-      ctx.arc(c + Math.cos(a) * d, c + Math.sin(a) * d, lr, 0, Math.PI * 2);
-      ctx.fill();
+      const d = size * (0.26 + Math.random() * 0.16);
+      blob(c + Math.cos(a) * d, c + Math.sin(a) * d - size * 0.02, size * (0.06 + Math.random() * 0.07), 0.18 + Math.random() * 0.16);
     }
 
     const tex = new THREE.CanvasTexture(canvas);
@@ -448,50 +429,60 @@
   }
 
   function makeClouds() {
-    // Smooth, round icosahedra: the soft alpha texture does the fluff work, so
-    // the geometry just needs density instead of flat facets.
-    const geo = new THREE.IcosahedronGeometry(1, coarse ? 2 : 3);
-
     cloudLayer = new THREE.Group();
     sceneRef.add(cloudLayer);
 
-    // A cloud is a loose cumulus mound: a cluster of bumpy puffs on a
-    // flattened underside, each cloud wearing its own alpha texture, puff
-    // count, spread and aspect so the sky never repeats a shape.
+    // A cloud is a cluster of camera-facing sprites that share one unique
+    // per-cloud soft texture: a doming center puff, a rough ring of bumps, a
+    // wide lower base and a few ragged wisps. Each cloud also picks its own
+    // puff counts, spread, aspect and yaw, so the sky never repeats itself.
     function addCloud(x, y, z, scale) {
-      const mat = new THREE.MeshStandardMaterial({
+      const m = new THREE.SpriteMaterial({
+        map: makeCloudPuffTexture(),
         color: 0xffffff,
-        roughness: 1,
-        metalness: 0,
         transparent: true,
-        opacity: 0.97,
+        opacity: 0.92,
         depthWrite: false,
-        alphaMap: makeCloudPuffTexture(),
-        emissive: 0x000000,
-        emissiveIntensity: 1
+        fog: true
       });
-      cloudMats.push(mat);
+      cloudMats.push(m);
 
       const g = new THREE.Group();
-      const puffs = 6 + Math.floor(Math.random() * 4);
-      for (let j = 0; j < puffs; j++) {
-        const puff = new THREE.Mesh(geo, mat);
-        const size = rand(0.65, 1.1);
-        puff.scale.set(size * rand(1.05, 1.6), size * rand(0.95, 1.4), size * rand(1.05, 1.6));
-        const bump = rand(-0.95, 0.95);
-        puff.position.set(rand(-1.5, 1.5), 0.2 + Math.abs(bump) * 0.36, rand(-0.85, 0.85));
+      const center = new THREE.Sprite(m);
+      center.scale.set(rand(2.9, 3.6), rand(2.4, 2.9), 1);
+      center.position.set(0, 0.35, 0);
+      g.add(center);
+
+      const bumps = 5 + Math.floor(Math.random() * 4);
+      for (let j = 0; j < bumps; j++) {
+        const puff = new THREE.Sprite(m);
+        const a = (j / bumps) * Math.PI * 2 + Math.random() * 0.8;
+        const d = rand(0.62, 1.15);
+        const s = rand(1.5, 2.4);
+        puff.scale.set(s * rand(0.9, 1.35), s * rand(0.8, 1.05), 1);
+        puff.position.set(Math.cos(a) * d, rand(0.25, 0.7), Math.sin(a) * d * 0.7);
         g.add(puff);
       }
-      const base = new THREE.Mesh(geo, mat);
-      base.scale.set(rand(2.0, 2.8), rand(0.45, 0.7), rand(1.5, 2.2));
-      base.position.set(0, rand(-0.5, -0.2), 0);
+
+      const base = new THREE.Sprite(m);
+      base.scale.set(rand(4.4, 5.2), rand(1.2, 1.6), 1);
+      base.position.set(0, rand(-0.1, 0.15), 0);
       g.add(base);
 
-      // Unique overall aspect: wide or squarish, forward-tilted or level.
+      const wisps = 2 + Math.floor(Math.random() * 3);
+      for (let j = 0; j < wisps; j++) {
+        const wisp = new THREE.Sprite(m);
+        const a = Math.random() * Math.PI * 2;
+        const d = rand(1.35, 2.1);
+        const s = rand(0.8, 1.35);
+        wisp.scale.set(s, s * 0.7, 1);
+        wisp.position.set(Math.cos(a) * d, rand(-0.15, 0.6), Math.sin(a) * d * 0.7);
+        g.add(wisp);
+      }
+
       g.position.set(x, y, z);
-      g.rotation.z = rand(-0.08, 0.08);
       g.rotation.y = rand(0, Math.PI);
-      g.scale.set(scale * rand(1.0, 1.45), scale * rand(0.65, 0.95), scale * rand(0.8, 1.25));
+      g.scale.set(scale * rand(1.35, 1.8), scale * rand(1.05, 1.3), scale * rand(1.35, 1.8));
       g.userData.baseY = y;
       g.userData.phase = Math.random() * Math.PI * 2;
       cloudLayer.add(g);
@@ -499,16 +490,16 @@
     }
 
     const specs = [
-      [-42, 21, -62, 1.4],
-      [-12, 24, -76, 1.25],
-      [34, 20, -60, 1.35],
-      [-70, 22, -14, 1.2],
-      [48, 25, 34, 1.3],
-      [-24, 21, 66, 1.2],
-      [74, 23, -24, 1.2],
-      [-84, 23, 46, 1.25],
-      [10, 20, -84, 1.35],
-      [58, 22, -72, 1.25]
+      [-42, 23, -62, 1.4],
+      [-12, 26, -76, 1.25],
+      [34, 22, -60, 1.35],
+      [-70, 24, -14, 1.2],
+      [48, 27, 34, 1.3],
+      [-24, 23, 66, 1.2],
+      [74, 25, -24, 1.2],
+      [-84, 25, 46, 1.25],
+      [10, 22, -84, 1.35],
+      [58, 24, -72, 1.25]
     ];
     for (let i = 0; i < specs.length; i++) {
       const sp = specs[i];
@@ -662,7 +653,6 @@
 
     for (let i = 0; i < cloudMats.length; i++) {
       cloudMats[i].color.copy(skyCloud);
-      cloudMats[i].emissive.copy(skyHorizon).multiplyScalar(0.18);
     }
 
     if (goat) {

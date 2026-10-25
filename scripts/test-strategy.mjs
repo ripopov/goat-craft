@@ -115,7 +115,8 @@ test('all four strategic portraits open remote individual upgrades and return fo
     assert.equal(M.upgradeMenu.target, animal);
     assert.equal(element('upgrade-title').textContent, animal.name);
     assert.equal(element('upgrade-animal-tab').hidden, false);
-    const upgradeButtons = () => element('upgrade-cards').children.map(card => card.children.at(-1));
+    const descendants = node => node.children.flatMap(child => [child, ...descendants(child)]);
+    const upgradeButtons = () => descendants(element('upgrade-cards')).filter(node => node.dataset.upgrade);
     assert.deepEqual(upgradeButtons().map(button => button.dataset.upgrade),
       animal.role === 'builder' ? ['move', 'craft'] : ['move', 'cadence', 'reach', 'power']);
     dispatch('upgrade-player-tab', 'click'); assert.equal(M.upgradeMenu.target, M.upgrades.player);

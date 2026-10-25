@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { game } from './helpers/animal-game.mjs';
 
-function defense(rich = true) {
-  const fixture = game(), { M, load, scene } = fixture;
+function defense(rich = true, renderRadius = 0) {
+  // Most tower checks stay in the initial chunk. Load neighboring chunks only
+  // for the negative-coordinate case; avoid rendering irrelevant forest.
+  const fixture = game({ renderRadius }), { M, load, scene } = fixture;
   load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.goat.group.position.set(-25, 14, -25);
   M.animals.list.forEach((animal, i) => animal.group.position.set(-25 + i * 3, 14, -20));
@@ -29,6 +31,24 @@ test('a fresh run has to earn resources before purchasing any tower', () => {
 test('all ten blueprints buy real 1–3 block towers and debit the complete price', () => {
   const { M } = defense();
   assert.equal(M.towers.definitions.length, 10);
+  const premium = {
+    ember: [1, { coins: 18, stone: 3, coal: 2 }],
+    storm: [1.2, { coins: 24, stone: 3, copper: 2 }],
+    sniper: [3.5, { coins: 22, log: 4, iron: 2 }],
+    arcane: [.8, { coins: 32, stone: 4, copper: 3 }],
+    sun: [2.5, { coins: 45, stone: 5, iron: 3, coal: 2 }]
+  };
+  for (const [id, [damage, cost]] of Object.entries(premium)) {
+    const def = M.towers.byId[id];
+    assert.ok(Math.abs(def.damage - damage * 1.5) < 1e-9, id + ' has 50% more direct damage');
+    for (const [kind, amount] of Object.entries(cost)) assert.equal(def.cost[kind], Math.ceil(amount * 1.5), id + ' price');
+  }
+  assert.equal(M.towers.byId.ember.dot, .75, 'burn also gains 50% damage');
+  assert.equal(M.towers.byId.ballista.cost.coins, 6);
+  assert.equal(M.towers.byId.frost.cost.coins, 12);
+  assert.equal(M.towers.byId.venom.cost.coins, 15);
+  assert.equal(M.towers.byId.earth.cost.coins, 16);
+  assert.equal(M.towers.byId.mortar.cost.coins, 14);
   M.towers.definitions.forEach((def, i) => {
     const before = M.enemies.getState().coins;
     const resources = Object.fromEntries(Object.keys(def.cost).filter(k => k !== 'coins').map(k => [k, M.items.count(k)]));
@@ -122,7 +142,7 @@ test('frost slows actual walking, poison and fire linger, and splash / chain / b
   for (const id of ['frost', 'venom', 'ember', 'mortar', 'storm', 'sun', 'earth', 'arcane']) {
     const tower = M.towers.place(id, 8, 7, 8); assert.ok(tower);
     const a = M.enemies.spawnAt(new THREE.Vector3(17, 14, 23), 'brute');
-    const b = M.enemies.spawnAt(new THREE.Vector3(id === 'sun' ? 17 : 19, 14, 24), 'brute');
+    const b = M.enemies.spawnAt(new THREE.Vector3(id === 'sun' ? 17 : id === 'venom' ? 18 : 19, 14, 24), 'brute');
     const initial = a.hp; step(M, 1.1);
     assert.ok(a.hp < initial, id + ' attacks');
     if (tower.def.splash || tower.def.chain || tower.def.pierce) assert.ok(b.hp < 7, id + ' hits multiple enemies');
@@ -150,25 +170,30 @@ function until(M, condition, seconds = 3) {
 }
 function flights(scene) { return scene.children.filter(o => o.name.endsWith(' projectile')); }
 
-for (const id of ['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun']) {
-  test(id + ': launch is harmless, flight is visible, damage and status begin only on collision', () => {
-    const { M, THREE, scene } = defense();
-    const tower = M.towers.place(id, 8, 7, 8);
-    const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
-    fireOnce(M, tower);
-    assert.equal(enemy.hp, 7); assert.ok(!enemy.towerSlowTime); assert.ok(!enemy.towerDots);
-    const projectile = flights(scene)[0]; assert.ok(projectile, 'visible distinctive projectile');
-    const start = projectile.position.clone(); step(M, .05);
-    assert.ok(projectile.position.distanceTo(start) > .1, 'projectile travels'); assert.equal(enemy.hp, 7);
-    until(M, () => enemy.hp < 7);
-    assert.equal(enemy.hp, 7 - tower.def.damage, 'exact direct damage at the collision tick');
-    if (tower.def.slow) assert.equal(enemy.towerSlowTime, 2.5);
-    if (tower.def.dot) assert.equal(enemy.towerDots[id].remaining, 4);
-    M.towers.dismantle(tower); step(M, 6);
-    assert.equal(flights(scene).length, 0, 'flights expire');
-    assert.equal(scene.children.filter(o => o.name.endsWith(' impact')).length, 0, 'bursts expire');
-  });
-}
+test('every blueprint resolves its visible projectile and status only on collision', async t => {
+  // Reuse one arena for independent, fully drained shots instead of generating
+  // ten identical gate networks and forests. Each species keeps its own case.
+  const { M, THREE, scene } = defense();
+  for (const id of ['ballista', 'mortar', 'frost', 'ember', 'venom', 'storm', 'sniper', 'earth', 'arcane', 'sun']) {
+    await t.test(id, () => {
+      const tower = M.towers.place(id, 8, 7, 8);
+      const enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
+      fireOnce(M, tower);
+      assert.equal(enemy.hp, 7); assert.ok(!enemy.towerSlowTime); assert.ok(!enemy.towerDots);
+      const projectile = flights(scene)[0]; assert.ok(projectile, 'visible distinctive projectile');
+      const start = projectile.position.clone(); step(M, .05);
+      assert.ok(projectile.position.distanceTo(start) > .1, 'projectile travels'); assert.equal(enemy.hp, 7);
+      until(M, () => enemy.hp < 7);
+      assert.equal(enemy.hp, 7 - tower.def.damage, 'exact direct damage at the collision tick');
+      if (tower.def.slow) assert.equal(enemy.towerSlowTime, 2.5);
+      if (tower.def.dot) assert.equal(enemy.towerDots[id].remaining, 4);
+      M.towers.dismantle(tower); step(M, 6);
+      assert.equal(flights(scene).length, 0, 'flights expire');
+      assert.equal(scene.children.filter(o => o.name.endsWith(' impact')).length, 0, 'bursts expire');
+      M.enemies.zombies.slice().forEach(e => M.enemies.damageEnemy(e, 1000));
+    });
+  }
+});
 
 test('physical bolts can miss a moving target; homing frost follows without early damage', () => {
   for (const id of ['ballista', 'frost']) {
@@ -197,7 +222,7 @@ test('new walls stop in-flight shots, even with a long swept simulation step', (
     fireOnce(M, tower);
     if (wall) for (let y = 7; y < 12; y++) assert.ok(M.world.placeBlock('stone', 8, y, 11));
     M.towers.update(.5);
-    assert.equal(enemy.hp, wall ? 7 : 3.5, 'earliest wall/body contact wins');
+    assert.equal(enemy.hp, wall ? 7 : 1.75, 'earliest wall/body contact wins');
   }
 });
 
@@ -225,8 +250,8 @@ test('lightning damages each of its three victims on separate sequential arrival
   assert.equal(targets[1].hp, 7); assert.equal(targets[2].hp, 7);
   until(M, () => targets[1].hp < 7); assert.equal(targets[2].hp, 7);
   until(M, () => targets[2].hp < 7);
-  targets.forEach(e => assert.equal(e.hp, 5.8)); step(M, 1);
-  targets.forEach(e => assert.equal(e.hp, 5.8, 'chain never loops back'));
+  targets.forEach(e => assert.equal(e.hp, 5.2)); step(M, 1);
+  targets.forEach(e => assert.equal(e.hp, 5.2, 'chain never loops back'));
 });
 
 test('Sunspire sweeps through at most three bodies, in their actual flight order', () => {
@@ -237,7 +262,65 @@ test('Sunspire sweeps through at most three bodies, in their actual flight order
   until(M, () => targets[0].hp < 7); assert.equal(targets[1].hp, 7);
   until(M, () => targets[1].hp < 7); assert.equal(targets[2].hp, 7);
   until(M, () => targets[2].hp < 7); step(M, 1);
-  assert.deepEqual(targets.map(e => e.hp), [4.5, 4.5, 4.5, 7]);
+  assert.deepEqual(targets.map(e => e.hp), [3.25, 3.25, 3.25, 7]);
+});
+
+test('Watchman pierces exactly two enemies and still stops at a newly built wall', () => {
+  const { M, THREE } = defense();
+  const tower = M.towers.place('sniper', 8, 7, 8);
+  const targets = [29, 31, 33].map(z => M.enemies.spawnAt(new THREE.Vector3(17, 14, z), 'brute'));
+  fireOnce(M, tower);
+  until(M, () => targets[0].hp < 7); assert.equal(targets[1].hp, 7);
+  until(M, () => targets[1].hp < 7); step(M, .5);
+  assert.deepEqual(targets.map(e => e.hp), [1.75, 1.75, 7]);
+  targets.forEach(e => M.enemies.damageEnemy(e, 100)); step(M, 1);
+  const a = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
+  const b = M.enemies.spawnAt(new THREE.Vector3(17, 14, 33), 'brute');
+  tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
+  until(M, () => a.hp < 7);
+  for (let y = 7; y < 12; y++) assert.ok(M.world.placeBlock('stone', 8, y, 15));
+  step(M, 1); assert.equal(b.hp, 7, 'a wall stops penetration after the first body');
+});
+
+test('Arcane slash cleaves only two nearby victims, respects cover, and works with reduced motion', () => {
+  const { M, THREE, scene } = defense();
+  const tower = M.towers.place('arcane', 8, 7, 8);
+  for (const reduced of [false, true]) {
+    M.config.reducedMotion = reduced;
+    const primary = M.enemies.spawnAt(new THREE.Vector3(16.6, 14, 29), 'brute');
+    const nearby = [18.2, 18.8, 19.4].map(x => M.enemies.spawnAt(new THREE.Vector3(x, 14, 29), 'brute'));
+    tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
+    const covered = M.enemies.spawnAt(new THREE.Vector3(14.6, 14, 27.55), 'brute');
+    for (let y = 7; y < 11; y++) if (!M.world.blockInfoAt(7, y, 14)) assert.ok(M.world.placeBlock('stone', 7, y, 14));
+    until(M, () => primary.hp < 7);
+    assert.equal(primary.hp, 5.8);
+    assert.deepEqual(nearby.map(e => e.hp), [6.4, 6.4, 7]);
+    assert.equal(covered.hp, 7, 'slash cannot cut through cover');
+    assert.equal(scene.children.some(o => o.name === 'Arcane slash'), !reduced);
+    M.enemies.zombies.slice().forEach(e => M.enemies.damageEnemy(e, 100)); step(M, 2);
+    assert.equal(scene.children.some(o => o.name === 'Arcane slash'), false, 'slash expires');
+  }
+});
+
+test('Venom splash poisons impact-time neighbors, refreshes without stacking, and survives packing', () => {
+  const { M, THREE } = defense();
+  const tower = M.towers.place('venom', 8, 7, 8);
+  const primary = M.enemies.spawnAt(new THREE.Vector3(16.6, 14, 29), 'brute');
+  const neighbor = M.enemies.spawnAt(new THREE.Vector3(18.1, 14, 29), 'brute');
+  const far = M.enemies.spawnAt(new THREE.Vector3(22, 14, 29), 'brute');
+  fireOnce(M, tower);
+  const covered = M.enemies.spawnAt(new THREE.Vector3(14.6, 14, 27.55), 'brute');
+  for (let y = 7; y < 11; y++) assert.ok(M.world.placeBlock('stone', 7, y, 14));
+  until(M, () => primary.hp < 7);
+  assert.equal(neighbor.hp, 6.7); assert.equal(neighbor.towerDots.venom.rate, .7);
+  assert.equal(far.hp, 7); assert.equal(covered.hp, 7);
+  M.enemies.damageEnemy(covered, 100);
+  step(M, .5); tower.cooldown = 0; M.towers.update(.01); tower.cooldown = 1000;
+  until(M, () => neighbor.towerDots.venom.remaining === 4);
+  assert.equal(Object.keys(neighbor.towerDots).length, 1);
+  const hp = neighbor.hp; M.towers.dismantle(tower); step(M, 5);
+  assert.ok(Math.abs(hp - neighbor.hp - 2.8) < 1e-8, 'one poison refresh deals four seconds at 0.7 DPS');
+  assert.equal(Object.keys(neighbor.towerDots).length, 0, 'poison expires');
 });
 
 test('a shot survives packing its tower, while an already killed target yields no duplicate loot', () => {
@@ -327,7 +410,7 @@ test('deployed towers share GPU batches with exact independent poses, packing an
 });
 
 test('spatial projectile queries include moving interceptors across negative cell boundaries', () => {
-  const { M, THREE } = defense();
+  const { M, THREE } = defense(true, 1);
   const tower = M.towers.place('ballista', -9, 7, -9); assert.ok(tower);
   const target = M.enemies.spawnAt(new THREE.Vector3(-17, 14, -31), 'brute');
   const interceptor = M.enemies.spawnAt(new THREE.Vector3(45, 14, 45), 'brute');

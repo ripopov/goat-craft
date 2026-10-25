@@ -53,7 +53,8 @@
         cost.appendChild(chip);
       });
       else cost.textContent = 'All three tiers unlocked';
-      card.appendChild(cost);
+      const actions = document.createElement('div'); actions.className = 'upgrade-card-actions';
+      actions.appendChild(cost);
       const button = document.createElement('button'); button.type = 'button'; button.dataset.upgrade = key;
       const affordable = M.upgrades.canAfford(offer.cost);
       button.disabled = offer.maxed || !affordable;
@@ -66,7 +67,7 @@
         const next = dialog.querySelector('[data-upgrade="' + key + '"]:not(:disabled)') || dialog.querySelector('[data-upgrade]:not(:disabled)') || $('upgrade-close');
         next.focus();
       });
-      card.appendChild(button); cards.appendChild(card);
+      actions.appendChild(button); card.appendChild(actions); cards.appendChild(card);
     });
   }
   function close() {

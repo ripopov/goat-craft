@@ -433,7 +433,33 @@
 
   function towerShot(point, style, id) {
     nearby(point, 90, 'tower-' + (id || style), .09, function (voice, when, level) {
-      if (id === 'ember') {
+      // Give the elemental weapons different rhythms and acoustic materials,
+      // rather than transposing the same magic chirp for every crystal.
+      if (id === 'frost') {
+        body(voice, when, 1568, .32, level * .025, 'metal');
+        [2352, 3136].forEach((frequency, i) => tone(voice, when + .045 + i * .035,
+          { frequency, endFrequency: frequency * .88, duration: .16, level: level * .012, attack: .008 }));
+        noise(voice, when, { frequency: 5200, endFrequency: 2400, duration: .18, level: level * .035, attack: .025 });
+      } else if (id === 'venom') {
+        noise(voice, when, { frequency: 2100, endFrequency: 500, duration: .16, level: level * .07, attack: .012 });
+        for (let i = 0; i < 3; i++) tone(voice, when + .025 + i * .045,
+          { frequency: 160 + i * 55, endFrequency: 480 + i * 80, duration: .075, level: level * .025, attack: .009 });
+      } else if (id === 'arcane') {
+        // Tight rising shimmer resolves into the blade's cutting transient.
+        tone(voice, when, { type: 'triangle', frequency: 392, endFrequency: 1176, duration: .1, level: level * .035, attack: .025 });
+        tone(voice, when + .025, { frequency: 1568, endFrequency: 784, duration: .12, level: level * .018 });
+        noise(voice, when + .055, { frequency: 4400, endFrequency: 1800, duration: .1, level: level * .04 });
+      } else if (id === 'sun') {
+        // An open, sustained major chord distinguishes sunlight from sparks.
+        [1, 1.25, 1.5, 2].forEach((ratio, i) => tone(voice, when + i * .018,
+          { frequency: 660 * ratio, duration: .46 - i * .04, level: level * .026 / (1 + i), attack: .035, tuned: true }));
+        noise(voice, when, { frequency: 3500, endFrequency: 6000, duration: .3, level: level * .022, attack: .065 });
+      } else if (id === 'sniper') {
+        body(voice, when, 520, .095, level * .045, 'metal');
+        noise(voice, when, { frequency: 4600, endFrequency: 1200, duration: .075, level: level * .11, attack: .008 });
+        // A delayed bolt-action latch, separate from the muzzle crack.
+        body(voice, when + .16, 920, .085, level * .022, 'metal');
+      } else if (id === 'ember') {
         noise(voice, when, { frequency: 700, endFrequency: 2400, duration: .27, level: level * .09, attack: .025 });
         fragments(voice, when, 3400, level * .03, 3);
         tone(voice, when, { frequency: 105, endFrequency: 72, duration: .2, level: level * .035 });
@@ -486,8 +512,16 @@
         fragments(voice, when, 4200, level * .065, 4);
         noise(voice, when + .03, { frequency: 650, endFrequency: 180, duration: .28, level: level * .08 });
         tone(voice, when, { type: 'triangle', frequency: 145, endFrequency: 65, duration: .19, level: level * .03 });
+      } else if (id === 'arcane') {
+        noise(voice, when, { frequency: 4800, endFrequency: 900, duration: .16, level: level * .06, attack: .012 });
+        tone(voice, when, { type: 'triangle', frequency: 1176, endFrequency: 294, duration: .18, level: level * .028 });
+        tone(voice, when + .035, { frequency: 1568, duration: .13, level: level * .012 });
+      } else if (id === 'sun') {
+        [1, 1.25, 1.5, 2].forEach((ratio, i) => tone(voice, when + i * .02,
+          { frequency: 880 * ratio, duration: .48 - i * .05, level: level * .028 / (1 + i), attack: .025, tuned: true }));
+        noise(voice, when, { frequency: 4200, endFrequency: 2200, duration: .28, level: level * .025, attack: .035 });
       } else {
-        const root = id === 'sun' ? 880 : 587.33;
+        const root = 587.33;
         [1, 1.5, 2].forEach(function (ratio, i) {
           tone(voice, when + i * .025, { frequency: root * ratio, duration: .34 - i * .05,
             level: level * .03 / (1 + i), attack: .016, tuned: true });

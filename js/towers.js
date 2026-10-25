@@ -6,14 +6,16 @@
     { id: 'ballista', name: 'Oak Ballista', role: 'Reliable single target', height: 1, damage: 1, interval: 1.15, range: 19, color: 0xdab478, cost: { coins: 6, log: 2 }, style: 'bolt' },
     { id: 'mortar', name: 'Iron Mortar', role: 'Explosive area damage', height: 1, damage: 1.5, interval: 2.5, range: 22, color: 0xefad63, cost: { coins: 14, stone: 4, iron: 1 }, splash: 4, style: 'shell' },
     { id: 'frost', name: 'Frost Spire', role: 'Chills enemies by 45%', height: 2, damage: .5, interval: 1.3, range: 17, color: 0x91eaff, cost: { coins: 12, stone: 3 }, slow: .55, style: 'crystal' },
-    { id: 'ember', name: 'Ember Cannon', role: 'Splash + lingering burn', height: 2, damage: 1, interval: 1.6, range: 18, color: 0xff794d, cost: { coins: 18, stone: 3, coal: 2 }, splash: 2.8, dot: .5, style: 'shell' },
-    { id: 'venom', name: 'Venom Idol', role: 'Four seconds of poison', height: 2, damage: .3, interval: 1.2, range: 18, color: 0x9bd55e, cost: { coins: 15, log: 3, dirt: 3 }, dot: .7, style: 'crystal' },
-    { id: 'storm', name: 'Storm Coil', role: 'Lightning chains to 3 foes', height: 2, damage: 1.2, interval: 1.8, range: 19, color: 0x83bbff, cost: { coins: 24, stone: 3, copper: 2 }, chain: 3, style: 'coil' },
-    { id: 'sniper', name: 'Watchman', role: 'Long range, heavy shot', height: 3, damage: 3.5, interval: 2.7, range: 32, color: 0xe4ce96, cost: { coins: 22, log: 4, iron: 2 }, style: 'bolt' },
+    { id: 'ember', name: 'Ember Cannon', role: 'Splash + lingering burn', height: 2, damage: 1.5, interval: 1.6, range: 18, color: 0xff794d, cost: { coins: 27, stone: 5, coal: 3 }, splash: 2.8, dot: .75, style: 'shell' },
+    { id: 'venom', name: 'Venom Idol', role: 'Toxic splash poisons for 4s', height: 2, damage: .3, interval: 1.2, range: 18, color: 0x9bd55e, cost: { coins: 15, log: 3, dirt: 3 }, splash: 2.4, dot: .7, style: 'crystal' },
+    { id: 'storm', name: 'Storm Coil', role: 'Lightning chains to 3 foes', height: 2, damage: 1.8, interval: 1.8, range: 19, color: 0x83bbff, cost: { coins: 36, stone: 5, copper: 3 }, chain: 3, style: 'coil' },
+    { id: 'sniper', name: 'Watchman', role: 'Long-range shot pierces 2 foes', height: 3, damage: 5.25, interval: 2.7, range: 32, color: 0xe4ce96, cost: { coins: 33, log: 6, iron: 3 }, pierce: 2, style: 'bolt' },
     { id: 'earth', name: 'Earthshaker', role: 'Boulder splash + stagger', height: 1, damage: 1.8, interval: 2.8, range: 16, color: 0xc0b17a, cost: { coins: 16, stone: 5, dirt: 4 }, splash: 4.5, slow: .35, style: 'shell' },
-    { id: 'arcane', name: 'Arcane Prism', role: 'Rapid magic bolts', height: 3, damage: .8, interval: .45, range: 20, color: 0xc4a0ff, cost: { coins: 32, stone: 4, copper: 3 }, style: 'crystal' },
-    { id: 'sun', name: 'Sunspire', role: 'Radiant beam pierces 3 foes', height: 3, damage: 2.5, interval: 1.7, range: 25, color: 0xffd975, cost: { coins: 45, stone: 5, iron: 3, coal: 2 }, pierce: true, style: 'coil' }
+    { id: 'arcane', name: 'Arcane Prism', role: 'Magic slash cleaves 2 nearby foes', height: 3, damage: 1.2, interval: .45, range: 20, color: 0xc4a0ff, cost: { coins: 48, stone: 6, copper: 5 }, cleave: { radius: 2.8, targets: 2, multiplier: .5 }, style: 'crystal' },
+    { id: 'sun', name: 'Sunspire', role: 'Radiant beam pierces 3 foes', height: 3, damage: 3.75, interval: 1.7, range: 25, color: 0xffd975, cost: { coins: 68, stone: 8, iron: 5, coal: 3 }, pierce: 3, style: 'coil' }
   ];
+  // The five premium blueprints have 1.5× damage and prices; indivisible
+  // coins and blocks round upward. Ember's lingering damage scales too.
   const byId = Object.fromEntries(definitions.map(d => [d.id, d]));
   // Builder variants stay out of the workshop catalogue. Their distinct item
   // IDs preserve training strength when a tower is packed and redeployed.
@@ -468,9 +470,9 @@
   function aimAt(enemy) {
     return enemy.position.clone().add(new THREE.Vector3(0, Math.min(1.25, enemy.body.height * .6), 0));
   }
-  function hit(tower, enemy, amount) {
-    if (!alive(enemy)) return;
-    if (M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: !!tower.def.splash || !!tower.def.pierce })) tower.kills++;
+  function hit(tower, enemy, amount, area) {
+    if (!alive(enemy) || M.enemies.isTargetable && !M.enemies.isTargetable(enemy, tower.position)) return;
+    if (M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: area || !!tower.def.splash || !!tower.def.pierce })) tower.kills++;
     if (alive(enemy) && tower.def.slow) { enemy.towerSlow = tower.def.slow; enemy.towerSlowTime = 2.5; }
     if (alive(enemy) && tower.def.dot) {
       enemy.towerDots = enemy.towerDots || {};
@@ -482,6 +484,7 @@
   // never suppress collision or damage, including with reduced motion enabled.
   const MAX_PROJECTILES = 256, MAX_EFFECTS = 80;
   const ice = new THREE.OctahedronGeometry(1), ring = new THREE.TorusGeometry(1, .045, 4, 24);
+  const slash = new THREE.TorusGeometry(1, .055, 4, 24, Math.PI * 1.5);
   const fxMaterials = new Map();
   function fxMaterial(color) {
     if (!fxMaterials.has(color)) fxMaterials.set(color, new THREE.MeshBasicMaterial({ color, toneMapped: false }));
@@ -839,6 +842,23 @@
         if (e === enemy || aimAt(e).distanceTo(point) <= def.splash && lineClear(point, aimAt(e), null)) hit(tower, e, def.damage);
       });
     } else if (enemy) hit(tower, enemy, def.damage);
+    if (def.cleave && enemy) {
+      // Secondary slash victims are chosen at contact, nearest first. A wall
+      // stops the sweep, and its bounded victim count prevents crowd scaling.
+      const center = aimAt(enemy), r = def.cleave.radius;
+      const victims = queryEnemies(center.x - r, center.x + r, center.z - r, center.z + r, splashCandidates)
+        .filter(e => e !== enemy && alive(e) && aimAt(e).distanceTo(center) <= r &&
+          (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && lineClear(center, aimAt(e), null))
+        .sort((a, b) => a.position.distanceToSquared(enemy.position) - b.position.distanceToSquared(enemy.position) || a.id - b.id)
+        .slice(0, def.cleave.targets);
+      for (const victim of victims) hit(tower, victim, def.damage * def.cleave.multiplier, true);
+      if (!M.config.reducedMotion && effects.length < MAX_EFFECTS) {
+        const g = new THREE.Group(); g.name = 'Arcane slash'; g.position.copy(center);
+        const blade = fxPart(g, def.color, 0, 0, 0, .2, .2, .2, slash);
+        const angle = Math.atan2(p.direction.z, p.direction.x); blade.rotation.x = Math.PI / 2;
+        addEffect(g, .28, k => { blade.scale.setScalar(.2 + Math.sin(k * Math.PI / 2) * r); blade.rotation.z = angle + k * 2.3; blade.visible = k < .9; });
+      }
+    }
     if (def.chain && enemy) {
       p.visited.add(enemy);
       if (p.visited.size < def.chain) {
@@ -890,7 +910,8 @@
       Math.min(from.z, to.z) - margin, Math.max(from.z, to.z) + margin, projectileCandidates);
     collisions.length = 0;
     for (const enemy of projectileCandidates) {
-      if (!alive(enemy) || p.hits.has(enemy) || p.visited.has(enemy)) continue;
+      if (!alive(enemy) || p.hits.has(enemy) || p.visited.has(enemy) ||
+        M.enemies.isTargetable && !M.enemies.isTargetable(enemy, from)) continue;
       const t = bodyIntersection(from, to, enemy, padding);
       if (t !== null && t < wallT) collisions.push({ enemy, t });
     }
@@ -899,7 +920,7 @@
       if (!alive(collision.enemy)) continue;
       const point = from.clone().lerp(to, collision.t);
       p.hits.add(collision.enemy); impact(p, point, collision.enemy, false);
-      if (!p.tower.def.pierce || p.hits.size >= 3) { flightEffects(p, from, point, dt, true); p.position.copy(point); return true; }
+      if (!p.tower.def.pierce || p.hits.size >= p.tower.def.pierce) { flightEffects(p, from, point, dt, true); p.position.copy(point); return true; }
     }
     if (wallT !== Infinity) {
       p.position.lerpVectors(from, to, wallT); flightEffects(p, from, p.position, dt, true); impact(p, p.position, null, true); return true;

@@ -543,6 +543,11 @@ test('enemy coin loot stays in the world until picked up and needs no inventory 
   M.enemies.attack(p, 0, true, { damage: 20 });
   assert.equal(M.enemies.zombies.includes(zombie), false); assert.equal(M.enemies.getState().coins, 0);
   assert.equal(M.items.drops[0].userData.drop.count, 4);
+  const minted = M.items.drops[0];
+  assert.equal(minted.name, 'Minted Hearth gold');
+  assert.ok(minted.geometry.getAttribute('color'), 'rim, recessed field and raised emblem have distinct gold tones');
+  assert.ok(minted.material.emissiveIntensity >= .6, 'emissive gold remains visible without ambient lights');
+  assert.ok(minted.geometry.getAttribute('position').count < 6000, 'one bounded mesh per coin');
   for (let i = 1; i < 10; i++) M.items.slots[i] = { kind: 'stone', name: 'Stone', count: 1 };
   const collector = new THREE.Group(); collector.position.set(30, 14, 30);
   for (let i = 0; i < 40; i++) M.items.update(.05, i * .05, collector);
@@ -560,6 +565,8 @@ test('coin stacks persist, preserve their total value and stay bounded through l
   const { M, THREE } = training();
   for (let i = 0; i < 400; i++) M.items.dropCoins(new THREE.Vector3(i * 10, 14, 30), 2);
   assert.equal(M.items.drops.length, 160);
+  assert.ok(M.items.drops.every(drop => drop.isMesh && drop.geometry === M.items.drops[0].geometry &&
+    drop.material === M.items.drops[0].material), 'all coins share a single geometry and material without allocating lights');
   assert.equal(M.items.drops.reduce((sum, drop) => sum + drop.userData.drop.count, 0), 800);
   const collector = new THREE.Group(); collector.position.set(-100, 14, -100);
   for (let i = 0; i < 40; i++) M.items.update(.05, i * .05, collector);

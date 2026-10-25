@@ -71,6 +71,45 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
   assert.ok(M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz), 'missing wall block is rebuilt');
 });
 
+test('wandering animals detour around the hearth tree instead of grinding on its trunk', () => {
+  // Deterministic seed; the target sits straight across the trunk, which used
+  // to wedge walkers against the tree's curved edge forever. Recovery now
+  // detects the blockage and routes around it.
+  const { M } = game({ seed: 1 });
+  const animal = M.animals.list.find(candidate => candidate.name === 'Clover');
+  M.animals.list.forEach((other, i) => {
+    if (other === animal) return;
+    other.group.position.set(-20 + i * 3, 14, -18);
+    Object.assign(other.state, { mode: 'idle', wait: 1000, retired: true });
+  });
+  const s = animal.state;
+  Object.assign(s, { mode: 'idle', wait: 0.2, project: null, action: null, escape: null,
+    buildTimer: 1000, pitTimer: 1000 });
+  const tree = M.hearthTree.position;
+  const tv = {
+    x: tree.x, z: tree.z + 10, y: M.world.surfaceHeight(tree.x, tree.z + 10),
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; },
+    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; }
+  };
+  animal.group.position.set(tree.x, M.world.surfaceHeight(tree.x, tree.z - 8), tree.z - 8);
+  s.target = tv;
+  s.mode = 'walk';
+  s.wait = 0;
+
+  let crossed = false;
+  for (let i = 0; i < 2600 && !crossed; i++) {
+    M.animals.update(.05, i * .05);
+    if (s.mode === 'idle' && s.wait <= 0 && !s.escape && !s.action && !s.pendingClimb) {
+      s.mode = 'walk';
+      s.wait = 0;
+      s.target.copy(tv);
+    }
+    const p = animal.group.position;
+    if (Math.hypot(tv.x - p.x, tv.z - p.z) < 5.6) crossed = true;
+  }
+  assert.ok(crossed, 'animal reached the far side of the hearth tree');
+});
+
 test('player and every NPC rig articulate through walk, airborne and action poses', () => {
   const { M, input } = game();
   function finiteRig(root) {

@@ -1047,7 +1047,11 @@
     const tree = M.hearthTree && M.hearthTree.position;
 
     for (let dx = -WALL_LENGTH / 2; dx < WALL_LENGTH / 2; dx++) {
-      for (let dz = -1; dz <= 1; dz++) {
+      // dz spans the wall row plus the two flanking rows builders stand on
+      // while placing wall blocks. A site whose flanks tumble into a gully
+      // looks fine on the wall line itself yet strands the builder on an
+      // unreachable lip, so the whole five-row strip must be flat.
+      for (let dz = -2; dz <= 2; dz++) {
         const px = (bx + dx + 0.5) * bs;
         const pz = (bz + dz + 0.5) * bs;
         if (tree && Math.hypot(px - tree.x, pz - tree.z) < WALL_TREE_DISTANCE) return null;
@@ -1178,7 +1182,7 @@
     if (Math.abs(p.y - levelY) > 0.35) return null;
     const bx0 = Math.floor(p.x / bs);
     const bz0 = Math.floor(p.z / bs);
-    const r = Math.ceil(9.0 / bs);
+    const r = Math.ceil(14.0 / bs);
     let best = null;
     let bestScore = Infinity;
 
@@ -1188,8 +1192,13 @@
         const bz = bz0 + dz;
         const c = cellCenter(bx, bz);
         const dist = Math.hypot(c.x - p.x, c.z - p.z);
-        if (dist < 1.65 || dist > 9.0) continue;
-        if (inSiteFootprint(project, bx, bz, 0)) continue;
+        if (dist < 1.65 || dist > 14.0) continue;
+        // Guard the two flank rows the builder stands on while placing wall
+        // blocks, so quarrying never carves pits under its own footing. The
+        // wall row itself (dz 0) may be quarried freely: the finished wall
+        // fills those cells again, and the survivors stay level.
+        const flank = Math.abs(bz - project.site.bz);
+        if (flank >= 1 && flank <= 2) continue;
         let nearSite = false;
         for (let i = 0; i < animals.length; i++) {
           const other = animals[i];
@@ -1815,6 +1824,7 @@
 
   function finishSeek(animal, failed) {
     const s = animal.state;
+    const wasBuild = !!(s.action && s.action.build);
     s.action = null;
     s.speed = 0;
     s.stuck = 0;
@@ -1827,6 +1837,13 @@
     s.wait = failed ? 0.45 : 0.2;
     if (failed) {
       s.seekFailures = (s.seekFailures || 0) + 1;
+      // A wall builder that cannot reach its place target will otherwise
+      // retry the same impossible approach forever. Give the wall up after a
+      // few failed runs so a fresh, reachable site gets chosen instead.
+      if (wasBuild && s.project && s.seekFailures >= 4) {
+        s.seekFailures = 0;
+        abandonProject(animal, 'approach-stuck');
+      }
     }
   }
 

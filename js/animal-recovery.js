@@ -92,8 +92,10 @@
 
   function findDetour(position, dx, dz, canStand) {
     const dir = direction(dx, dz);
-    const angles = [0.7, -0.7, 1.25, -1.25, 1.8, -1.8];
-    for (let distance = 1.2; distance <= 2.41; distance += 1.2) {
+    const angles = [0.6, -0.6, 1.0, -1.0, 1.45, -1.45, 1.9, -1.9, 2.4, -2.4];
+    // Sweep out to five-plus units: a hearth tree trunk or a wide rock needs
+    // a sideways step far enough to actually clear it, not just a nudge.
+    for (let distance = 1.5; distance <= 5.41; distance += 1.3) {
       for (let i = 0; i < angles.length; i++) {
         const cos = Math.cos(angles[i]);
         const sin = Math.sin(angles[i]);
@@ -109,13 +111,19 @@
 
   function blockedAhead(world, position, body, dx, dz) {
     const dir = direction(dx, dz);
-    const distance = body.radius + 0.8;
-    return world.blockedAt(
-      position.x + dir.x * distance,
-      position.z + dir.z * distance,
-      position.y + 0.12,
-      position.y + body.height - 0.08
-    );
+    // Probe a fan of points along the travel direction instead of a single
+    // sample at the body radius: a curved trunk or a tall rock can slip past
+    // the old one-point probe, leaving the escape gate convinced the way is
+    // clear while the animal grinds against the obstacle forever.
+    for (let distance = body.radius + 0.35; distance <= body.radius + 4.4; distance += 0.65) {
+      if (world.blockedAt(
+        position.x + dir.x * distance,
+        position.z + dir.z * distance,
+        position.y + 0.12,
+        position.y + body.height - 0.08
+      )) return true;
+    }
+    return false;
   }
 
   function escapeDirection(world, position, preferred) {

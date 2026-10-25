@@ -26,7 +26,9 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
     for (const type of ['binder', 'prismback', 'sower']) assert.ok(count(type) <= Math.ceil(roster.length / 20));
     assert.ok(roster.filter(t => ['worm', 'binder', 'prismback', 'sower'].includes(t)).length <= Math.ceil(roster.length * .25));
     const air = roster.filter((type, slot) => e.deliveryForWave(wave, slot, type) === 'parachute');
-    assert.ok(wave >= 5 || !air.length); assert.ok(air.length <= Math.ceil(roster.length / 10));
+    assert.ok(wave >= 5 || !air.length);
+    if ([20, 40, 60, 80].includes(wave)) assert.equal(air.length, roster.length);
+    else assert.ok(air.length <= Math.ceil(roster.length / 10));
     if (wave === 5) assert.equal(air.length, 1, 'the first airdrop is a single readable introduction');
     if (wave >= 10) assert.ok(count('worm') > 0);
   }
@@ -47,6 +49,24 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
     M.enemies.damageEnemy(enemy, enemy.hp);
   }
   for (const wave of [29, 31, 69, 71, 129, 131]) assert.equal(e.typeForWave(wave, 1), 'spider', 'neighboring waves keep their mix');
+  for (const wave of [20, 40, 60, 80]) {
+    for (let slot = 0; slot < e.waveSize(wave); slot++) assert.equal(e.deliveryForWave(wave, slot, e.typeForWave(wave, slot)), 'parachute');
+    e.startWave(wave); e.update(.05);
+    const enemy = e.zombies.at(-1);
+    assert.equal(enemy.airborne, true); assert.equal(enemy.burrowed, undefined);
+    assert.ok(enemy.position.y > enemy.landingY + 10);
+    e.damageEnemy(enemy, enemy.hp);
+  }
+  // The all-air invasion preserves the mixed species roster. Even Worms
+  // descend on a canopy and begin crawling after landing instead of digging.
+  const airborne = Object.keys(e.types).map(type => e.spawnAt({ x: 23, y: 14, z: 23 }, type, { airborne: true }));
+  for (const enemy of airborne) { assert.equal(enemy.airborne, true); assert.ok(!enemy.burrowed); }
+  for (let i = 0; i < 88; i++) e.update(.05);
+  for (const enemy of airborne) {
+    assert.equal(enemy.airborne, false, enemy.type + ' landed');
+    assert.equal(enemy.mode, 'recover', enemy.type + ' receives landing recovery');
+    assert.ok(!enemy.burrowed, 'air-dropped Worms stay on the surface');
+  }
 });
 
 test('airdrops enter actual wave five, remain vulnerable, and cannot bite before landing recovery', () => {

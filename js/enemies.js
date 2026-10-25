@@ -53,6 +53,7 @@
     return 'zombie';
   }
   function deliveryForWave(level, slot, type) {
+    if (level === 20 || level === 40 || level === 60 || level === 80) return 'parachute';
     return level >= 5 && (type === 'zombie' || type === 'skeleton') &&
       (level === 5 ? slot === 3 : slot % 10 === 3) ? 'parachute' : 'ground';
   }
@@ -859,7 +860,8 @@
       10: 'Burrow Worms — guard the inner nine blocks.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
     let intro = introductions[wave] || 'protect the Hearth!';
-    if (wave === 30 || wave === 70 || wave === 130) intro = 'Burrow swarm! Every enemy tunnels beneath the gates.';
+    if (wave === 20 || wave === 40 || wave === 60 || wave === 80) intro = 'Air invasion! Every enemy arrives by parachute — watch the landing rings.';
+    else if (wave === 30 || wave === 70 || wave === 130) intro = 'Burrow swarm! Every enemy tunnels beneath the gates.';
     else if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +
       (wave === 7 ? 'Briar Binders follow: interrupt their tower-snare chant.' : '');
     if (M.ui) M.ui.showBubble('Wave ' + wave + ' — ' + intro);
@@ -896,14 +898,14 @@
       progressAt: elapsed,
       bestTreeDistance: Math.hypot(node.x - tree.position.x, node.z - tree.position.z) };
     zombies.push(zombie);
-    if (type === 'worm' && !(options && options.surface)) {
+    if (type === 'worm' && !(options && (options.surface || options.airborne))) {
       zombie.spoil = [];
       zombie.surfaceY = tunnelRoofAt(node.x, node.z, node.y); zombie.emergence = emergencePoint(zombie);
       zombie.burrowed = true; zombie.mode = 'burrow'; zombie.position.y = burrowHeightAt(node.x, node.z, zombie.surfaceY);
       signal('burrow', new THREE.Vector3(node.x, zombie.surfaceY, node.z), .9, 40, zombie);
       sound('worm', 'dig', new THREE.Vector3(node.x, zombie.surfaceY, node.z));
     }
-    if (options && options.airborne && (type === 'zombie' || type === 'skeleton')) {
+    if (options && options.airborne) {
       zombie.airborne = true; zombie.landingY = node.y; zombie.position.y += 16;
       zombie.grounded = false; zombie.mode = 'air';
       signal('air', new THREE.Vector3(node.x, node.y, node.z), 1.2, 12, zombie); sound('parachute', 'open', zombie.position);
@@ -913,9 +915,11 @@
   function spawn() {
     const type = typeForWave(wave, waveSpawned);
     if (deliveryForWave(wave, waveSpawned, type) === 'parachute') {
+      const body = { radius: TYPES[type].radius, height: TYPES[type].height, skin: .002 };
       const targets = navigation.nodes.filter(node => {
         const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
         return d >= 18 && d <= 26 && world.waterDepthAt(node.x, node.z) < .3 &&
+          physics.clear(world, node.x, node.y, node.z, body) &&
           !zombies.some(enemy => Math.hypot(enemy.position.x - node.x, enemy.position.z - node.z) < 2);
       });
       const reachable = targets.filter(node => Number.isFinite(node.distance)), pool = reachable.length ? reachable : targets;

@@ -385,7 +385,9 @@
   }
 
   function makeClouds() {
-    const geo = new THREE.IcosahedronGeometry(1, 1);
+    // Detail 2 icosahedra give rounder, puffier bumps than the angular
+    // detail-1 hull, while flatShading keeps the blocky meadow look.
+    const geo = new THREE.IcosahedronGeometry(1, 2);
     cloudMat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 1,
@@ -398,15 +400,24 @@
     cloudLayer = new THREE.Group();
     sceneRef.add(cloudLayer);
 
+    // A cloud is a loose cumulus mound: a cluster of bumpy puffs on a
+    // flattened underside. Higher up in the sky, so they ride well above the
+    // goat and towers instead of grazing the treetops.
     function addCloud(x, y, z, scale) {
       const g = new THREE.Group();
-      const puffs = 4 + Math.floor(Math.random() * 3);
+      const puffs = 6 + Math.floor(Math.random() * 4);
       for (let j = 0; j < puffs; j++) {
         const puff = new THREE.Mesh(geo, cloudMat);
-        puff.scale.set(rand(1.1, 2.0), rand(0.55, 1.05), rand(0.85, 1.35));
-        puff.position.set((j - puffs / 2) * 1.15 + rand(-0.4, 0.4), rand(-0.2, 0.5), rand(-0.6, 0.6));
+        const size = rand(0.7, 1.15);
+        puff.scale.set(size * rand(1.05, 1.6), size * rand(0.95, 1.35), size * rand(1.05, 1.6));
+        const bump = rand(-0.95, 0.95);
+        puff.position.set(rand(-1.5, 1.5), 0.2 + Math.abs(bump) * 0.34, rand(-0.85, 0.85));
         g.add(puff);
       }
+      const base = new THREE.Mesh(geo, cloudMat);
+      base.scale.set(rand(2.1, 2.8), rand(0.5, 0.72), rand(1.6, 2.2));
+      base.position.set(0, rand(-0.45, -0.15), 0);
+      g.add(base);
       g.position.set(x, y, z);
       g.scale.setScalar(scale);
       g.userData.baseY = y;
@@ -416,16 +427,16 @@
     }
 
     const specs = [
-      [-30, 7.8, -42, 1.0],
-      [-6, 9.8, -56, 0.9],
-      [24, 8.4, -44, 0.95],
-      [-52, 9.8, -8, 0.85],
-      [34, 11.2, 26, 0.95],
-      [-18, 9.0, 52, 0.85],
-      [56, 10.2, -16, 0.85],
-      [-64, 10.6, 34, 0.9],
-      [6, 8.2, -62, 1.0],
-      [44, 9.2, -54, 0.9]
+      [-42, 21, -62, 1.4],
+      [-12, 24, -76, 1.25],
+      [34, 20, -60, 1.35],
+      [-70, 22, -14, 1.2],
+      [48, 25, 34, 1.3],
+      [-24, 21, 66, 1.2],
+      [74, 23, -24, 1.2],
+      [-84, 23, 46, 1.25],
+      [10, 20, -84, 1.35],
+      [58, 22, -72, 1.25]
     ];
     for (let i = 0; i < specs.length; i++) {
       const sp = specs[i];
@@ -633,7 +644,7 @@
       for (let i = 0; i < clouds.length; i++) {
         const cloud = clouds[i];
         cloud.position.x += dt * (0.16 + (i % 3) * 0.05);
-        if (cloud.position.x > 70) cloud.position.x = -70;
+        if (cloud.position.x > 90) cloud.position.x = -90;
         cloud.position.y = cloud.userData.baseY + Math.sin(t * 0.25 + cloud.userData.phase) * 0.25;
       }
       cloudLayer.position.copy(goat.position);

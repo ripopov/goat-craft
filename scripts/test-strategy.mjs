@@ -82,7 +82,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
       M.goat.update(1 / 60, i / 60); M.controls.update(1 / 60, i / 60, M.goat.group, M.goat.state, M.world); M.strategy.update(1 / 60);
     }
   }
-  return { M, camera, press, dispatch, element, advance, document, load,
+  return { M, camera, scene, press, dispatch, element, advance, document, load,
     flush() { while (lockEvents.length) lockEvents.shift()(); },
     setFocused(value) { focused = value; dispatch('window', value ? 'focus' : 'blur'); },
     setRejectLock(value) { rejectLock = value; },
@@ -282,4 +282,26 @@ test('command wheel changes zoom, blur stops camera drift, and the HUD button sw
   advance(.2); assert.equal(M.strategy.focus.x, before);
   dispatch('strategy-toggle', 'click'); assert.equal(M.strategy.active, false); assert.equal(M.controls.firstPerson, false);
   assert.equal(camera.fov, 42);
+});
+
+test('placement and inspection show the same elevation-adjusted range as combat', () => {
+  const { M, scene, press, dispatch, element, advance } = commandGame();
+  let by = 7;
+  M.targeting.trace = () => ({ bx: 8, by, bz: 8 });
+  M.towers.site = () => ({ valid: true, reason: 'Ready' }); M.towers.available = () => true;
+  press('t', 'KeyT'); press('1', 'Digit1');
+  dispatch('scene', 'pointermove', { clientX: 400, clientY: 300 }); advance(.2);
+  const ring = scene.children.find(node => node.geometry?.type === 'RingGeometry');
+  assert.ok(Math.abs(ring.scale.x - 22.8) < 1e-9);
+  assert.match(element('rts-detail-stats').textContent, /22\.8m range \(\+20% height\)/);
+  by = 8; advance(.2);
+  assert.ok(Math.abs(ring.scale.x - 26.6) < 1e-9);
+  assert.match(element('rts-detail-stats').textContent, /26\.6m range \(\+40% height\)/);
+  press('Escape', 'Escape');
+  const tower = { def: M.towers.byId.ballista, position: { x: 17, y: 20, z: 17 }, kills: 0 };
+  M.towers.list.push(tower); M.towers.atCell = () => tower;
+  dispatch('scene', 'pointerdown', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+  dispatch('scene', 'pointerup', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+  assert.ok(Math.abs(ring.scale.x - 30.4) < 1e-9);
+  assert.match(element('rts-detail-stats').textContent, /30\.4m range \(\+60% height\)/);
 });

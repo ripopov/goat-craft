@@ -95,8 +95,19 @@
   }
   function queryEnemies(minX, maxX, minZ, maxZ, result) {
     result.length = 0;
-    for (let z = Math.floor(minZ / GRID_SIZE); z <= Math.floor(maxZ / GRID_SIZE); z++) {
-      for (let x = Math.floor(minX / GRID_SIZE); x <= Math.floor(maxX / GRID_SIZE); x++) {
+    const left = Math.floor(minX / GRID_SIZE), right = Math.floor(maxX / GRID_SIZE);
+    const top = Math.floor(minZ / GRID_SIZE), bottom = Math.floor(maxZ / GRID_SIZE);
+    // Tall platforms can cover the entire battlefield. Scan the bounded horde
+    // when that costs less than visiting a large rectangle of empty cells.
+    if ((right - left + 1) * (bottom - top + 1) > enemyGrid.size) {
+      for (const enemy of liveEnemies) {
+        const x = Math.floor(enemy.position.x / GRID_SIZE), z = Math.floor(enemy.position.z / GRID_SIZE);
+        if (enemy.hp > 0 && x >= left && x <= right && z >= top && z <= bottom) result.push(enemy);
+      }
+      return result;
+    }
+    for (let z = top; z <= bottom; z++) {
+      for (let x = left; x <= right; x++) {
         const bucket = enemyGrid.get(x + ',' + z);
         if (bucket) for (const enemy of bucket) if (enemy.hp > 0) result.push(enemy);
       }
@@ -363,6 +374,11 @@
     return count;
   }
   function available(def) { return inventoryCount(def.id) > 0 || M.upgrades.canAfford(def.cost); }
+  function rangeAt(def, y) {
+    // Count full two-unit steps from the ordinary Y 14 foundation. The first
+    // bonus is +20% at Y 16; subsequent steps add 20% of the base range.
+    return def.range * (1 + .2 * Math.max(0, Math.floor((y - 14) / SIZE)));
+  }
   function site(id, bx, by, bz) {
     const def = byId[id];
     if (!def || !Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return { valid: false, reason: 'Choose solid, dry ground.' };
@@ -793,12 +809,17 @@
       aim.addScaledVector(movement.velocity, lead);
     }
     const direction = aim.clone().sub(origin).normalize();
-    const destination = tower.def.pierce ? origin.clone().addScaledVector(direction, tower.def.range) : aim;
+    const reach = rangeAt(tower.def, tower.position.y);
+    // Range rings measure horizontal reach. Preserve it for a descending
+    // piercing shot, whose sloping flight is longer than its ground distance.
+    const travel = Math.max(origin.distanceTo(aim), Math.min(reach * Math.SQRT2 + tower.def.height * SIZE,
+      reach / Math.max(.01, Math.hypot(direction.x, direction.z))));
+    const destination = tower.def.pierce ? origin.clone().addScaledVector(direction, travel) : aim;
     // Siege shots aim at the ground and can miss enemies that move away.
     if (spec.arc) destination.y = aim.y - Math.min(1.25, target.body.height * .6) + .15;
     const distance = origin.distanceTo(destination);
     const p = { id, tower, target, spec, position: origin.clone(), origin: origin.clone(), destination,
-      direction, age: 0, duration: Math.max(.12, distance / spec.speed), trailTime: 0,
+      direction, age: 0, duration: Math.max(.12, distance / spec.speed), maxAge: Math.max(5, distance / spec.speed + 1), trailTime: 0,
       visited: visited || new Set(), hits: new Set(), mesh: projectileModel(id) };
     p.mesh.position.copy(origin); p.mesh.lookAt(destination); scene.add(p.mesh); projectiles.push(p); return true;
   }
@@ -929,7 +950,7 @@
     if (to.distanceToSquared(from) > .000001) p.direction.copy(to).sub(from).normalize();
     flightEffects(p, from, to, dt, finished);
     p.position.copy(to);
-    if (finished || p.age > 5) {
+    if (finished || p.age > p.maxAge) {
       if (p.tower.def.splash) impact(p, to, null, false);
       return true;
     }
@@ -937,9 +958,9 @@
   }
   function shoot(tower) {
     if (projectiles.length >= MAX_PROJECTILES) return false;
-    const def = tower.def, center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
-    const enemies = queryEnemies(center.x - def.range, center.x + def.range, center.z - def.range, center.z + def.range, shotCandidates).filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && (e.position.x - center.x) ** 2 + (e.position.z - center.z) ** 2 <= def.range ** 2 &&
-      Math.abs(e.position.y - tower.position.y) < 15);
+    const def = tower.def, reach = rangeAt(def, tower.position.y), center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
+    const enemies = queryEnemies(center.x - reach, center.x + reach, center.z - reach, center.z + reach, shotCandidates).filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && (e.position.x - center.x) ** 2 + (e.position.z - center.z) ** 2 <= reach ** 2 &&
+      Math.abs(e.position.y - tower.position.y) <= Math.max(15, reach));
     enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq() || a.id - b.id);
     const target = enemies.find(e => lineClear(center, aimAt(e), tower));
     if (!target) return false;
@@ -1067,7 +1088,7 @@
     updateParticles(dt);
     if (!deferRender) syncRender();
   }
-  M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget,
+  M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget, rangeAt,
     builderDefinition, placeBuilder, trainBuilder,
     model, lineClear, maxTowers: MAX_TOWERS, init: function (value) {
       scene = value;

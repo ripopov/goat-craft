@@ -63,7 +63,8 @@
     if (!panel) return;
     const counts = Object.keys(names).map(kind => kind === 'coins' ? M.enemies.getState().coins : M.items.count(kind));
     const owned = M.towers.definitions.map(def => M.towers.inventoryCount(def.id));
-    const key = counts.join('/') + ':' + owned.join('/') + ':' + selected + ':' + M.towers.list.length + ':' + (inspected && inspected.kills);
+    const y = inspected ? inspected.position.y : target ? target.by * 2 : 14;
+    const key = counts.join('/') + ':' + owned.join('/') + ':' + selected + ':' + M.towers.list.length + ':' + (inspected && inspected.kills) + ':' + y;
     if (!force && key === lastHud) return;
     lastHud = key;
     const resources = document.getElementById('rts-resources');
@@ -86,7 +87,11 @@
     document.getElementById('rts-detail-role').textContent = def ? def.role : 'Ten towers. One living Hearth.';
     const img = document.getElementById('rts-detail-icon'); img.hidden = !def;
     if (def) img.src = 'assets/towers/' + def.id + '.png';
-    document.getElementById('rts-detail-stats').textContent = def ? def.damage + ' damage  /  ' + def.interval + 's  /  ' + def.range + 'm range' : 'Select a blueprint below, then click dry ground.';
+    const reach = def && M.towers.rangeAt(def, y), bonus = def && Math.round((reach / def.range - 1) * 100);
+    const stats = document.getElementById('rts-detail-stats');
+    stats.textContent = def ? def.damage + ' damage  /  ' + def.interval + 's  /  ' + Number(reach.toFixed(1)) + 'm range' +
+      (bonus > 0 ? ' (+' + bonus + '% height)' : '') : 'Select a blueprint below, then click dry ground.';
+    stats.title = 'Elevation adds 20% of base range per 2 Y: +20% at Y 16, +40% at Y 18, +60% at Y 20.';
     document.getElementById('rts-detail-cost').textContent = inspected ? inspected.kills + ' kills · Pack into a collectible item' : def ?
       (M.towers.inventoryCount(def.id) ? 'From inventory · No resources needed' : costText(def.cost)) : 'Mine wood, stone and soil. Defeat enemies for gold.';
   }
@@ -104,7 +109,7 @@
     target = { bx, by, bz, valid: state.valid && M.towers.available(def) };
     ghost.visible = true; ghost.position.set((bx + .5) * 2, by * 2, (bz + .5) * 2);
     ghost.traverse(node => { if (node.isMesh) node.material.color.setHex(target.valid ? 0x8ee6c1 : 0xef8873); });
-    showRange(ghost.position, def.range, target.valid);
+    showRange(ghost.position, M.towers.rangeAt(def, ghost.position.y), target.valid);
     if (messageTime <= 0) document.getElementById('rts-message').textContent = !state.valid ? state.reason :
       !M.towers.available(def) ? 'Gather resources: ' + costText(def.cost) : state.reason;
   }
@@ -125,7 +130,7 @@
     const hit = pick(e.clientX, e.clientY), tower = hit && M.towers.atCell(hit.bx, hit.by, hit.bz);
     inspected = tower || null;
     document.getElementById('rts-pack').hidden = !tower;
-    if (tower) showRange(tower.position, tower.def.range, true); else range.visible = false;
+    if (tower) showRange(tower.position, M.towers.rangeAt(tower.def, tower.position.y), true); else range.visible = false;
     refresh(true);
   }
   function recenter(goat) {

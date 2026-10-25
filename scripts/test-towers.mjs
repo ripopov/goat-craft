@@ -31,6 +31,11 @@ test('a fresh run has to earn resources before purchasing any tower', () => {
 test('all ten blueprints buy real 1–3 block towers and debit the complete price', () => {
   const { M } = defense();
   assert.equal(M.towers.definitions.length, 10);
+  for (const def of Object.values(M.towers.byId)) {
+    for (const [y, multiplier] of [[-10, 1], [14, 1], [15.99, 1], [16, 1.2], [17.99, 1.2], [18, 1.4], [20, 1.6], [32, 2.8]]) {
+      assert.ok(Math.abs(M.towers.rangeAt(def, y) - def.range * multiplier) < 1e-9, def.id + ' range at Y ' + y);
+    }
+  }
   const premium = {
     ember: [1, { coins: 18, stone: 3, coal: 2 }],
     storm: [1.2, { coins: 24, stone: 3, copper: 2 }],
@@ -169,6 +174,41 @@ function until(M, condition, seconds = 3) {
   assert.ok(condition(), 'expected an impact before timeout');
 }
 function flights(scene) { return scene.children.filter(o => o.name.endsWith(' projectile')); }
+
+test('raised towers reach farther, shoot down from high platforms and extend piercing flight', () => {
+  const { M, THREE } = defense();
+  // Isolate range from distant forest cover; construction and swept enemy
+  // collisions still use the real tower controller and world foundations.
+  M.world.blockedAt = () => false;
+  let tower = M.towers.place('ballista', 8, 7, 8); assert.ok(tower);
+  let enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 38), 'brute');
+  step(M, .4); assert.equal(tower.shots, 0, '21m is beyond the ground-level 19m range');
+  M.towers.dismantle(tower);
+  assert.ok(M.world.placeBlock('stone', 8, 7, 8));
+  tower = M.towers.place('ballista', 8, 8, 8); assert.ok(tower);
+  fireOnce(M, tower); until(M, () => enemy.hp < enemy.maxHp);
+  assert.equal(enemy.hp, 27, 'Y 16 extends the actual shot beyond 19m');
+  M.towers.dismantle(tower); M.enemies.damageEnemy(enemy, enemy.hp);
+  for (let y = 8; y < 16; y++) assert.ok(M.world.placeBlock('stone', 8, y, 8));
+  tower = M.towers.place('ballista', 8, 16, 8); assert.ok(tower);
+  enemy = M.enemies.spawnAt(new THREE.Vector3(17, 14, 29), 'brute');
+  fireOnce(M, tower); until(M, () => enemy.hp < enemy.maxHp);
+  assert.equal(enemy.hp, 27, 'a Y 32 platform still reaches enemies on Y 14');
+  M.towers.dismantle(tower); M.enemies.damageEnemy(enemy, enemy.hp);
+  assert.ok(M.world.placeBlock('stone', 10, 7, 8));
+  tower = M.towers.place('sniper', 10, 8, 8); assert.ok(tower);
+  const targets = [51, 53].map(z => M.enemies.spawnAt(new THREE.Vector3(21, 16, z), 'brute'));
+  fireOnce(M, tower); until(M, () => targets[1].hp < targets[1].maxHp);
+  assert.deepEqual(targets.map(e => e.hp), [22.75, 22.75], 'the dart reaches and pierces beyond the old 32m limit');
+  M.towers.dismantle(tower); targets.forEach(e => M.enemies.damageEnemy(e, e.hp));
+  for (let y = 7; y < 40; y++) assert.ok(M.world.placeBlock('stone', 12, y, 8));
+  tower = M.towers.place('mortar', 12, 40, 8); assert.ok(tower);
+  enemy = M.enemies.spawnAt(new THREE.Vector3(25, 14, 129), 'brute');
+  fireOnce(M, tower); step(M, 5.1);
+  assert.equal(enemy.hp, 28, 'a distant shell is still traveling after five seconds');
+  until(M, () => enemy.hp < enemy.maxHp, 6);
+  assert.equal(enemy.hp, 26.5, 'long elevated flights do not expire before reaching the target');
+});
 
 test('every blueprint resolves its visible projectile and status only on collision', async t => {
   // Reuse one arena for independent, fully drained shots instead of generating

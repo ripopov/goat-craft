@@ -32,7 +32,12 @@
     <div id="item-name" aria-live="polite">Horns &amp; Hooves</div>
     <div id="hotbar" role="toolbar" aria-label="Item bar"></div>
   </div>
-  <canvas id="minimap" role="img" aria-label="Player-centered minimap" title="North up · You: white arrow · Enemies: red · Animals: green · Coins: gold dots · Hearth: gold diamond · Cave: cyan · Range: 80m"></canvas>
+  <div id="minimap-hud">
+    <canvas id="minimap" role="img" aria-label="Player-centered minimap" title="North up · You: white arrow · Enemies: red · Animals: green · Coins: gold dots · Hearth: gold diamond · Cave: cyan · Range: 80m"></canvas>
+    <div id="player-coordinates" role="group" aria-label="Player world coordinates" title="Your position · Y is height">
+      <span>X <b id="player-x">—</b></span><span>Y <b id="player-y">—</b></span><span>Z <b id="player-z">—</b></span>
+    </div>
+  </div>
   <details id="controls-help">
     <summary aria-label="Show game controls">? <span>Controls</span></summary>
     <div id="hint">

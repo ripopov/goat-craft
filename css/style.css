@@ -440,9 +440,14 @@
     #upgrade-menu footer { flex-direction: column; gap: 3px; }
   }
 
-  #minimap { position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: calc(var(--bar-bottom) + 90px); z-index: 4; width: 164px; height: 164px; border-radius: 50%; pointer-events: none; filter: drop-shadow(0 5px 12px #0c241766); }
-  @media (max-width: 760px) { #minimap { left: 10px; bottom: calc(var(--bar-bottom) + 140px); width: 122px; height: 122px; } }
-  @media (max-height: 500px) and (min-width: 761px) { #minimap { width: 120px; height: 120px; } }
+  #minimap-hud { --minimap-size: 164px; position: fixed; left: max(20px, env(safe-area-inset-left)); bottom: calc(var(--bar-bottom) + 90px); z-index: 4; width: var(--minimap-size); pointer-events: none; }
+  #minimap { display: block; width: 100%; height: var(--minimap-size); border-radius: 50%; filter: drop-shadow(0 5px 12px #0c241766); }
+  #player-coordinates { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; width: max-content; min-width: 100%; max-width: calc(100vw - 40px); margin-top: 6px; padding: 6px 9px; border: 1px solid #d4c58955; border-radius: 7px; background: #172b23ed; color: #a9bea0; font: 11px ui-monospace, monospace; font-variant-numeric: tabular-nums; box-shadow: 0 3px 10px #0c241733; }
+  #player-coordinates span { white-space: nowrap; }
+  #player-coordinates b { color: #fff1cb; font-weight: 500; }
+  @media (max-width: 760px) { #minimap-hud { --minimap-size: 122px; left: 10px; bottom: calc(var(--bar-bottom) + 140px); } }
+  @media (max-width: 760px) { #player-coordinates { max-width: calc(100vw - 180px); gap: 4px 8px; } }
+  @media (max-height: 500px) and (min-width: 761px) { #minimap-hud { --minimap-size: 120px; } }
 
   /* Strategic controls leave the map open: one toolbar, one tower strip. */
   #strategy-toggle { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: calc(var(--bar-bottom) + 112px); z-index: 7; display: flex; align-items: center; gap: 9px; padding: 11px 16px; border: 1px solid #e2c481; border-radius: 10px; background: #203a31ed; box-shadow: 0 6px 20px #14211940; color: #fff0c1; font: 600 12px system-ui, sans-serif; cursor: pointer; }
@@ -502,7 +507,7 @@
   body.rts-active #scene { cursor: crosshair; }
   body.rts-active .defense-stats, body.rts-active #water-status { display: none; }
   body.rts-active #strategy-toggle { top: 20px; bottom: auto; right: 235px; padding: 7px 12px; }
-  body.rts-active #minimap { bottom: 236px; width: 112px; height: 112px; }
+  body.rts-active #minimap-hud { --minimap-size: 112px; bottom: 236px; }
   @media (max-width: 1000px) {
     .rts-live { display: none; }
     #rts-resources > span { padding: 7px; }
@@ -541,10 +546,10 @@
     #rts-detail-cost { grid-column: 1 / 3; margin: 0; font-size: 9px; }
     #rts-pack { grid-column: 3; grid-row: 1 / 4; min-height: 36px; }
     .rts-footer { padding: 5px 8px; }
-    .rts-footer > span, body.rts-active #minimap { display: none; }
+    .rts-footer > span, body.rts-active #minimap-hud { display: none; }
   }
   @media (max-height: 500px) {
-    body.rts-active #minimap { display: none; }
+    body.rts-active #minimap-hud { display: none; }
     .rts-banner { top: 65px; }
     #rts-resources { top: 65px; }
     .rts-footer > span { display: none; }

@@ -1,7 +1,7 @@
 (function (M) {
   'use strict';
   const RANGE = 80;
-  let canvas, context, cooldown = 0;
+  let canvas, context, coordinates, cooldown = 0;
   function project(position, player) {
     const x = (position.x - player.x) / RANGE, y = (position.z - player.z) / RANGE;
     const distance = Math.hypot(x, y), factor = 0.91 / Math.max(1, distance);
@@ -11,8 +11,15 @@
     if (!context || !M.goat.group) return;
     const size = canvas.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2);
     if (size <= 10) return; // Strategic view hides the minimap on compact screens.
+    const player = M.goat.group.position;
+    for (const axis of ['x', 'y', 'z']) {
+      const label = coordinates[axis];
+      if (!label || !Number.isFinite(player[axis])) continue;
+      const value = (Math.round(player[axis] * 10) / 10).toFixed(1);
+      if (label.textContent !== value) label.textContent = value;
+    }
     if (canvas.width !== Math.round(size * ratio)) canvas.width = canvas.height = Math.round(size * ratio);
-    const ctx = context, center = size / 2, radius = center - 5, player = M.goat.group.position;
+    const ctx = context, center = size / 2, radius = center - 5;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, size, size);
     ctx.save(); ctx.translate(center, center);
     ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.clip();
@@ -64,7 +71,11 @@
     ctx.strokeStyle = '#d4c58999'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(center, center, radius, 0, Math.PI * 2); ctx.stroke();
     canvas.setAttribute('aria-label', 'Minimap, north up, player centered. ' + M.enemies.zombies.length + ' enemies: red ground dots, lavender air triangles, amber burrow bars and gold boss stars; ' + M.animals.list.length + ' animals in green, ' + coinStacks + ' coin stacks as gold dots, Hearth as a gold diamond, starter cave in cyan. Red horned arches mark permanent hell gates. Amber warning triangles mark incoming enemy approaches. Rings at the edge mark locations outside the 80 meter range.');
   }
-  function init() { canvas = document.getElementById('minimap'); context = canvas && canvas.getContext('2d'); draw(); }
+  function init() {
+    canvas = document.getElementById('minimap'); context = canvas && canvas.getContext('2d');
+    coordinates = { x: document.getElementById('player-x'), y: document.getElementById('player-y'), z: document.getElementById('player-z') };
+    draw();
+  }
   function update(dt) { cooldown -= dt; if (cooldown > 0) return; cooldown = 0.1; draw(); }
   M.minimap = { init: init, update: update, project: project, range: RANGE };
 })(window.Meadow = window.Meadow || {});

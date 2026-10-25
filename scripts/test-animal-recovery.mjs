@@ -29,6 +29,23 @@ test('progress monitor ignores idle animals and escalates only sustained blockag
   assert.equal(monitor.stage, 'clear');
 });
 
+test('escape digging skips permanent gate and road blocks in favor of breakable material', () => {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(readFileSync(new URL('../js/animal-recovery.js', import.meta.url), 'utf8'), context);
+  const recovery = context.window.Meadow.animalRecovery;
+  const world = {
+    surfaceHeight: () => 14, blockedAt: () => true,
+    blockInfoAt: (bx, by, bz) => by === 7 && bz === 0 && (bx === 1 || bx === 2)
+      ? { kind: bx === 1 ? 'hellstone' : 'stone', type: bx === 1 ? 'gate' : 'placed', unbreakable: bx === 1 }
+      : null
+  };
+  const position = { x: 1.9, y: 14, z: 1 }, body = { height: 1.8, radius: .4 };
+  const target = recovery.findDig(world, position, body, { x: 1, z: 0 });
+  assert.equal(target.bx, 2, 'reachable breakable wall selected beyond the permanent frame');
+  world.blockInfoAt = () => ({ kind: 'roadstone', unbreakable: true });
+  assert.equal(recovery.findDig(world, position, body, { x: 1, z: 0 }), null);
+});
+
 test('a walker jumps a one-block ledge without emergency relocation', () => {
   const { M, animal, advance, place, walkTo } = isolatedAnimal();
   animal.group.position.set(17, 14, 1);

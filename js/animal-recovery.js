@@ -167,7 +167,7 @@
         for (let layer = 0; layer < layers; layer++) {
           const by = feetBy + layer;
           const info = world.blockInfoAt(bx, by, bz);
-          if (!info) continue;
+          if (!info || info.unbreakable) continue;
           const score = distance - alignment * 2.2 + layer * 0.35;
           if (score < bestScore) {
             bestScore = score;

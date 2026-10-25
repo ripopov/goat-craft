@@ -2165,7 +2165,7 @@
         for (let layer = 0; layer < 2; layer++) {
           const by = feetBy + layer;
           const info = worldRef.blockInfoAt(bx, by, bz);
-          if (!info || info.type === 'placed') continue;
+          if (!info || info.unbreakable || info.type === 'placed') continue;
           if (info.type === 'prop') continue;
           const below = worldRef.blockInfoAt(bx, by - 1, bz);
           const isStepWall = layer === 1 && !!below;

@@ -9,6 +9,8 @@ for (const wave of [12, 15]) test('a prepared mixed defense clears wave ' + wave
   assert.ok(result.health > 0, 'a plausible investment survives the encounter');
   assert.ok(result.seconds < 120, 'the wave ends without a long cleanup tail');
   assert.equal(result.watchdogDeaths, 0, 'successful defense does not rely on forced watchdog kills');
-  assert.ok(result.worms > 0 && result.airdrops > 0, 'both new delivery threats participate');
+  assert.ok(result.worms > 0 && result.sailors > 0, 'underground/surface Worms and boat crews participate');
+  if (wave === 15) assert.equal(result.airdrops, 0, 'the sea invasion overrides air delivery');
+  else assert.ok(result.airdrops > 0, 'ordinary waves retain airdrops');
   assert.equal(result.survivors.length, 0);
 });

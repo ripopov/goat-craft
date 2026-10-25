@@ -113,6 +113,35 @@
       part('zombie', -side * 0.06, -0.65, 0.12, 0.08, 0.17, 0.1, 0x5b8352, elbow);
     });
 
+    // Salt-green raiders: striped shirts, crimson scarves and iron cutlasses.
+    const raider = walkerJoints('raider', .23, .53, 2.04);
+    part('raider', 0, 1.52, 0, .85, .94, .48, 0x243f51);
+    [1.25, 1.48, 1.71].forEach(y => part('raider', 0, y, .25, .85, .09, .04, 0xc8c5a5));
+    part('raider', 0, 1.94, .04, .8, .17, .55, 0x9c3e3e);
+    part('raider', .29, 1.75, .3, .18, .4, .08, 0xb24b44);
+    part('raider', 0, 1.06, .01, .86, .14, .5, 0x3e2d26);
+    part('raider', 0, 1.06, .29, .17, .15, .06, 0xd2a65c);
+    part('raider', 0, .39, 0, .76, .72, .68, 0x7a9b86, raider.head);
+    part('raider', 0, .75, 0, .84, .15, .73, 0x9c3e3e, raider.head);
+    part('raider', -.22, .43, .36, .24, .19, .06, 0x1d2c32, raider.head);
+    part('raider', .22, .44, .37, .12, .1, .05, 0xffd283, raider.head, true);
+    part('raider', 0, .14, .35, .47, .12, .08, 0x354e49, raider.head);
+    raider.legs.forEach(joints => {
+      part('raider', 0, -.24, 0, .34, .5, .38, 0x313e4b, joints[0]);
+      part('raider', 0, -.25, 0, .32, .48, .35, 0x263540, joints[1]);
+      part('raider', 0, -.5, .09, .39, .22, .53, 0x352c29, joints[1]);
+    });
+    raider.arms.forEach((joints, i) => {
+      part('raider', 0, -.23, 0, .32, .47, .39, 0x243f51, joints[0]);
+      part('raider', 0, -.25, 0, .27, .48, .32, 0x7a9b86, joints[1]);
+      part('raider', 0, -.53, .02, .33, .18, .36, 0x668675, joints[1]);
+      if (i) {
+        part('raider', 0, -.65, .06, .13, .32, .14, 0x49322b, joints[1]);
+        part('raider', 0, -.77, .06, .4, .1, .17, 0xd5b56f, joints[1]);
+        part('raider', 0, -1.12, .06, .14, .65, .09, 0xc0d5d6, joints[1]);
+      }
+    });
+
     const skeleton = walkerJoints('skeleton', 0.21, 0.52, 2.04);
     part('skeleton', 0, 1.5, -0.03, 0.16, 0.98, 0.18, 0xaaa991);
     part('skeleton', 0, 1.55, 0.18, 0.13, 0.75, 0.12, 0xc9c6aa);

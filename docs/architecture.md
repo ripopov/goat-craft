@@ -12,7 +12,8 @@ must run from `file://` and from GitHub Pages.
 | --- | --- | --- |
 | `enemy-rules.js` | Species stats, wave composition, special-wave overrides, difficulty, timers and clear rewards | None |
 | `enemy-models.js` | Beveled voxel geometry and articulated enemy model construction | Three.js |
-| `enemies.js` | Live enemies, delivery, movement, abilities, combat, watchdog and render synchronization | Rules, models, actor physics, enemy navigation, hell gates |
+| `enemy-boats.js` | Lazy bounded water-route discovery, four-passenger transport, disembarking and instanced hull rendering | World water queries, actor physics, enemy models, walker navigation |
+| `enemies.js` | Live enemies, delivery, movement, abilities, combat, watchdog and render synchronization | Rules, models, actor physics, enemy navigation, hell gates, enemy boats |
 | `animal-models.js` | Shared species definitions, animal rigs, materials and fitting scales | Three.js, core utilities, animal style |
 | `animal-navigation.js` | Cached body-sized Hearth routes and terrain-edit invalidation | Actor physics, core utilities |
 | `animal-recovery.js` | Progress monitoring and physical escape target selection | World query interface |
@@ -31,7 +32,7 @@ building inventory art or duplicating wave rules.
 Edit `enemy-rules.js`. `specialWaves` is the single registry for an exact wave's
 species override, delivery override and announcement. Type overrides take
 precedence over ordinary slots (including Boss slots). Delivery overrides apply
-to every species; parachuted Worms land on the surface rather than burrowing.
+to every species; parachuted and sea-delivered Worms stay on the surface rather than burrowing. All-boat waves round their size up to four. Ordinary sea slots form complete groups of four and never consume a partial final crew. The controller reserves four living slots before launching. Boat passengers are ordinary live enemies for combat, rewards and the watchdog; transport temporarily owns their positions. Ocean-to-bank routes use a separate bounded water flood, while walking after landing uses the existing navigation field. Hulls share one instanced draw synchronized with the final enemy pose each frame.
 Keep ordinary unlock/slot rules in `typeForWave`, difficulty in `waveDifficulty`,
 and timings in `firstWaveDelay` and `restAfter`. Worm dig-out bounds and outward
 bias belong together in `wormEmergence`.
@@ -51,7 +52,7 @@ loaded and tested directly without terrain initialization.
    actor physics, shared navigation, targetability, damage and removal paths so
    water, cover, rewards and the 30-second watchdog remain consistent.
 4. Add silhouettes to the minimap and sounds to `audio.js` if needed. Exercise
-   both ground delivery and parachute landing.
+   ground delivery, parachute landing and boat disembarking.
 
 ## Change NPC navigation or appearance
 

@@ -25,7 +25,7 @@ function harness(realWorld = false) {
     M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
     M.hearthTree.init(scene);
   }
-  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemies.js'].forEach(load);
+  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemy-boats.js', 'js/enemies.js'].forEach(load);
   return { M, THREE, scene, drops, coinDrops, load, context };
 }
 function fixture() {
@@ -439,7 +439,7 @@ test('later waves send larger groups, still staggered rather than all at once', 
 });
 
 test('every tenth cleared wave gives a full minute of rest, while ordinary breaks stay ten seconds', () => {
-  const { M, scene, world, tree } = fixture(); tree.damage = () => {};
+  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree; tree.damage = () => {};
   const e = M.enemies; e.init({ scene, world, tree }); e.beginFrame();
   for (const level of [9, 10, 20, 30]) {
     for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.maxHp);
@@ -526,7 +526,7 @@ test('new enemy species unlock gradually with bounded durable-unit proportions',
 });
 
 test('all enemy species walk toward the Hearth and deal their distinct contact damage', () => {
-  for (const type of ['zombie', 'spider', 'skeleton', 'brute']) {
+  for (const type of ['zombie', 'spider', 'raider', 'skeleton', 'brute']) {
     const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
     const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type);
     const def = M.enemies.types[type];
@@ -557,7 +557,7 @@ test('a mixed horde shares the living cap, finite render pool and physical rewar
 });
 
 test('clearing actual waves introduces each species, pays one bonus, and gives a training break', () => {
-  const { M, scene, world, tree } = fixture(); tree.damage = () => {};
+  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree; tree.damage = () => {};
   M.enemies.init({ scene, world, tree });
   const rosters = new Map();
   let lastId = -1, bonus = 0;

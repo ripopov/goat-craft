@@ -100,19 +100,22 @@ test('four permanent forest gates have dry ground routes, collision and protecte
   assert.equal(scene.getObjectByName('Living hell gate portals').count, 4);
 });
 
-test('surface enemies arrive inside gates, Worms below them, and parachutes retain air delivery', () => {
+test('ground arrivals use gates while boats and parachutes retain separate delivery', () => {
   const { M } = game({ seed: 17 }), enemies = M.enemies;
   M.hearthTree.damage = () => {};
   const seen = new Set(), species = new Set(), usedGates = new Set();
-  let air = false, worm = false;
-  for (const wave of [1, 2, 3, 5, 7, 8, 10, 12, 15]) {
+  let air = false, worm = false, sea = false;
+  for (const wave of [1, 2, 3, 4, 5, 7, 8, 10, 12, 16]) {
     enemies.startWave(wave);
     for (let tick = 0; tick < 2000 && enemies.getState().pending; tick++) {
       enemies.update(.05);
       for (const enemy of enemies.zombies.slice()) {
         if (!seen.has(enemy.id)) {
           seen.add(enemy.id);
-          if (enemy.airborne) {
+          if (enemy.boat) {
+            sea = true; assert.equal(enemy.gateId, undefined);
+            assert.equal(enemy.boat.crew.length, 4);
+          } else if (enemy.airborne) {
             air = true; assert.equal(enemy.gateId, undefined);
             assert.ok(Math.hypot(enemy.position.x, enemy.position.z) >= 18);
             assert.ok(Math.hypot(enemy.position.x, enemy.position.z) <= 26);
@@ -135,6 +138,6 @@ test('surface enemies arrive inside gates, Worms below them, and parachutes reta
     }
     assert.equal(enemies.getState().pending, 0, 'the complete roster can exit its gates');
   }
-  assert.equal(species.size, Object.keys(enemies.types).length - 1);
-  assert.ok(usedGates.size === 4); assert.ok(air); assert.ok(worm);
+  assert.equal(species.size, Object.keys(enemies.types).length - 2);
+  assert.ok(usedGates.size === 4); assert.ok(air); assert.ok(worm); assert.ok(sea);
 });

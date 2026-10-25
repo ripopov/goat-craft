@@ -8,9 +8,9 @@
   const physics = M.actorPhysics, BODY = { radius: 0.34, height: 2.8, skin: 0.002 };
   const { clamp, turnToward, damp } = M.utils;
   const zombies = [], fallen = [];
-  let scene, world, tree, navigation, mesh, outlineMesh;
+  let scene, world, tree, navigation, mesh, outlineMesh, fleet;
   let elapsed = 0, wave = 0, nextWave = rules.firstWaveDelay, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
-  let plan = wavePlan(1), spawnLanes = [];
+  let plan = wavePlan(1), spawnLanes = [], seaLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
@@ -80,6 +80,11 @@
         else if (j.kind === 'spiderKnee') j.rz += j.side * .25 * Math.cos(paddle) * swim;
         else if (j.kind === 'wormSegment') j.ry += Math.sin(paddle - j.index) * .2 * swim;
       }
+      if (enemy.boat) {
+        if (j.kind === 'leg') j.rx = -.28;
+        else if (j.kind === 'knee') j.rx = .55;
+        else if (j.kind === 'arm') j.rx = -.45 + Math.sin(time * 5 + j.side) * .12 * motion;
+      }
       position.set(j.x, j.y, j.z); rotation.set(j.rx, j.ry, j.rz); quaternion.setFromEuler(rotation);
       matrix.compose(position, quaternion, scale.set(1, 1, 1));
       if (j.parent) matrix.premultiply(jointMatrices[j.parent]); else matrix.premultiply(rootMatrix);
@@ -89,6 +94,7 @@
 
   function render(time) {
     if (!mesh || renderDeferred) return;
+    fleet.render();
     let index = 0;
     for (let list = 0; list < 2; list++) {
       const actors = list ? fallen : zombies;
@@ -303,6 +309,18 @@
   }
   function specialMovement(enemy, dt) {
     const p = enemy.position;
+    if (enemy.boat) { enemy.mode = 'sail'; enemy.moving = false; return true; }
+    if (enemy.boatExit) {
+      const exit = enemy.boatExit;
+      exit.age = Math.min(1, exit.age + dt / .85);
+      const next = exit.from.clone().lerp(exit.to, exit.age);
+      next.y += Math.sin(exit.age * Math.PI) * 1.6;
+      if (physics.clear(world, next.x, next.y, next.z, enemy.body)) p.copy(next);
+      else exit.age = 1; // A newly built wall stops the leap; swimming AI takes over here.
+      enemy.mode = 'disembark'; enemy.moving = false;
+      if (exit.age >= 1) { enemy.boatExit = null; enemy.vy = 0; enemy.grounded = false; enemy.recoverTime = .25; }
+      return true;
+    }
     if (enemy.airborne) {
       enemy.mode = 'air'; enemy.moving = false;
       const water = world.waterInfoAtBlock && world.waterInfoAtBlock(Math.floor(p.x / SIZE), Math.floor(p.z / SIZE));
@@ -432,10 +450,12 @@
     if (M.ui && M.ui.setDefense) M.ui.setDefense(state);
   }
   function getState() {
+    const laneLevel = Number.isFinite(nextWave) ? wave + 1 : wave;
+    const lanes = rules.specialWaves[laneLevel]?.delivery === 'boat' ? seaLanes : spawnLanes.concat(seaLanes);
     return { health: tree ? tree.health : 100, maxHealth: 100, coins: coins, count: zombies.length,
       wave: wave, pending: pending, phase: nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
-      maxEnemies: MAX_ENEMIES, approaches: spawnLanes.map(function (lane) { return lane.label; }).join(' / '),
-      spawnLanes: spawnLanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
+      maxEnemies: MAX_ENEMIES, approaches: lanes.map(function (lane) { return lane.label; }).join(' / '),
+      spawnLanes: lanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
       nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
       nextWave: Number.isFinite(nextWave) ? Math.ceil(Math.max(0, nextWave - elapsed - 1e-7)) : 0, defeated: !!tree && tree.health <= 0 };
   }
@@ -462,6 +482,11 @@
   function prepareSpawns(level) {
     plan = wavePlan(level);
     spawnLanes = chooseSpawnLanes(M.hellGates.gates, level);
+    const hasBoats = Array.from({ length: waveSize(level) }, (_, slot) => deliveryForWave(level, slot, typeForWave(level, slot))).includes('boat');
+    seaLanes = hasBoats ? fleet.routes.map(route => {
+      const landing = route.path[route.path.length - 1];
+      return { x: landing.x, z: landing.z, label: landing.x < tree.position.x ? 'Sea W' : 'Sea E' };
+    }) : [];
   }
   function beginWave(level) {
     wave = level === undefined ? wave + 1 : level;
@@ -520,7 +545,13 @@
   }
   function spawn() {
     const type = typeForWave(wave, waveSpawned);
-    if (deliveryForWave(wave, waveSpawned, type) === 'parachute') {
+    const delivery = deliveryForWave(wave, waveSpawned, type);
+    if (delivery === 'boat') {
+      if (pending < 4 || zombies.length + 4 > MAX_ENEMIES) return false;
+      const types = Array.from({ length: 4 }, (_, i) => typeForWave(wave, waveSpawned + i));
+      return fleet.launch(types) ? 4 : false;
+    }
+    if (delivery === 'parachute') {
       const body = { radius: TYPES[type].radius, height: TYPES[type].height, skin: .002 };
       const targets = navigation.nodes.filter(node => {
         const d = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
@@ -594,7 +625,7 @@
     if (index < 0 || tree.health <= 0) return false;
     enemy.bite = 0; enemy.blockBite = 0;
     const killed = damageEnemy(enemy, damage, { origin: origin, area: area });
-    if (!['boss', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
+    if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
     updateHud(); render(elapsed);
     return killed;
   }
@@ -640,7 +671,7 @@
       hit = true; hits++;
       zombie.bite = 0; zombie.blockBite = 0;
       damageEnemy(zombie, damage, { origin: origin, area: stomp });
-      if (!['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
+      if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
     }
     if (hit) { updateHud(); render(elapsed); }
     return hit;
@@ -737,7 +768,14 @@
     }
     if (zombie.swimming) {
       const exit = physics.shoreExit(world, p, zombie.body, dx, dz, zombie.waterLevel, 20);
-      if (exit && exit.distance <= 1) physics.launchShore(zombie, exit);
+      const shore = target.swim ? target.next && !target.next.swim ? target.next : null : target;
+      if (exit && exit.distance <= 1 && shore) {
+        physics.launchShore(zombie, exit);
+        // Commit the jump to the dry waypoint. Stopping over the old water
+        // center midair can drop short bodies underneath a paved bridge.
+        zombie.target = shore;
+        return walk(zombie, shore, dt);
+      }
     }
     const rush = zombie.type === 'prismback' ? zombie.prismPhase === 'rush' ? 2 : zombie.prismPhase === 'exposed' ? .65 : 1 : 1;
     const step = Math.min(d, TYPES[zombie.type].speed * zombie.speedScale * (zombie.swimming ? .8 : 1) * rush * (zombie.towerSlowTime > 0 ? zombie.towerSlow : 1) * dt);
@@ -791,11 +829,14 @@
     if (elapsed >= nextWave) beginWave();
     spawnTimer -= dt;
     if (pending > 0 && spawnTimer <= 0 && zombies.length < MAX_ENEMIES) {
-      if (spawn()) {
-        pending--; waveSpawned++;
-        spawnTimer = waveSpawned % plan.squadSize === 0 ? plan.squadInterval : plan.memberInterval;
+      const spawned = spawn();
+      if (spawned) {
+        const count = spawned === true ? 1 : spawned;
+        pending -= count; waveSpawned += count;
+        spawnTimer = count === 4 || waveSpawned % plan.squadSize === 0 ? plan.squadInterval : plan.memberInterval;
       } else spawnTimer = 0.5; // Retry without consuming a member or skipping a flank.
     }
+    fleet.update(dt);
     zombies.forEach(function (zombie) {
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
       if (specialMovement(zombie, dt)) return;
@@ -831,18 +872,18 @@
       zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);
       const footBeat = Math.floor(zombie.phase / Math.PI);
       if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat) {
-        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
         else if (M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
       }
       zombie.footBeat = footBeat;
       zombie.voiceTimer -= dt; zombie.chewTimer -= dt;
       if (zombie.voiceTimer <= 0) {
-        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie(zombie.type === 'spider' || zombie.type === 'skeleton' ? 'bite' : 'groan', zombie.position);
         zombie.voiceTimer = 7.5 + Math.sin(elapsed + zombie.id) * 3.5;
       }
       if (eating && zombie.chewTimer <= 0) {
-        if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
@@ -864,6 +905,7 @@
     M.hellGates.init(scene, world, tree);
     navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.gates, roads: M.hellGates.roads });
     navigation.rebuild();
+    fleet = M.enemyBoats.create(scene, world, tree, navigation, spawnAt);
     prepareSpawns(1);
     mesh = new THREE.InstancedMesh(M.enemyModels.geometry(), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * maxParts);
     mesh.name = 'Enemy horde'; mesh.count = 0; mesh.frustumCulled = false;
@@ -891,7 +933,7 @@
     }
     enemy.hp -= amount; enemy.flash = .15;
     const killed = enemy.hp <= 0;
-    if (['boss', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
+    if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
     if (killed) removeEnemy(enemy, index, false);
     updateHud();
     return killed;
@@ -911,5 +953,6 @@
       if (!Number.isInteger(amount) || amount < 0 || amount > coins) return false;
       coins -= amount; updateHud(); return true;
     },
-    body: BODY, get zombies() { return zombies; }, get navigation() { return navigation; }, spawnAt: spawnAt };
+    body: BODY, get zombies() { return zombies; }, get boats() { return fleet ? fleet.boats : []; },
+    get navigation() { return navigation; }, spawnAt: spawnAt };
 })(window.Meadow = window.Meadow || {});

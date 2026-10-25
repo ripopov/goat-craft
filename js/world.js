@@ -518,8 +518,33 @@
     return chunks.get(Math.floor(bx / CHUNK_BLOCKS) + ',' + Math.floor(bz / CHUNK_BLOCKS)) || null;
   }
 
+  const permanentBlocks = new Map();
+  function addPermanentBlocks(cells, kind, clearance) {
+    (clearance || []).forEach(function (cell) {
+      const info = blockInfoAt(cell.bx, cell.by, cell.bz);
+      if (!info || info.type !== 'prop') return;
+      removePropBlock(cell.bx, cell.by, cell.bz);
+      dirtyPropChunks.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
+    });
+    const affected = new Set();
+    cells.forEach(function (cell) {
+      affected.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
+      permanentBlocks.set(blockKey(cell.bx, cell.by, cell.bz), kind);
+      recordChange(cell.bx, cell.bz);
+    });
+    // Terrain yields ownership of these voxels to the stone plinth. Rebuild
+    // before the first draw so no coplanar soil caps can flicker through it.
+    affected.forEach(function (id) {
+      const [cx, cz] = id.split(',').map(Number);
+      dirtyPropChunks.delete(id);
+      rebuildChunkTerrain(cx, cz);
+    });
+  }
+
   function propKindAt(bx, by, bz) {
     if (by < 0) return null;
+    const permanent = permanentBlocks.get(blockKey(bx, by, bz));
+    if (permanent) return permanent;
     const placed = placedBlocks.get(blockKey(bx, by, bz));
     if (placed) return placed;
     const ch = chunkForBlock(bx, bz);
@@ -540,7 +565,7 @@
     const prop = propKindAt(bx, by, bz);
     if (prop) {
       const placed = placedBlocks.has(key);
-      return { bx: bx, by: by, bz: bz, kind: prop, type: placed ? 'placed' : 'prop', placed: placed };
+      return { bx: bx, by: by, bz: bz, kind: prop, type: permanentBlocks.has(key) ? 'gate' : placed ? 'placed' : 'prop', placed: placed, unbreakable: permanentBlocks.has(key) };
     }
     if (!isSolidBlock(bx, by, bz)) return null;
     return {
@@ -559,7 +584,7 @@
   function topSoilInfo(bx, bz) {
     if (isProtectedArea(bx, bz) || isStartingClearing(bx, bz)) return null;
     const by = topSolidY(bx, bz);
-    if (by < 0) return null;
+    if (by < 0 || permanentBlocks.has(blockKey(bx, by, bz)) || permanentBlocks.has(blockKey(bx, by + 1, bz))) return null;
     return {
       bx: bx,
       by: by,
@@ -1143,25 +1168,26 @@
 
   // ---- terrain mesh ----
   function buildTerrainGeometry(cx, cz) {
+    const occupied = (x, y, z) => isSolidBlock(x, y, z) || permanentBlocks.has(blockKey(x, y, z));
     const data = { pos: [], nor: [], uv: [], col: [], idx: [] };
     const originBX = cx * CHUNK_BLOCKS, originBZ = cz * CHUNK_BLOCKS;
     for (let bz = 0; bz < CHUNK_BLOCKS; bz++) for (let bx = 0; bx < CHUNK_BLOCKS; bx++) {
       const wx = originBX + bx, wz = originBZ + bz, h = heightBlocks(wx, wz);
       const water = waterInfoAtBlock(wx, wz), level = water ? water.level : -1;
       for (let by = 0; by < h; by++) {
-        if (!isSolidBlock(wx, by, wz)) continue;
+        if (!isSolidBlock(wx, by, wz) || permanentBlocks.has(blockKey(wx, by, wz))) continue;
         const x = bx * BLOCK, y = by * BLOCK, z = bz * BLOCK;
         const kind = M.caves.material(wx, by, wz, h), tiles = ITEM_TILES[kind];
         const grassy = kind === 'grass' && level <= y + .02;
         const top = kind === 'grass' ? grassy ? T_GRASS : T_DIRT : tiles.top;
         const side = kind === 'grass' ? grassy ? T_GRASS_SIDE : T_DIRT : tiles.side;
         const shade = (grassy ? .95 : .86) + hash01(wx, wz) * .05;
-        if (!isSolidBlock(wx, by + 1, wz)) pushTop(data, x, y + BLOCK, z, top, shade);
-        if (by > 0 && !isSolidBlock(wx, by - 1, wz)) pushBottom(data, x, y, z, tiles.bottom, shade * .7);
-        if (!isSolidBlock(wx - 1, by, wz)) pushSide(data, 0, x, z, y, y + BLOCK, side, shade * .72);
-        if (!isSolidBlock(wx + 1, by, wz)) pushSide(data, 1, x, z, y, y + BLOCK, side, shade * .72);
-        if (!isSolidBlock(wx, by, wz - 1)) pushSide(data, 2, x, z, y, y + BLOCK, side, shade * .7);
-        if (!isSolidBlock(wx, by, wz + 1)) pushSide(data, 3, x, z, y, y + BLOCK, side, shade * .7);
+        if (!occupied(wx, by + 1, wz)) pushTop(data, x, y + BLOCK, z, top, shade);
+        if (by > 0 && !occupied(wx, by - 1, wz)) pushBottom(data, x, y, z, tiles.bottom, shade * .7);
+        if (!occupied(wx - 1, by, wz)) pushSide(data, 0, x, z, y, y + BLOCK, side, shade * .72);
+        if (!occupied(wx + 1, by, wz)) pushSide(data, 1, x, z, y, y + BLOCK, side, shade * .72);
+        if (!occupied(wx, by, wz - 1)) pushSide(data, 2, x, z, y, y + BLOCK, side, shade * .7);
+        if (!occupied(wx, by, wz + 1)) pushSide(data, 3, x, z, y, y + BLOCK, side, shade * .7);
       }
     }
     return dataToGeometry(data, false);
@@ -1224,6 +1250,7 @@
       const bz = cz * CHUNK_BLOCKS + Math.round(z / BLOCK);
       const by = Math.round(y / BLOCK);
       const key = blockKey(bx, by, bz);
+      if (!force && (permanentBlocks.has(key) || M.hellGates && M.hellGates.isCleared(bx, by, bz))) return;
       if (!force && (removedPropBlocks.has(key) || isStartingClearing(bx, bz) || M.caves.entranceClearance(bx, bz))) return;
       blocks.set(key, kind);
       faces.set(key, { bx: bx, by: by, bz: bz, x: x, y: y, z: z,
@@ -1315,9 +1342,9 @@
       if (M.towers && M.towers.atCell(b.bx, b.by, b.bz)) return;
       // A rock or canopy can extend into a higher terrain step. The terrain
       // owns that voxel; drawing the prop too duplicates its exposed faces.
-      if (isSolidBlock(b.bx, b.by, b.bz)) return;
+      if (isSolidBlock(b.bx, b.by, b.bz) || permanentBlocks.has(blockKey(b.bx, b.by, b.bz))) return;
       function occupied(dx, dy, dz) {
-        return blocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || isSolidBlock(b.bx + dx, b.by + dy, b.bz + dz);
+        return blocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || permanentBlocks.has(blockKey(b.bx + dx, b.by + dy, b.bz + dz)) || isSolidBlock(b.bx + dx, b.by + dy, b.bz + dz);
       }
       if (!occupied(0, 1, 0)) pushTop(data, b.x, b.y + BLOCK, b.z, b.top, b.shadeTop);
       if (!occupied(0, -1, 0)) pushBottom(data, b.x, b.y, b.z, b.bottom, b.shadeSide);
@@ -1381,7 +1408,8 @@
       const angle = rnd() * Math.PI;
 
       if (waterInfoAtBlock(worldBX, worldBZ) || topSolidY(worldBX, worldBZ) !== heightBlocks(worldBX, worldBZ) - 1 ||
-          propKindAt(worldBX, heightBlocks(worldBX, worldBZ), worldBZ)) continue;
+          propKindAt(worldBX, heightBlocks(worldBX, worldBZ), worldBZ) ||
+          permanentBlocks.has(blockKey(worldBX, heightBlocks(worldBX, worldBZ) - 1, worldBZ))) continue;
       pushPlant(data, x, z, y, w, h, angle, type);
       pushPlant(data, x, z, y, w, h, angle + Math.PI / 2, type);
     }
@@ -1466,7 +1494,8 @@
       streamQueue = chunkOffsets.map(function (offset) { return [pcx + offset[0], pcz + offset[1]]; });
       chunks.forEach(function (ch, key) {
         const home = M.hearthTree && M.hearthTree.position;
-        const retained = home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
+        const gateNearby = M.hellGates && M.hellGates.gates.some(gate => Math.abs(ch.cx - Math.floor(gate.x / CHUNK_SIZE)) <= 1 && Math.abs(ch.cz - Math.floor(gate.z / CHUNK_SIZE)) <= 1);
+        const retained = gateNearby || home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
           Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
         if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
           worldGroup.remove(ch.group);
@@ -1587,6 +1616,7 @@
   function canPlaceBlock(bx, by, bz) {
     if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return false;
     if (by < 0 || by > 127) return false;
+    if (M.hellGates && M.hellGates.isReserved(bx, by, bz)) return false;
     if (M.goat && M.goat.intersectsBlock && M.goat.intersectsBlock(bx, by, bz)) return false;
     if (M.animals && M.animals.intersectsBlock && M.animals.intersectsBlock(bx, by, bz)) return false;
     if (M.enemies && M.enemies.zombies.some(function (zombie) {
@@ -1736,6 +1766,7 @@
   // horns instead of competing with the player's item drops.
   function breakBlockAt(bx, by, bz, options) {
     if (!Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz) || by < 0) return null;
+    if (permanentBlocks.has(blockKey(bx, by, bz))) return null;
     const opts = options || {};
     const tower = M.towers && M.towers.atCell(bx, by, bz);
     if (tower && !opts.towerInternal) {
@@ -1964,6 +1995,7 @@
     breakBlockAt: breakBlockAt,
     findBreakableNear: findBreakableNear,
     blockInfoAt: blockInfoAt,
+    addPermanentBlocks: addPermanentBlocks,
     topSoilInfo: topSoilInfo,
     isPlacedBlock: isPlacedBlock,
     isWaterColumn: isWaterColumn,

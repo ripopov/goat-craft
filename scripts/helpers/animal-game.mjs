@@ -3,7 +3,7 @@ import vm from 'node:vm';
 
 const root = new URL('../../', import.meta.url);
 
-export function game({ seed } = {}) {
+export function game({ seed, renderRadius = 1 } = {}) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
@@ -13,8 +13,8 @@ export function game({ seed } = {}) {
   const load = file => vm.runInContext(readFileSync(new URL(file, root), 'utf8'), context, { filename: file });
   for (const file of ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js', 'js/voxel-water.js']) load(file);
   const M = context.window.Meadow, THREE = context.THREE;
-  M.config.renderRadius = 1;
-  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-recovery.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/enemies.js']) load(file);
+  M.config.renderRadius = renderRadius;
+  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-recovery.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemies.js']) load(file);
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);

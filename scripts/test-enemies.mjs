@@ -21,7 +21,7 @@ function harness(realWorld = false) {
     M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
     M.hearthTree.init(scene);
   }
-  ['js/zombie-navigation.js', 'js/enemies.js'].forEach(load);
+  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemies.js'].forEach(load);
   return { M, THREE, scene, drops, coinDrops, load, context };
 }
 function fixture() {
@@ -111,7 +111,7 @@ test('enemies arrive gradually and share the configured living cap', () => {
   assert.equal(M.enemies.getState().wave, 1, 'a crowded wave cannot silently queue another wave');
 });
 
-test('opening enemies spawn outside the clearing with less travel time', () => {
+test('opening enemies spawn at a distant forest gate', () => {
   const { M, scene, world, tree } = fixture();
   M.enemies.init({ scene, world, tree });
   advance(M, 10.1);
@@ -119,7 +119,7 @@ test('opening enemies spawn outside the clearing with less travel time', () => {
   const p = M.enemies.zombies[0].position;
   const distance = Math.hypot(p.x - tree.position.x, p.z - tree.position.z);
   // The walker has already had up to three 50ms movement ticks since spawn.
-  assert.ok(distance >= 36 - M.enemies.types.zombie.speed * .15 && distance <= 44, `spawn distance ${distance}`);
+  assert.ok(distance >= 64 - M.enemies.types.zombie.speed * .15 && distance <= 96, `spawn distance ${distance}`);
 });
 
 test('opening squads arrive together, leave a recovery gap, and finish the exact roster', () => {
@@ -204,8 +204,8 @@ test('opening difficulty teaches groups before raising HP, with bounded late-wav
 test('the actual terrain delivers opening threats promptly without an immediate defeat', () => {
   const { M, scene } = harness(true);
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
-  advance(M, 40);
-  assert.ok(M.hearthTree.health < 100, 'the opening reaches the Hearth within forty seconds without defenders');
+  advance(M, 70);
+  assert.ok(M.hearthTree.health < 100, 'distant gate arrivals reach the Hearth without defenders');
   assert.ok(M.hearthTree.health >= 70, 'the first wave still leaves time to respond');
   assert.equal(M.enemies.getState().pending, 0);
 });

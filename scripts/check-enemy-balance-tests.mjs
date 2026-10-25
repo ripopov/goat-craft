@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runDefense } from './check-enemy-balance.mjs';
 
+// Longer complete-defense simulations run separately from the default suite.
 for (const wave of [12, 15]) test('a prepared mixed defense clears wave ' + wave + ' without underground stragglers', () => {
   const result = runDefense(wave, 42);
   assert.equal(result.cleared, true, JSON.stringify(result));

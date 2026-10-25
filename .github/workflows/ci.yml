@@ -47,7 +47,7 @@ jobs:
         run: node --test scripts/test-hearth-tree.mjs
 
       - name: Test zombie defense gameplay
-        run: node --test scripts/test-enemies.mjs scripts/test-special-enemies.mjs scripts/test-enemy-balance.mjs
+        run: node --test scripts/test-enemies.mjs scripts/test-special-enemies.mjs scripts/test-hell-gates.mjs scripts/check-enemy-balance-tests.mjs
 
       - name: Test training, purchases and collectible coins
         run: node --test scripts/test-upgrades.mjs

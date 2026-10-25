@@ -51,7 +51,7 @@
   const zombies = [], fallen = [];
   let scene, world, tree, navigation, mesh, outlineMesh;
   let elapsed = 0, wave = 0, nextWave = 10, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
-  let plan = wavePlan(1), spawnLanes = [];
+  let plan = wavePlan(1), spawnLanes = [], burrowLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
@@ -737,11 +737,8 @@
       return d >= plan.minRadius && d <= plan.maxRadius && world.waterDepthAt(node.x, node.z) < 0.9;
     });
   }
-  function prepareSpawns(level) {
-    plan = wavePlan(level);
-    const candidates = ringNodes(), reachable = candidates.filter(function (node) { return Number.isFinite(node.distance); });
-    const pool = reachable.length ? reachable : candidates;
-    spawnLanes = [];
+  function chooseSpawnLanes(pool, level) {
+    const lanes = [];
     for (let i = 0; i < plan.lanes && pool.length; i++) {
       // The opening comes from the goat's side of the meadow. Later waves
       // rotate the front and alternate squads between widely separated flanks.
@@ -751,11 +748,19 @@
         if (angleDistance(angleTo(node), angle) < angleDistance(angleTo(anchor), angle)) anchor = node;
       });
       const heading = angleTo(anchor);
-      if (spawnLanes.some(function (lane) { return angleDistance(lane.angle, heading) < 0.6; })) continue;
+      if (lanes.some(function (lane) { return angleDistance(lane.angle, heading) < 0.6; })) continue;
       const labels = ['S', 'SE', 'E', 'NE', 'N', 'NW', 'W', 'SW'];
       const label = labels[(Math.round(heading / (Math.PI / 4)) + 8) % 8];
-      spawnLanes.push({ x: anchor.x, z: anchor.z, angle: heading, label: label });
+      lanes.push({ x: anchor.x, z: anchor.z, angle: heading, label: label, gate: anchor });
     }
+    return lanes;
+  }
+  function prepareSpawns(level) {
+    plan = wavePlan(level);
+    // Burrowers retain their original ring and approach selection.
+    const candidates = ringNodes(), reachable = candidates.filter(node => Number.isFinite(node.distance));
+    burrowLanes = chooseSpawnLanes(reachable.length ? reachable : candidates, level);
+    spawnLanes = chooseSpawnLanes(M.hellGates.gates, level);
   }
   function beginWave(level) {
     wave = level === undefined ? wave + 1 : level;
@@ -821,7 +826,20 @@
           !zombies.some(enemy => Math.hypot(enemy.position.x - node.x, enemy.position.z - node.z) < 2);
       });
       const reachable = targets.filter(node => Number.isFinite(node.distance)), pool = reachable.length ? reachable : targets;
-      if (pool.length) return !!spawnAt(pool[Math.floor(Math.random() * pool.length)], type, { airborne: true });
+      return pool.length ? !!spawnAt(pool[Math.floor(Math.random() * pool.length)], type, { airborne: true }) : false;
+    }
+    if (type !== 'worm') {
+      const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
+      if (!lane) return false;
+      const gate = lane.gate, node = navigation.nodeAt(gate.x, gate.y, gate.z);
+      if (!node || world.waterDepthAt(node.x, node.z) >= .9 || zombies.some(enemy => enemy.position.distanceToSquared(node) < .81)) return false;
+      const path = Number.isFinite(node.distance) ? null : navigation.breach(node);
+      if (path && !path.length) return false;
+      const enemy = spawnAt(node, type);
+      if (!enemy) return false;
+      enemy.gateId = gate.id;
+      if (path) enemy.path = path;
+      return true;
     }
     const candidates = ringNodes().filter(function (node) {
       if (type === 'worm' && M.goat && M.goat.group &&
@@ -833,7 +851,7 @@
     // a last enemy on a treetop cannot lock a clear-to-advance wave forever.
     const reachable = candidates.filter(function (node) { return Number.isFinite(node.distance); });
     const pool = reachable.length ? reachable : candidates;
-    const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
+    const lane = burrowLanes[Math.floor(waveSpawned / plan.squadSize) % burrowLanes.length];
     const heading = lane ? lane.angle : (wave - 1) * 2.3999632297;
     let closest = Math.PI;
     pool.forEach(function (node) { closest = Math.min(closest, angleDistance(angleTo(node), heading)); });
@@ -1062,6 +1080,7 @@
   function update(dt) {
     if (!mesh) return;
     elapsed += dt;
+    M.hellGates.update(elapsed);
     digBudget = 32; advanceSignals(dt);
     for (let i = fallen.length - 1; i >= 0; i--) {
       fallen[i].death += dt;
@@ -1151,7 +1170,8 @@
     if (mesh) return;
     scene = options.scene; world = options.world; tree = options.tree;
     // The shared field must clear the widest species as well as the walkers.
-    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44 });
+    M.hellGates.init(scene, world, tree);
+    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.gates });
     navigation.rebuild();
     prepareSpawns(1);
     mesh = new THREE.InstancedMesh(beveledVoxelGeometry(), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * maxParts);

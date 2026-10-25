@@ -7,13 +7,24 @@
     const size = world.blockSize;
     const radius = (options && options.radius) || 28;
     const cx = Math.floor(tree.position.x / size), cz = Math.floor(tree.position.z / size);
+    // Only extend the shared field along broad forest approaches. Sampling a
+    // larger square everywhere would multiply startup and rebuild costs.
+    const corridors = (options && options.gates || []).map(gate => ({ x: gate.x / size - .5, z: gate.z / size - .5 }));
+    const limit = Math.max(radius, ...corridors.map(gate => Math.ceil(Math.max(Math.abs(gate.x - cx), Math.abs(gate.z - cz))) + 4));
     const height = 2.8, bodyRadius = (options && options.bodyRadius) || 0.34;
     const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
     const samples = [[0, 0], [-bodyRadius, -bodyRadius], [bodyRadius, -bodyRadius], [-bodyRadius, bodyRadius], [bodyRadius, bodyRadius]];
     let columns = new Map(), nodes = [], revision = -1;
 
     function key(bx, bz) { return bx + ',' + bz; }
-    function inside(bx, bz) { return Math.abs(bx - cx) <= radius && Math.abs(bz - cz) <= radius; }
+    function inside(bx, bz) {
+      if (Math.abs(bx - cx) <= radius && Math.abs(bz - cz) <= radius) return true;
+      return corridors.some(gate => {
+        const dx = gate.x - cx, dz = gate.z - cz, length = dx * dx + dz * dz;
+        const t = Math.max(0, Math.min(1, ((bx - cx) * dx + (bz - cz) * dz) / length));
+        return Math.hypot(bx - cx - t * dx, bz - cz - t * dz) <= 4;
+      });
+    }
     function clear(x, y, z, includeTree, excavated) {
       if (world.bodyBlockedAt) return !world.bodyBlockedAt(x, z, y + 0.002, y + height, bodyRadius, includeTree, excavated);
       return samples.every(function (s) {
@@ -95,8 +106,9 @@
         nodes = []; columns.forEach(function (column) { nodes.push.apply(nodes, column); });
       } else {
         columns = new Map(); nodes = [];
-        for (let bz = cz - radius; bz <= cz + radius; bz++) {
-          for (let bx = cx - radius; bx <= cx + radius; bx++) {
+        for (let bz = cz - limit; bz <= cz + limit; bz++) {
+          for (let bx = cx - limit; bx <= cx + limit; bx++) {
+            if (!inside(bx, bz)) continue;
             const column = makeColumn(bx, bz);
             columns.set(key(bx, bz), column); nodes.push.apply(nodes, column);
           }
@@ -128,6 +140,7 @@
       for (let by = Math.floor((y + 0.025) / size); by <= Math.floor((y + height - 0.001) / size); by++) {
         const info = world.blockInfoAt(bx, by, bz);
         if (!info) continue;
+        if (info.unbreakable) return null;
         if (info.type === 'terrain' && world.isProtectedArea(bx, bz)) return null;
         blocks.push(info);
       }

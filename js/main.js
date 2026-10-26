@@ -89,7 +89,7 @@
   };
 
   M.controls.onStomp = function () {
-    M.goat.mine();
+    M.goat.mine('hoof');
   };
 
   M.controls.onTap = function () {

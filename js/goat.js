@@ -680,15 +680,33 @@
     const targets = M.enemies.spellTargets(goat.position, range, 1);
     return targets.length ? targets[0] : null;
   }
-  // Player-held action: clicks and E only interact with blocks now. Carrying a
-  // selected block places it; otherwise mine the aimed voxel (or the block
-  // dead ahead), exactly like the old headbutt fallback but without the lunge.
-  function mine() {
+  // Block interactions stay immediate. Their pose has its own clock so mining
+  // never consumes a combat cooldown or triggers an extra attack/spell.
+  function mine(style) {
     const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
     if (carrying) {
       if (M.items.placeSelectedBlock()) recoverOverlap();
       return;
     }
+    state.mining = 0;
+    state.miningHoof = style === 'hoof';
+    state.manualHold = Math.max(state.manualHold, 3);
+    controlsRef.noteActivity();
+    audioRef.unlock();
+    audioRef.whoosh();
+    if (state.miningHoof) {
+      if (state.grounded && worldRef && worldRef.breakBlockBelow) {
+        // Use the planted hoof's footprint, independent of the camera and the
+        // leg's current lift, so repeated kicks dig directly beneath it.
+        const hoof = new THREE.Vector3(stompLeg.hip.position.x, 0, stompLeg.hip.position.z);
+        goat.localToWorld(hoof);
+        worldRef.breakBlockBelow(hoof.x, hoof.z, goat.position.y);
+      }
+      return;
+    }
+    const direction = new THREE.Vector3(); cameraRef.getWorldDirection(direction);
+    state.yaw = Math.atan2(direction.x, direction.z);
+    state.miningPitch = Math.asin(clamp(direction.y, -1, 1));
     if (M.targeting) {
       const hit = M.targeting.aim(cameraRef, goat.position);
       if (hit) {
@@ -963,29 +981,23 @@
     }
 
     // ---- headbutt timing and impact ----
+    if (s.mining >= 0) {
+      s.mining += dt * upgrades.rate;
+      if (s.mining > (s.miningHoof ? STOMP_END : 0.34)) s.mining = -1;
+    }
     s.headbuttCooldown = Math.max(0, s.headbuttCooldown - dt * upgrades.rate);
-    let buttPose = 0;
     let headbuttPending = false;
     if (s.headbutt >= 0) {
       s.headbutt += dt * upgrades.rate;
-      buttPose = actionPose(s.headbutt, 0.12, 0.34);
       if (!s.headbuttHit && s.headbutt >= 0.12) headbuttPending = true;
       if (s.headbutt > 0.34) s.headbutt = -1;
     }
 
     // ---- hoof stomp timing ----
     s.stompCooldown = Math.max(0, s.stompCooldown - dt * upgrades.rate);
-    let stompLift = 0;
     let stompPending = false;
     if (s.stomp >= 0) {
       s.stomp += dt * upgrades.rate;
-      if (s.stomp < STOMP_LIFT_END) {
-        const v = clamp(s.stomp / STOMP_LIFT_END, 0, 1);
-        stompLift = v * v * (3 - 2 * v);
-      } else if (s.stomp < STOMP_IMPACT) {
-        const v = clamp((s.stomp - STOMP_LIFT_END) / (STOMP_IMPACT - STOMP_LIFT_END), 0, 1);
-        stompLift = 1 - v * v * (3 - 2 * v);
-      }
       if (!s.stompHit && s.stomp >= STOMP_IMPACT) stompPending = true;
       if (s.stomp > STOMP_END) s.stomp = -1;
     }
@@ -1013,11 +1025,21 @@
       }
     }
 
-    // Headbutts take priority when both automatic attacks overlap. Stomps
-    // use their own impact clock once the headbutt animation finishes.
-    const neckAttack = s.headbutt >= 0
-      ? neckFx.animate(s.headbutt, 0.12, 0.34, M.config.reducedMotion)
-      : neckFx.animate(s.stomp, STOMP_IMPACT, STOMP_END, M.config.reducedMotion);
+    // Reuse the combat rig for manual swings, with independent impact clocks.
+    const headTime = s.headbutt >= 0 ? s.headbutt : (!s.miningHoof ? s.mining : -1);
+    const stompTime = s.miningHoof && s.mining >= 0 ? s.mining : s.stomp;
+    let buttPose = actionPose(headTime, 0.12, 0.34);
+    let stompLift = 0;
+    if (stompTime >= 0 && stompTime < STOMP_LIFT_END) {
+      const v = clamp(stompTime / STOMP_LIFT_END, 0, 1);
+      stompLift = v * v * (3 - 2 * v);
+    } else if (stompTime >= STOMP_LIFT_END && stompTime < STOMP_IMPACT) {
+      const v = clamp((stompTime - STOMP_LIFT_END) / (STOMP_IMPACT - STOMP_LIFT_END), 0, 1);
+      stompLift = 1 - v * v * (3 - 2 * v);
+    }
+    const neckAttack = headTime >= 0
+      ? neckFx.animate(headTime, 0.12, 0.34, M.config.reducedMotion)
+      : neckFx.animate(stompTime, STOMP_IMPACT, STOMP_END, M.config.reducedMotion);
     if (neckFx.level > 0) buttPose = neckAttack.lunge;
 
     s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
@@ -1102,8 +1124,8 @@
     rig.rotation.z = damp(rig.rotation.z, landRoll * (1 - swim) + Math.sin(s.swimPhase) * 0.035 * swim + stompTilt - (M.config.reducedMotion ? 0 : s.turnLean), 8, dt);
 
     let lookYaw = moving ? Math.sin(t * 0.9) * 0.04 : Math.sin(t * 0.55) * 0.12;
-    if (s.headbutt >= 0 || s.stomp >= 0) lookYaw = 0;
-    if (!moving && s.grounded && s.headbutt < 0 && s.stomp < 0) {
+    if (headTime >= 0 || stompTime >= 0) lookYaw = 0;
+    if (!moving && s.grounded && headTime < 0 && stompTime < 0) {
       const camLocal = goat.worldToLocal(cameraRef.position.clone());
       lookYaw = clamp(Math.atan2(camLocal.x, camLocal.z), -0.6, 0.6) * 0.9;
     }
@@ -1113,7 +1135,8 @@
     const runHeadBob = moving ? Math.sin(s.runPhase * 2) * 0.05 : 0;
     const headBob = (walkHeadBob * (1 - run) + runHeadBob * run) * (1 - swim) + Math.sin(s.swimPhase * 2 + 0.4) * 0.018 * swim;
     const headLift = jumpK > 0 ? -0.15 * jumpK : 0;
-    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (s.headbutt >= 0 ? (s.aimPitch || 0) * .65 : 0) - speedLevel * 0.03, 10, dt);
+    const aimPitch = s.headbutt >= 0 ? s.aimPitch || 0 : s.miningPitch;
+    headPivot.rotation.x = damp(headPivot.rotation.x, -0.18 + headBob + headLift + buttPose * 0.34 + run * 0.08 - (headTime >= 0 ? aimPitch * .65 : 0) - speedLevel * 0.03, 10, dt);
     const neckResponse = neckFx.level > 0 ? 22 + neckFx.level * 6 : 8;
     neckPivot.rotation.x = damp(neckPivot.rotation.x, 0.42 + buttPose * 0.55 + run * 0.08 - swim * 0.16 - speedLevel * 0.04, neckResponse, dt);
     neckPivot.rotation.y = damp(neckPivot.rotation.y, neckAttack.yaw, neckResponse, dt);
@@ -1293,6 +1316,9 @@
       manualHold: 0,
       footTimer: 0.08,
       breathTimer: rand(6, 10),
+      mining: -1,
+      miningHoof: false,
+      miningPitch: 0,
       headbutt: -1,
       headbuttHit: false,
       headbuttCooldown: 0,

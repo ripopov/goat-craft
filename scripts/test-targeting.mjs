@@ -27,6 +27,64 @@ test('camera aims and the mine action destroys blocks in four directions, above 
   assert.equal(w.blockInfoAt(7,6,7),null, 'look down to mine the floor');
 });
 
+test('manual mining swings the head or hoof without consuming combat cooldowns or dealing combat damage', () => {
+  const { M, camera } = fixture(), goat = M.goat, s = goat.state;
+  camera.lookAt(15,15.75,19);
+  const enemy = M.enemies.spawnAt({ x: 18, y: 14, z: 15 }), hp = enemy.hp;
+  s.headbuttCooldown = s.stompCooldown = 100;
+  advance(M, .8);
+  const neck = goat.headPivot.parent, restingNeck = neck.rotation.x;
+  const hip = goat.group.children[0].children.find(node => node.isGroup && node.position.x > 0 && node.position.z > 0 && node.position.y < 1);
+  const restingHip = hip.rotation.x;
+  for (const style of [undefined, 'hoof']) {
+    assert.ok(M.world.placeBlock('stone',7,7,9));
+    const headCooldown = s.headbuttCooldown, hoofCooldown = s.stompCooldown;
+    goat.mine(style);
+    if (style === 'hoof') {
+      assert.equal(M.world.blockInfoAt(7,6,7),null, 'hoof immediately breaks the ground beneath it');
+      assert.ok(M.world.blockInfoAt(7,7,9), 'hoof ignores the camera target');
+    } else assert.equal(M.world.blockInfoAt(7,7,9),null, 'head mining remains immediate');
+    assert.equal(s.headbuttCooldown,headCooldown);
+    assert.equal(s.stompCooldown,hoofCooldown);
+    advance(M, style === 'hoof' ? .24 : .15);
+    if (style === 'hoof') assert.ok(hip.rotation.x < restingHip - .3, 'right hoof visibly lifts for the strike');
+    else assert.ok(neck.rotation.x > restingNeck + .1, 'head swings into the mining strike');
+    advance(M, .8);
+    assert.equal(s.mining,-1, 'the manual pose finishes');
+    assert.ok(Math.abs(hip.rotation.x - restingHip) < .01, 'hoof returns to its resting pose');
+    assert.ok(Math.abs(neck.rotation.x - restingNeck) < .01, 'neck returns to its resting pose');
+    assert.equal(enemy.hp,hp, 'mining cannot trigger a melee attack or spell');
+    assert.equal(s.headbutt,-1);
+    assert.equal(s.stomp,-1);
+  }
+});
+
+test('hoof mining uses the striking hoof footprint with the camera pointing sideways or into the sky', () => {
+  const { M, camera } = fixture(), goat = M.goat;
+  goat.group.position.set(15.85,14,15.85);
+  goat.group.rotation.y = goat.state.yaw = 0;
+  camera.position.set(15.85,15.75,15.85);
+  M.world.placeBlock('stone',9,7,7);
+  camera.lookAt(19,15,15);
+  assert.ok(M.targeting.aim(camera,goat.group.position), 'camera is aimed at a different block');
+  goat.mine('hoof');
+  assert.equal(M.world.blockInfoAt(8,6,8),null, 'breaks beneath the front right hoof across the voxel boundary');
+  assert.ok(M.world.blockInfoAt(7,6,7), 'the block beneath the body remains');
+  assert.ok(M.world.blockInfoAt(9,7,7), 'the aimed block remains');
+  assert.equal(goat.state.yaw,0, 'hoof strike preserves the goat facing');
+
+  goat.group.position.set(15,14,15);
+  camera.lookAt(15,30,15);
+  assert.equal(M.targeting.aim(camera,goat.group.position),null);
+  goat.mine('hoof');
+  assert.equal(M.world.blockInfoAt(7,6,7),null, 'skyward camera does not prevent ground mining');
+
+  goat.group.position.y = 18; goat.state.grounded = false;
+  assert.ok(M.world.blockInfoAt(7,5,7));
+  goat.mine('hoof');
+  assert.ok(M.world.blockInfoAt(7,5,7), 'airborne kicks cannot mine distant ground');
+});
+
 test('placement contour uses the same adjacent face and validity check as the action', () => {
   const { M, camera } = fixture(); M.world.placeBlock('stone',7,7,9);
   camera.lookAt(15,15,19); M.items.selectSlot(M.items.addItem('log',2));

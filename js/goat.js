@@ -862,6 +862,26 @@
     return !!state && physics.intersectsBlock(goat.position, BODY, bx, by, bz, worldRef.blockSize);
   }
 
+  function returnFromVoid() {
+    const home = M.config.startingArea, size = worldRef.blockSize;
+    const tree = M.hearthTree;
+    const crown = tree && tree.group
+      ? tree.boxSupportHeight(home.x, home.z, BODY.radius, Infinity)
+      : worldRef.surfaceHeight(home.x, home.z);
+    // Start six blocks above the crown and let ordinary gravity land the goat.
+    goat.position.set(home.x, crown + size * 6, home.z);
+    Object.assign(state, {
+      mode: 'idle', wait: 3, manualHold: 3, speed: 0, vy: 0,
+      grounded: false, jumps: 0, tuck: 0, landPulse: 0, runBlend: 0,
+      inWater: false, swimming: false, submerged: false, waterLevel: 0, swimBlend: 0,
+      shoreJump: 0, shoreTarget: null,
+      mining: -1, headbutt: -1, headbuttHit: true, stomp: -1, stompHit: true,
+      aerialStomp: false, aerialStompStartY: 0, aerialStompRecovery: 0
+    });
+    state.target.copy(goat.position);
+    if (controlsRef.snapTo) controlsRef.snapTo(goat.position);
+  }
+
   function pickTarget() {
     const p = new THREE.Vector3();
     const toCamera = Math.atan2(cameraRef.position.x - goat.position.x, cameraRef.position.z - goat.position.z);
@@ -1025,6 +1045,10 @@
         }
       }
     }
+
+    // The world ends at y=0; three voxel blocks below it returns the player
+    // above the Hearth without carrying a mining/combat impact into the fall.
+    if (goat.position.y <= -3 * worldRef.blockSize) returnFromVoid();
 
     if (s.aerialStomp && s.grounded) {
       s.aerialStomp = false;

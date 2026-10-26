@@ -79,7 +79,7 @@
     const n1 = valueNoise(bx * 0.045 + 11.3, bz * 0.045 - 7.1);
     const n2 = valueNoise(bx * 0.13 - 31.7, bz * 0.13 + 18.4);
     const n3 = valueNoise(bx * 0.31 + 101.2, bz * 0.31 - 73.5);
-    // Leave bedrock below the sea floor so deep water has a real, editable bed.
+    // Keep enough terrain below the sea floor for a real, editable bed.
     return Math.max(3, Math.floor(4.0 + n1 * 4.2 + n2 * 0.7 + n3 * 0.2));
   }
 
@@ -507,7 +507,7 @@
   }
 
   function isSolidBlock(bx, by, bz) {
-    if (by < 0) return true;
+    if (by < 0) return false;
     const column = generatedColumn(bx, bz);
     if (by >= column.height) return false;
     const cave = column.cave;
@@ -616,7 +616,8 @@
 
   function landingHeight(x, z, maxY, includeTree) {
     const bx = Math.floor(x / BLOCK), bz = Math.floor(z / BLOCK);
-    const landmarkTop = includeTree !== false && M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
+    const treeTop = includeTree !== false && M.hearthTree ? M.hearthTree.supportHeight(x, z, maxY) : 0;
+    const landmarkTop = treeTop > 0 ? treeTop : -Infinity;
     for (let by = Math.floor((maxY + 0.001) / BLOCK) - 1; by >= 0; by--) {
       if (solidKindAt(bx, by, bz)) return Math.max(landmarkTop, (by + 1) * BLOCK);
     }
@@ -651,11 +652,14 @@
     const epsilon = 0.00001;
     const x0 = Math.floor((x - radius + epsilon) / BLOCK), x1 = Math.floor((x + radius - epsilon) / BLOCK);
     const z0 = Math.floor((z - radius + epsilon) / BLOCK), z1 = Math.floor((z + radius - epsilon) / BLOCK);
-    let floor = 0;
+    let floor = -Infinity;
     for (let bx = x0; bx <= x1; bx++) for (let bz = z0; bz <= z1; bz++) {
       floor = Math.max(floor, landingHeight((bx + 0.5) * BLOCK, (bz + 0.5) * BLOCK, maxY, false));
     }
-    if (M.hearthTree) floor = Math.max(floor, M.hearthTree.boxSupportHeight(x, z, radius, maxY));
+    if (M.hearthTree) {
+      const treeTop = M.hearthTree.boxSupportHeight(x, z, radius, maxY);
+      if (treeTop > 0) floor = Math.max(floor, treeTop);
+    }
     return floor;
   }
 
@@ -1189,7 +1193,7 @@
         const side = kind === 'grass' ? grassy ? T_GRASS_SIDE : T_DIRT : tiles.side;
         const shade = (grassy ? .95 : .86) + hash01(wx, wz) * .05;
         if (!occupied(wx, by + 1, wz)) pushTop(data, x, y + BLOCK, z, top, shade);
-        if (by > 0 && !occupied(wx, by - 1, wz)) pushBottom(data, x, y, z, tiles.bottom, shade * .7);
+        if (!occupied(wx, by - 1, wz)) pushBottom(data, x, y, z, tiles.bottom, shade * .7);
         if (!occupied(wx - 1, by, wz)) pushSide(data, 0, x, z, y, y + BLOCK, side, shade * .72);
         if (!occupied(wx + 1, by, wz)) pushSide(data, 1, x, z, y, y + BLOCK, side, shade * .72);
         if (!occupied(wx, by, wz - 1)) pushSide(data, 2, x, z, y, y + BLOCK, side, shade * .7);

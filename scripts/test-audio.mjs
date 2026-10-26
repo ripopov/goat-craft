@@ -150,6 +150,24 @@ test('every effect has a silent attack/release, scheduling headroom, and frees i
   assert.ok(h.nodes.slice(persistent).every(node => node.disconnected));
 });
 
+test('ocean cinematic cues release every source and reuse the shared noise buffer', () => {
+  const h = harness(); h.M.audio.unlock();
+  const persistent = h.nodes.length, buffers = h.buffers.length;
+  for (const [i, stage] of ['rise', 'roar', 'grab', 'death'].entries()) {
+    h.advance(i * 5, false);
+    const before = h.sources.length;
+    h.M.audio.oceanHorror(stage);
+    assert.ok(h.sources.length > before);
+    for (const source of h.sources.slice(before)) if (source.buffer) {
+      const end = source.started + (source.buffer.length / source.buffer.sampleRate - source.offset) / source.playbackRate.value;
+      assert.ok(end >= source.stopped - .02, 'noise continues through its release');
+    }
+    h.advance(i * 5 + 4, false);
+    assert.ok(h.nodes.slice(persistent).every(node => node.disconnected));
+  }
+  assert.equal(h.buffers.length, buffers);
+});
+
 test('music and effects share the protected output, and wind loops meet at zero', () => {
   const h = harness({ suspended: true });
   assert.equal(h.M.music.start(), true);

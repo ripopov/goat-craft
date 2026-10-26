@@ -55,6 +55,8 @@
     coarsePointer: coarsePointer,
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     renderRadius: coarsePointer ? 4 : 5,
+    // World units from the center on either horizontal axis (square extent).
+    ocean: { boundary: 300, dangerBoundary: 330, shoreWidth: 36 },
     // Center and spawn use world units; radius and height use terrain blocks
     // (two world units per block).
     startingArea: {

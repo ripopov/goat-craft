@@ -576,6 +576,23 @@
     });
   }
 
+  function oceanHorror(stage) {
+    play(0, false, function (voice, when) {
+      duckMusic(0.08, 3);
+      const rise = stage === 'rise', roar = stage === 'roar';
+      const duration = rise ? 2.8 : roar ? 2.1 : 1.15;
+      tone(voice, when, { type: 'triangle', frequency: rise ? 38 : roar ? 62 : 48,
+        endFrequency: 28, duration: duration, level: 0.15, attack: rise ? 0.65 : 0.06 });
+      tone(voice, when + 0.05, { type: 'sawtooth', frequency: roar ? 79 : 41,
+        endFrequency: 30, duration: duration, level: 0.025, attack: 0.18 });
+      // Short overlapping water/air bursts fit the fixed noise buffer.
+      for (let i = 0; i < (rise ? 5 : roar ? 4 : 2); i++) {
+        noise(voice, when + i * 0.32, { frequency: roar ? 420 : stage === 'grab' ? 1200 : 260,
+          endFrequency: 90, duration: 1, level: 0.07, attack: 0.15, type: 'lowpass' });
+      }
+    });
+  }
+
   function actorStep(species, point) {
     nearby(point, 20, 'actor-step-' + species, 0.13, function (voice, when, level) {
       const undead = species === 'zombie';
@@ -630,6 +647,7 @@
     animal: animal,
     block: block,
     cue: cue,
+    oceanHorror: oceanHorror,
     createVoice: createVoice,
     envelope: envelope,
     getMusicInput: function () { return music; },

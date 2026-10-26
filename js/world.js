@@ -91,6 +91,16 @@
   // Absolute block coordinates, never chunk-local randomness: channels stay
   // continuous across chunk seams, negative coordinates and streaming reloads.
   function regionalWaterAt(bx, bz) {
+    const ocean = M.config.ocean;
+    const extent = Math.max(Math.abs(bx * BLOCK - START.x), Math.abs(bz * BLOCK - START.z));
+    if (extent >= ocean.boundary) return { plan: SEA_PLAN, height: 1 };
+    let result = null;
+    if (extent >= ocean.boundary - ocean.shoreWidth) {
+      // Slope the outer shore down, preserving deeper rivers/estuaries below.
+      // Beyond 300m there are no continents, islands or raised pond bowls.
+      const shelf = clamp((extent - ocean.boundary + ocean.shoreWidth) / ocean.shoreWidth, 0, 1);
+      result = { plan: SEA_PLAN, height: Math.max(1, Math.round(WATER_RIM - shelf * 6)) };
+    }
     const coast = 98 + Math.sin(bz * 0.016) * 19 + Math.sin(bz * 0.041 + 0.8) * 8;
     const continentX = bx - Math.round(bx / 520) * 520;
     const offshore = Math.abs(continentX) - coast;
@@ -98,10 +108,10 @@
     const channelZ = bz - riverZ;
     const riverDistance = Math.abs(channelZ - Math.round(channelZ / 180) * 180);
     const width = 4.5 + Math.sin(bx * 0.037 + 1.4) * 1.2;
-    let result = null;
     if (offshore > -9) {
       // Broad terraces form beaches, a shallow shelf, then a 10m+ sea bed.
-      result = { plan: SEA_PLAN, height: Math.max(1, Math.round(WATER_RIM - (offshore + 9) * 0.19)) };
+      const height = Math.max(1, Math.round(WATER_RIM - (offshore + 9) * 0.19));
+      if (!result || height < result.height) result = { plan: SEA_PLAN, height: height };
     }
     if (riverDistance < width + 4) {
       const bank = clamp((riverDistance - width * 0.45) / (width * 0.55 + 4), 0, 1);

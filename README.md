@@ -5,7 +5,9 @@
 
 **Play online: [ripopov.github.io/goat-craft](https://ripopov.github.io/goat-craft/)**
 
-An endless blocky meadow with a procedural goat, winding rivers, deep seas, ponds full of fish, a wandering herd of animals, a three-minute day/night cycle, and growing enemy waves that attack a living Hearth Tree, built with three.js.
+A blocky meadow surrounded by an endless ocean, with a procedural goat, winding rivers, ponds full of fish, a wandering herd of animals, a three-minute day/night cycle, and growing enemy waves that attack a living Hearth Tree, built with three.js.
+
+The outer shoreline slopes into deep ocean by **±300 world units on either X/Z axis**, measured from the center. Ocean continues forever beyond that boundary. A warning appears offshore; swimming past **±330** awakens Cthulhu for a cinematic emergence, tentacle grab and fatal plunge. Gameplay pauses during the cutscene, and a fresh game starts **five seconds after death**. Reduced-motion mode removes camera shake.
 
 
 ## Run it
@@ -34,6 +36,7 @@ js/strategy.js      live RTS camera, command workshop, tower inspection and plac
 assets/towers/      ten locally stored imagegen icons and their generation prompts
 assets/upgrades/    five locally stored voxel training icons and their generation prompts
 js/world.js         procedural terrain, flowing rivers, seas and ponds, chunk streaming, exact voxel collision, block edits and debris
+js/ocean-horror.js  offshore boundary warning, procedural Cthulhu cutscene, death and five-second restart
 js/hearth-tree.js    voxel objective, 100 HP, amber heart, lanterns, embers and persistent collision
 js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and weighted breach planning
 js/hell-gates.js    four unbreakable forest portals, winding permanent roads and protected spawn openings

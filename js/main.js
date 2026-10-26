@@ -55,6 +55,7 @@
     audio: M.audio,
     ui: M.ui
   });
+  M.oceanHorror.init({ scene: scene, camera: camera, world: M.world, goat: M.goat });
 
   M.animals.init({
     scene: scene,
@@ -130,8 +131,23 @@
   let elapsed = 0, accumulator = 0;
   const STEP = 1 / 60;
 
+  function renderOceanCutscene(dt) {
+    accumulator = 0;
+    M.world.update(M.goat.group.position, 0, elapsed);
+    M.environment.update(camera, M.goat.group, 0, elapsed);
+    M.oceanHorror.update(dt);
+    caveLight.intensity = 0;
+    M.audio.setListener(camera);
+    M.music.update(dt, { paused: true });
+    renderer.render(scene, camera);
+  }
+
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.1);
+    if (M.oceanHorror.active) {
+      if (!document.hidden) renderOceanCutscene(dt);
+      return;
+    }
     if (document.hidden || M.upgradeMenu.isOpen) {
       M.music.update(dt, { paused: true });
       accumulator = 0; return;
@@ -142,12 +158,14 @@
     while (accumulator + 0.000001 >= STEP) {
       elapsed += STEP;
       M.goat.update(STEP, elapsed);
+      if (M.oceanHorror.check()) break;
       M.enemies.update(STEP, elapsed);
       M.towers.update(STEP, true);
       M.items.update(STEP, elapsed, M.goat.group);
       M.animals.update(STEP, elapsed, M.goat.group);
       accumulator -= STEP;
     }
+    if (M.oceanHorror.active) { renderOceanCutscene(dt); return; }
     // Catch-up ticks advance combat at 60 Hz; upload only the final pose that
     // will actually be displayed, including damage dealt by this tick's towers.
     if (willStep) {

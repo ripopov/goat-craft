@@ -1,4 +1,39 @@
 
+  #ocean-warning {
+    position: fixed; top: 19%; left: 50%; transform: translateX(-50%);
+    z-index: 30; max-width: calc(100% - 32px); padding: 11px 21px;
+    border: 1px solid #8fd7cc66; border-radius: 3px;
+    background: #092c35de; color: #e1f3dd; text-align: center;
+    font-size: 13px; letter-spacing: .06em; pointer-events: none;
+    box-shadow: 0 8px 32px #001a2644;
+  }
+  #ocean-cinematic {
+    --ocean-fade: 0;
+    position: fixed; inset: 0; z-index: 1000; overflow: hidden;
+    color: #e1f4e9; cursor: default;
+    background: linear-gradient(180deg, #00141f33, transparent 48%, #00101899);
+  }
+  #ocean-cinematic[hidden], #ocean-warning[hidden] { display: none; }
+  #ocean-cinematic::before, #ocean-cinematic::after {
+    content: ''; position: absolute; left: 0; right: 0; height: 9%;
+    background: #02090d; z-index: 2;
+  }
+  #ocean-cinematic::before { top: 0; }
+  #ocean-cinematic::after { bottom: 0; }
+  .ocean-shade {
+    position: absolute; inset: 0; background: #02090d; opacity: var(--ocean-fade);
+  }
+  .ocean-caption {
+    position: absolute; bottom: 12%; left: 24px; right: 24px;
+    text-align: center; text-shadow: 0 2px 22px #000c;
+  }
+  #ocean-eyebrow { color: #9dc9ba; font-size: 10px; font-weight: 600; letter-spacing: .4em; }
+  #ocean-title { margin: 10px 0; font-family: Georgia, serif; font-size: clamp(28px, 5vw, 58px); font-weight: 400; letter-spacing: .07em; }
+  #ocean-subtitle { margin: 0; font-size: clamp(12px, 1.7vw, 15px); color: #b8ceca; letter-spacing: .04em; }
+  .ocean-dead .ocean-caption { bottom: 42%; }
+  body.ocean-cinematic > :not(#scene):not(#ocean-cinematic):not(script) { visibility: hidden !important; }
+  body.ocean-cinematic #scene { cursor: default; }
+
   :root {
     --ink: #33412e;
     --cream: #fdf7e8;

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 // Record real script scheduling and graph lifetime without speakers or npm.
-function harness({ suspended = false } = {}) {
+function harness({ suspended = false, missingTrack = false } = {}) {
   const nodes = [];
   const sources = [];
   const buffers = [];
@@ -62,12 +62,21 @@ function harness({ suspended = false } = {}) {
   for (const type of ['Gain', 'StereoPanner', 'BiquadFilter', 'DynamicsCompressor', 'Oscillator', 'BufferSource', 'Convolver']) {
     audio['create' + type] = () => node(type);
   }
+  const track = {
+    paused: true, volume: 1, currentTime: 0, playCalls: 0, pauseCalls: 0,
+    listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    play() { this.playCalls++; this.paused = false; return Promise.resolve(); },
+    pause() { this.pauseCalls++; this.paused = true; }
+  };
   let contexts = 0;
   const window = {
     Meadow: { utils: { rand: (a, b) => (a + b) / 2, clamp: (x, low, high) => Math.min(high, Math.max(low, x)) } },
     AudioContext: function () { contexts++; return audio; }
   };
   const context = vm.createContext({ window, console, Math, Float32Array,
+    document: { getElementById: id => id === 'game-music' && !missingTrack ? track : null },
+    performance: { now: () => time * 1000 },
     setInterval: fn => { intervals.add(fn); return fn; },
     clearInterval: fn => intervals.delete(fn)
   });
@@ -75,6 +84,7 @@ function harness({ suspended = false } = {}) {
     vm.runInContext(readFileSync(new URL(`../js/${name}.js`, import.meta.url), 'utf8'), context);
   }
   function advance(to, tick = true) {
+    if (!track.paused) track.currentTime = (track.currentTime + Math.max(0, to - time)) % 104.05263;
     time = to;
     // Deliver each ended callback once, just as Web Audio does.
     for (const source of sources) {
@@ -88,7 +98,7 @@ function harness({ suspended = false } = {}) {
       try { fn(); } catch (err) { errors.push(err); }
     }
   }
-  return { M: window.Meadow, audio, nodes, sources, buffers, intervals, errors, advance,
+  return { M: window.Meadow, audio, track, nodes, sources, buffers, intervals, errors, advance,
     setState(value) { state = value; }, get contexts() { return contexts; } };
 }
 
@@ -168,91 +178,118 @@ test('ocean cinematic cues release every source and reuse the shared noise buffe
   assert.equal(h.buffers.length, buffers);
 });
 
-test('music and effects share the protected output, and wind loops meet at zero', () => {
+test('native soundtrack starts on request while effects retain their protected output', () => {
   const h = harness({ suspended: true });
+  assert.equal(h.track.playCalls, 0, 'no autoplay before a gesture');
   assert.equal(h.M.music.start(), true);
+  assert.equal(h.track.playCalls, 1);
+  assert.equal(h.contexts, 0, 'music does not depend on a running Web Audio context');
+  h.advance(1.2);
+  assert.equal(h.track.volume, 0.12);
   h.M.audio.bleat();
-  h.M.audio.thud();
   assert.equal(h.contexts, 1);
-  const finalNodes = h.nodes.filter(node => node.connections.includes(h.audio.destination));
-  assert.equal(finalNodes.length, 1, 'no music/effect bypass of the shared mixer');
-  assert.equal(finalNodes[0].gain.value, 0.8);
+  const output = h.nodes.filter(node => node.connections.includes(h.audio.destination));
+  assert.equal(output.length, 1, 'effects keep their protected mixer');
+  assert.equal(output[0].gain.value, 0.8);
+  const effectsBus = h.nodes.find(node => node.type === 'Gain' && node.connections.some(target => target.type === 'highpass' && target.frequency.value === 25));
+  assert.equal(effectsBus.gain.value, 1.5, 'effects get the louder mix before compression');
+  h.M.audio.setEffectsEnabled(false);
+  assert.equal(effectsBus.gain.events.at(-1).value, 0);
+  h.M.audio.setEffectsEnabled(true);
+  assert.equal(effectsBus.gain.events.at(-1).value, 1.5, 'unmuting restores the boosted level');
+  assert.equal(h.track.volume, 0.12, 'effects gain does not raise music');
   assert.ok(h.nodes.some(node => node.ratio.value === 8 && node.attack.value <= 0.005));
-  const wind = h.sources.find(source => source.loop);
-  assert.ok(wind);
-  for (let ch = 0; ch < wind.buffer.numberOfChannels; ch++) {
-    const data = wind.buffer.getChannelData(ch);
-    assert.equal(Math.abs(data[0]), 0);
-    assert.equal(Math.abs(data.at(-1)), 0);
-    assert.ok(data.some(sample => sample !== 0), 'wind is not accidentally silent');
-  }
 });
 
-test('late timers and suspended contexts do not produce overdue note bursts', () => {
+test('music toggles fade continuously, resume position, and leave no idle timers', () => {
   const h = harness();
   h.M.music.start();
-  for (const time of [0.08, 0.16, 0.24, 0.32, 1.1, 1.7, 8, 8.08, 90, 90.08]) {
-    const before = h.sources.length;
-    h.advance(time);
-    const added = h.sources.slice(before);
-    assert.ok(added.length <= 18, 'a missed frame cannot replay the backlog');
-    for (const source of added) assert.ok(source.started >= time + 0.03, 'notes must not start in the past');
-  }
-  const before = h.sources.length;
-  h.setState('suspended');
-  h.advance(95);
-  assert.equal(h.sources.length, before);
-  h.setState('running');
-  h.advance(110);
-  assert.ok(h.sources.length > before, 'playback resumes after suspension');
-  for (const source of h.sources.slice(before)) assert.ok(source.started >= 110.03);
-  assert.deepEqual(h.errors, []);
-});
-
-test('rapid music toggles preserve fade level and cancel all old queued notes', () => {
-  const h = harness();
-  h.M.music.start();
-  const master = h.nodes.find(node => node.gain.events.some(event => event.value === 0.3));
-  const oldSources = h.sources.filter(source => source.stopped !== undefined);
-  h.advance(0.2, false);
+  h.advance(0.3);
+  const before = h.track.volume;
   h.M.music.stop();
-  const stopLevel = master.gain.events.findLast(event => event.type === 'set').value;
-  assert.ok(Math.abs(stopLevel - 0.03) < 1e-8, 'stop holds the actual in-flight fade');
-  assert.ok(oldSources.every(source => source.stopped <= 0.56));
-  assert.equal(h.intervals.size, 0);
-  h.advance(0.3, false);
+  assert.equal(h.track.volume, before, 'stop holds the in-flight fade');
+  h.advance(0.4);
+  const fading = h.track.volume;
   h.M.music.start();
-  const restartLevel = master.gain.events.findLast(event => event.type === 'set').value;
-  assert.ok(Math.abs(restartLevel - 0.02625) < 1e-8, 'restart continues from the fading level');
+  assert.equal(h.track.volume, fading, 'restart holds the fading level');
   assert.equal(h.intervals.size, 1);
-  h.advance(0.6, false);
-  assert.ok(oldSources.every(source => source.disconnected));
+  h.advance(2);
+  assert.equal(h.track.paused, false, 'an old stop cannot pause a newer start');
+  assert.equal(h.track.volume, 0.12);
+  h.M.music.stop();
+  h.advance(2.4);
+  assert.equal(h.track.volume, 0);
+  assert.equal(h.track.paused, true);
+  assert.equal(h.intervals.size, 0);
+  const position = h.track.currentTime;
+  assert.ok(position > 0);
+  h.advance(6);
+  h.M.music.start();
+  assert.equal(h.track.currentTime, position, 'the next start resumes rather than resets');
+  h.M.music.stop();
+  h.advance(7);
+  assert.equal(h.intervals.size, 0);
 });
 
-test('long playback releases transient graphs and effect storms have bounded polyphony', () => {
+test('blocked or failed playback is caught and can retry on the next gesture', async () => {
+  const h = harness();
+  h.track.play = () => Promise.reject(new Error('NotAllowedError'));
+  h.M.music.start();
+  await Promise.resolve();
+  assert.equal(h.M.music.isPlaying(), false);
+  assert.equal(h.track.paused, true);
+  assert.equal(h.intervals.size, 0);
+  h.track.play = function () { this.paused = false; return Promise.resolve(); };
+  assert.equal(h.M.music.start(), true);
+  await Promise.resolve();
+  assert.equal(h.M.music.isPlaying(), true);
+  h.track.listeners.error();
+  assert.equal(h.M.music.isPlaying(), false);
+  assert.equal(h.track.volume, 0);
+  assert.equal(h.intervals.size, 0);
+  assert.equal(harness({ missingTrack: true }).M.music.start(), false);
+});
+
+test('a late play rejection cannot cancel a newer successful playback', async () => {
+  const h = harness();
+  let reject;
+  h.track.play = () => new Promise((resolve, fail) => { reject = fail; });
+  h.M.music.start();
+  h.M.music.stop();
+  h.track.play = function () { this.paused = false; return Promise.resolve(); };
+  h.M.music.start();
+  reject(new Error('AbortError'));
+  await Promise.resolve();
+  assert.equal(h.M.music.isPlaying(), true);
+  h.advance(2);
+  assert.equal(h.track.volume, 0.12);
+  assert.equal(h.intervals.size, 1);
+});
+
+test('late timers and long native playback cannot replay notes or allocate growing graphs', () => {
   const h = harness();
   h.M.music.start();
-  let maxConnected = 0;
-  for (let i = 1; i <= 1500; i++) {
-    h.advance(i * 0.08);
-    if (i % 3 === 0) h.M.audio.step(true, 9.6);
-    maxConnected = Math.max(maxConnected, h.nodes.filter(node => node.connections.length).length);
-  }
-  assert.ok(maxConnected < 220, `connected nodes grew to ${maxConnected}`);
-  assert.ok(h.sources.length > 500, 'the full song keeps producing notes across loops');
-  assert.deepEqual(h.errors, []);
-  h.M.music.stop();
-  h.advance(123);
-  assert.ok(h.sources.filter(source => source.stopped !== undefined).every(source => source.disconnected));
+  h.advance(1);
+  h.advance(1000);
+  h.advance(36000);
+  assert.equal(h.track.playCalls, 1);
+  assert.equal(h.track.paused, false);
+  assert.equal(h.track.volume, 0.12);
+  assert.equal(h.sources.length, 0);
+  assert.equal(h.nodes.length, 0);
+  assert.equal(h.intervals.size, 1);
+  h.M.music.stop(); h.advance(36001);
+  assert.equal(h.intervals.size, 0);
+  h.M.audio.unlock();
   const before = h.sources.length;
   for (let i = 0; i < 1000; i++) h.M.audio.thud();
-  assert.ok(h.sources.length - before <= 96 * 3, 'voice count is bounded during effect storms');
-  h.advance(125, false);
+  assert.ok(h.sources.length - before <= 96 * 3, 'effect storms still respect the voice budget');
+  h.advance(36003);
+  assert.ok(h.sources.every(source => source.disconnected));
   const after = h.sources.length;
   h.M.audio.thud();
   assert.ok(h.sources.length > after, 'freed voices can be reused');
 });
-
 
 test('world sounds attenuate, pan with the camera, and cull distant events', () => {
   const h = harness();
@@ -300,79 +337,54 @@ test('crowds are rate limited, suspended audio does not queue, and mute preserve
   h.M.audio.zombie('hurt'); h.M.audio.pickup();
   assert.equal(h.sources.length, before, 'muted effects allocate no sources');
   h.M.music.start();
-  assert.ok(h.sources.length > before, 'music remains independent of effects mute');
+  assert.equal(h.track.paused, false, 'music remains independent of effects mute');
   h.M.audio.setEffectsEnabled(true);
   const playing = h.sources.length;
   h.M.audio.zombie('hurt');
   assert.ok(h.sources.length > playing, 'unmuting restores effects');
 });
 
-test('combat layers build and recover, caves darken, and pause reaches both dry and wet paths', () => {
-  function run(combat) {
-    const h = harness();
-    h.M.music.start();
-    for (let i = 1; i <= 400; i++) {
-      h.advance(i * 0.08);
-      h.M.music.update(0.08, { combat, speed: 7 });
-    }
-    return h;
-  }
-  const calm = run(0), battle = run(1);
-  assert.ok(battle.sources.length > calm.sources.length * 1.4, 'battle adds actual instrumental layers');
-  const action = battle.nodes.find(n => n.gain.events.some(e => e.type === 'target' && e.constant === 0.5 && e.value > 0.95));
-  assert.ok(action, 'combat bus smoothly opens');
-  battle.advance(32.08);
-  battle.M.music.update(0.08, { combat: 0, underground: true });
-  const colour = battle.nodes.find(n => n.frequency.events.some(e => e.type === 'target' && e.value === 2100));
-  assert.ok(colour, 'caves get a darker tonal balance');
-  for (let i = 402; i <= 900; i++) {
-    battle.advance(i * 0.08);
-    battle.M.music.update(0.08, { combat: 0, underground: true });
-  }
-  assert.ok(action.gain.events.at(-1).value < 0.001, 'rhythm recedes after a wave');
-  // The visibility event can arrive in the same audio clock tick as a mix update.
-  battle.M.music.update(0, { paused: true });
-  const dimmed = battle.nodes.filter(n => n.gain.events.at(-1)?.type === 'target' && Math.abs(n.gain.events.at(-1).value - 0.12) < 0.001);
-  const wet = battle.nodes.filter(n => n.gain.events.at(-1)?.type === 'target' && Math.abs(n.gain.events.at(-1).value - 0.096) < 0.001);
-  assert.ok(dimmed.length >= 1 && wet.length >= 1, 'pause dims reverb sends as well as the direct music');
-  assert.equal(battle.intervals.size, 1, 'scene changes keep the transport running');
-  assert.deepEqual(battle.errors, []);
-});
-
-test('danger adds rhythm, defeat releases it, and full-suite battle playback stays bounded', () => {
+test('pause, caves and defeat lower the recorded score without restarting it', () => {
   const h = harness();
-  h.M.music.update(10, { danger: 1 });
   h.M.music.start();
-  let peak = 0;
-  for (let i = 1; i <= 2800; i++) {
-    h.advance(i * 0.08);
-    h.M.music.update(0.08, { danger: 1, combat: 1, speed: 9.6 });
-    peak = Math.max(peak, h.nodes.filter(n => n.connections.length).length);
-  }
-  assert.ok(peak < 350, `battle graph stays bounded across all sections and variations (${peak})`);
-  h.M.music.update(60, { danger: 1, combat: 1, defeated: true });
-  const action = h.nodes.find(n => n.gain.events.some(e => e.type === 'target' && e.constant === 0.5 && e.value > 0.95));
-  assert.ok(action.gain.events.at(-1).value < 0.0001, 'defeat overrides combat and danger');
-  h.M.music.stop(); h.advance(230, false);
-  assert.ok(h.sources.filter(s => s.stopped !== undefined).every(s => s.disconnected));
+  h.advance(2);
+  const full = h.track.volume;
+  h.M.music.update(0, { paused: true });
+  h.advance(2.3);
+  assert.ok(Math.abs(h.track.volume - full * 0.12) < 1e-8);
+  h.M.music.update(0.1, { underground: true });
+  h.advance(3.2);
+  assert.ok(Math.abs(h.track.volume - full * 0.75) < 1e-8);
+  h.M.music.update(0.1, { defeated: true, danger: 1, combat: 1 });
+  h.advance(4.1);
+  assert.ok(Math.abs(h.track.volume - full * 0.35) < 1e-8);
+  h.M.music.update(0.1, {});
+  h.advance(5);
+  assert.equal(h.track.volume, full);
+  assert.equal(h.track.playCalls, 1);
+  assert.equal(h.track.paused, false);
   assert.deepEqual(h.errors, []);
 });
 
-test('important cues duck only music and overlapping cues keep a continuous gain', () => {
+test('important cues duck native music, overlap continuously, and honor effects mute', () => {
   const h = harness();
-  h.M.music.start();
+  h.M.audio.unlock();
+  h.M.music.start(); h.advance(2);
   h.M.audio.cue('wave');
-  const bus = h.nodes.find(n => n.gain.events.some(e => e.type === 'linear' && e.value === 0.4));
-  assert.ok(bus);
-  h.advance(0.01, false);
+  h.advance(2.01, false);
   h.M.audio.cue('damage');
-  const held = bus.gain.events.findLast(e => e.type === 'set').value;
-  assert.ok(Math.abs(held - 0.76) < 1e-8, 'second cue starts at the first cue\'s in-flight level');
-  assert.equal(bus.gain.events.at(-1).value, 1, 'music recovers automatically');
+  assert.ok(Math.abs(h.track.volume - 0.12 * 0.76) < 1e-8,
+    'overlapping cue holds the previous in-flight duck level');
+  h.advance(2.04);
+  assert.ok(h.track.volume < 0.12 * 0.6, 'cue lowers the actual media volume');
+  h.advance(3.2);
+  assert.equal(h.track.volume, 0.12, 'music recovers automatically');
   const before = h.sources.length;
   h.M.audio.setEffectsEnabled(false);
   h.M.audio.cue('defeat');
-  assert.equal(h.sources.length, before, 'muted cues do not trigger a duck');
+  h.advance(3.3);
+  assert.equal(h.track.volume, 0.12, 'muted cues do not duck music');
+  assert.equal(h.sources.length, before);
 });
 
 test('aerial stomp damage selects three distinct impact sounds with clean mute and zero-damage behavior', () => {
@@ -424,15 +436,20 @@ test('tower identities and block materials have distinct physical sound signatur
 });
 
 
-test('dense effects reserve enough voices for music to keep its beat', () => {
+test('native music remains independent of dense effects and their mute switch', () => {
   const h = harness(); h.M.audio.unlock();
   for (let i = 0; i < 300; i++) h.M.audio.thud();
   const before = h.sources.length;
   h.M.music.start();
-  assert.ok(h.sources.length > before + 5, 'the initial chord and picking survive an effect storm');
-  h.advance(0.4);
-  const next = h.sources.length;
-  h.advance(1.1);
-  assert.ok(h.sources.length > next, 'the next beat still schedules');
+  assert.equal(h.track.paused, false);
+  assert.equal(h.sources.length, before, 'music consumes none of the effect voice budget');
+  h.advance(1.2);
+  h.M.audio.setEffectsEnabled(false);
+  assert.equal(h.track.volume, 0.12);
+  h.M.music.stop(); h.advance(2);
+  const beforeMutedEffect = h.sources.length;
+  h.M.audio.thud();
+  assert.equal(h.sources.length, beforeMutedEffect);
+  assert.equal(h.track.paused, true);
   assert.deepEqual(h.errors, []);
 });

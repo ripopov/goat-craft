@@ -3,15 +3,14 @@
 
   const { rand, clamp } = M.utils;
   const LEAD = 0.025;
+  const EFFECTS_LEVEL = 1.5; // boost quiet effects before the siege compressor
   const MAX_VOICES = 96;
-  const MAX_EFFECT_VOICES = 64; // reserve headroom for the score during sieges
+  const MAX_EFFECT_VOICES = 64; // bound effect work during dense sieges
   let ctx = null;
   let effects = null;
-  let music = null;
   let noiseBuffer = null;
   let stepSide = 1;
   let effectsEnabled = true;
-  let duck = { start: 0, end: 0, from: 1, level: 1 };
   let pickupIndex = 0;
   let lastPickup = -Infinity;
   const listener = { x: 0, y: 0, z: 0, rightX: 1, rightZ: 0 };
@@ -37,10 +36,8 @@
     const output = ctx.createGain();
     output.gain.value = 0.8;
     effects = ctx.createGain();
-    effects.gain.value = effectsEnabled ? 0.75 : 0;
-    music = ctx.createGain();
+    effects.gain.value = effectsEnabled ? EFFECTS_LEVEL : 0;
     effects.connect(high);
-    music.connect(high);
     high.connect(low);
     low.connect(compressor);
     compressor.connect(output);
@@ -191,17 +188,7 @@
   }
 
   function duckMusic(level, duration) {
-    if (!ctx || !music) return;
-    const now = ctx.currentTime;
-    const attackEnd = duck.start + 0.025;
-    const previous = now < attackEnd ? duck.from + (duck.level - duck.from) * clamp((now - duck.start) / 0.025, 0, 1) :
-      now < duck.end ? duck.level + (1 - duck.level) * (now - attackEnd) / (duck.end - attackEnd) : 1;
-    const held = Math.min(previous, level);
-    music.gain.cancelScheduledValues(now);
-    music.gain.setValueAtTime(previous, now);
-    music.gain.linearRampToValueAtTime(held, now + 0.025);
-    music.gain.linearRampToValueAtTime(1, now + duration);
-    duck = { start: now, end: now + duration, from: previous, level: held };
+    if (M.music && M.music.duck) M.music.duck(level, duration);
   }
 
   function bleat() {
@@ -628,7 +615,7 @@
     effectsEnabled = !!enabled;
     if (ctx && effects) {
       effects.gain.cancelScheduledValues(ctx.currentTime);
-      effects.gain.setTargetAtTime(effectsEnabled ? 0.75 : 0, ctx.currentTime, 0.025);
+      effects.gain.setTargetAtTime(effectsEnabled ? EFFECTS_LEVEL : 0, ctx.currentTime, 0.025);
     }
     return effectsEnabled;
   }
@@ -651,7 +638,6 @@
     oceanHorror: oceanHorror,
     createVoice: createVoice,
     envelope: envelope,
-    getMusicInput: function () { return music; },
     bleat: bleat,
     thud: thud,
     step: step,

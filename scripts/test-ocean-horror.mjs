@@ -8,9 +8,9 @@ function terrain() {
   return h;
 }
 
-test('deep ocean surrounds all four 300m edges and never generates another continent', () => {
-  const { M } = terrain(), w = M.world;
-  for (const radius of [300, 302, 330, 520, 1040, 10000, 1000000]) {
+test('deep ocean surrounds all four expanded edges and never generates another continent', () => {
+  const { M } = terrain(), w = M.world, { boundary, shoreWidth, dangerBoundary } = M.config.ocean;
+  for (const radius of [boundary, boundary + 2, dangerBoundary, 520, 1040, 10000, 1000000]) {
     for (const side of [-1, 1]) for (const tangent of [-radius, -112, 0, 112, radius]) {
       for (const [x, z] of [[side * radius, tangent], [tangent, side * radius]]) {
         assert.equal(w.terrainHeight(x, z), 2, `deep seabed at ${x},${z}`);
@@ -26,7 +26,7 @@ test('deep ocean surrounds all four 300m edges and never generates another conti
   assert.ok(w.waterDepthAt(-54, 6) > 3, 'starter pond survives');
   for (const side of [-1, 1]) {
     let last = Infinity;
-    for (let z = 264; z <= 302; z += 2) {
+    for (let z = boundary - shoreWidth; z <= boundary + 2; z += 2) {
       const floor = w.terrainHeight(0, side * z);
       assert.ok(floor <= last, 'terraced shore slopes down without an enclosing ridge'); last = floor;
     }
@@ -56,7 +56,7 @@ function encounter({ reducedMotion = false } = {}) {
   const goat = { group: new THREE.Group(), state: { swimming: true } };
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(42, 16 / 9, .1, 400);
   scene.fog = new THREE.Fog(0xffffff, 30, 180);
-  camera.position.set(340, 17, 7); goat.group.position.set(331, 12.15, 0);
+  camera.position.set(340, 17, 7); goat.group.position.set(M.config.ocean.dangerBoundary + 1, 12.15, 0);
   h.load('js/ocean-horror.js');
   const horror = M.oceanHorror;
   horror.init({ scene, camera, goat, world: M.world });
@@ -67,15 +67,16 @@ function encounter({ reducedMotion = false } = {}) {
     setTime: value => { now = value; }, get reloads() { return reloads; } };
 }
 
-test('only swimming past 330 on either axis starts Cthulhu, with an earlier offshore warning', () => {
+test('only swimming past the expanded danger boundary on either axis starts Cthulhu, with an earlier offshore warning', () => {
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const h = encounter(), { horror, goat } = h;
-    for (const extent of [299, 300, 315, 330]) {
+    const { boundary, dangerBoundary } = h.M.config.ocean;
+    for (const extent of [boundary - 1, boundary, boundary + 15, dangerBoundary]) {
       goat.group.position.set(dx * extent, 12.15, dz * extent);
       assert.equal(horror.check(), false);
-      assert.equal(h.elements.get('ocean-warning').hidden, extent < 300);
+      assert.equal(h.elements.get('ocean-warning').hidden, extent < boundary);
     }
-    goat.group.position.set(dx * 331, 20, dz * 331);
+    goat.group.position.set(dx * (dangerBoundary + 1), 20, dz * (dangerBoundary + 1));
     assert.equal(horror.check(), false, 'flight above the ocean is not swimming');
     goat.group.position.y = 12.15; goat.state.swimming = false;
     assert.equal(horror.check(), false, 'a boat or bridge does not trigger');
@@ -87,7 +88,7 @@ test('only swimming past 330 on either axis starts Cthulhu, with an earlier offs
     horror.check();
     assert.equal(h.scene.children.filter(node => node.name === 'Cthulhu').length, 1, 'encounter starts once');
   }
-  const h = encounter(); h.goat.group.position.set(300, 12.15, 300);
+  const h = encounter(); h.goat.group.position.set(h.M.config.ocean.boundary, 12.15, h.M.config.ocean.boundary);
   assert.equal(h.horror.check(), false, 'the threshold uses X/Z extent, not circular distance');
 });
 

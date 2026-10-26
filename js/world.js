@@ -97,13 +97,14 @@
     let result = null;
     if (extent >= ocean.boundary - ocean.shoreWidth) {
       // Slope the outer shore down, preserving deeper rivers/estuaries below.
-      // Beyond 300m there are no continents, islands or raised pond bowls.
+      // Beyond the boundary there are no continents, islands or raised pond bowls.
       const shelf = clamp((extent - ocean.boundary + ocean.shoreWidth) / ocean.shoreWidth, 0, 1);
       result = { plan: SEA_PLAN, height: Math.max(1, Math.round(WATER_RIM - shelf * 6)) };
     }
-    const coast = 98 + Math.sin(bz * 0.016) * 19 + Math.sin(bz * 0.041 + 0.8) * 8;
-    const continentX = bx - Math.round(bx / 520) * 520;
-    const offshore = Math.abs(continentX) - coast;
+    // Leave forest and room to build around both outer gate sites. The outer
+    // ocean already bounds the island, so no repeating continents are needed.
+    const coast = 132 + Math.sin(bz * 0.016) * 19 + Math.sin(bz * 0.041 + 0.8) * 8;
+    const offshore = Math.abs(bx - START.x / BLOCK) - coast;
     const riverZ = 28 + Math.sin(bx * 0.028) * 10 + Math.sin(bx * 0.011) * 8;
     const channelZ = bz - riverZ;
     const riverDistance = Math.abs(channelZ - Math.round(channelZ / 180) * 180);
@@ -115,7 +116,10 @@
     }
     if (riverDistance < width + 4) {
       const bank = clamp((riverDistance - width * 0.45) / (width * 0.55 + 4), 0, 1);
-      const height = Math.round(4 + bank * 3);
+      // A narrow bend can otherwise round its last bank cell down to six
+      // blocks beside low, dry terrain, leaking the river across the forest.
+      // Keep a continuous dry rim, wide enough for diagonal voxel steps too.
+      const height = riverDistance >= width + 2.5 ? WATER_RIM : Math.round(4 + bank * 3);
       if (!result || height < result.height) result = { plan: RIVER_PLAN, height: height };
     }
     return result;
@@ -530,12 +534,13 @@
 
   const permanentBlocks = new Map(), permanentChunks = new Set();
   function addPermanentBlocks(cells, kind, clearance) {
-    const affected = new Set();
+    const affected = new Set(), waterColumns = new Set();
     (clearance || []).forEach(function (cell) {
       if (cell.excavate && isSolidBlock(cell.bx, cell.by, cell.bz)) {
         removedBlocks.add(blockKey(cell.bx, cell.by, cell.bz));
         affected.add(Math.floor(cell.bx / CHUNK_BLOCKS) + ',' + Math.floor(cell.bz / CHUNK_BLOCKS));
         recordChange(cell.bx, cell.bz);
+        waterColumns.add(cell.bx + ',' + cell.bz);
       }
       const info = blockInfoAt(cell.bx, cell.by, cell.bz);
       if (!info || info.type !== 'prop') return;
@@ -547,6 +552,11 @@
       affected.add(id); permanentChunks.add(id);
       permanentBlocks.set(blockKey(cell.bx, cell.by, cell.bz), cell.kind || kind);
       recordChange(cell.bx, cell.bz);
+      waterColumns.add(cell.bx + ',' + cell.bz);
+    });
+    waterColumns.forEach(function (id) {
+      const [bx, bz] = id.split(',').map(Number);
+      markWaterDirty(bx, bz);
     });
     // Terrain yields ownership of these voxels to permanent paving/plinths. Rebuild
     // before the first draw so no coplanar soil caps can flicker through it.
@@ -1308,9 +1318,14 @@
         // Leave room for the whole canopy outside the 15-block lawn.
         if (Math.hypot(wx - START.x, wz - START.z) < (START.radiusBlocks + 3) * BLOCK) continue;
         if (M.hearthTree && M.hearthTree.isReserved(wx, wz, 11)) continue;
-        // Omit the whole tree when its trunk would be cut by a road or gate;
-        // clearing just the lower blocks would leave a floating canopy.
-        if (M.hellGates && M.hellGates.isCleared(worldBX, heightBlocks(worldBX, worldBZ), worldBZ)) continue;
+        // Reserve the full canopy footprint around roads and portals, including
+        // raised approaches whose surface differs from the original terrain.
+        // Cutting individual leaves or trunks leaves floating treetops behind.
+        let overlapsApproach = false;
+        if (M.hellGates) for (let dx = -2; dx <= 2 && !overlapsApproach; dx++) for (let dz = -2; dz <= 2; dz++) {
+          if (M.hellGates.isClearedColumn(worldBX + dx, worldBZ + dz)) { overlapsApproach = true; break; }
+        }
+        if (overlapsApproach) continue;
         if (M.caves.entranceClearance(worldBX, worldBZ) || isPondArea(worldBX, worldBZ) || topSolidY(worldBX, worldBZ) !== heightBlocks(worldBX, worldBZ) - 1) continue;
         if (trees.some(function (o) { return Math.abs(o.bx - bx) < 5 && Math.abs(o.bz - bz) < 5; })) continue;
         ok = true;
@@ -2037,6 +2052,12 @@
     isStartingClearing: isStartingClearing,
     waterDepthAt: waterDepthAt,
     waterLevelAt: waterLevelAt,
+    // Include the dry rim of a basin: cutting it below this level would flood
+    // the surrounding low ground, even though the rim itself has no water.
+    naturalWaterLevelAt: function (x, z) {
+      const plan = generatedColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK)).plan;
+      return plan ? plan.waterLevel : 0;
+    },
     waterInfoAtBlock: waterInfoAtBlock,
     waterAt: waterAt,
     waterSpansAtBlock: waterSpansAtBlock,

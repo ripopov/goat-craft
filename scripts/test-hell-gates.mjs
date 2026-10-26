@@ -16,6 +16,14 @@ test('four starting forest gates have dry ground routes, collision and protected
     assert.equal(world.canPlaceBlock(gate.bx, gate.by, gate.bz), false);
     assert.equal(world.navigationBlockedAt(gate.x, gate.z, gate.y + .01, gate.y + 2.8), false);
   }
+  for (const gate of M.hellGates.sites.filter(g => g.stage === 2)) {
+    for (let dx = -32; dx <= 32; dx += 2) for (let dz = -32; dz <= 32; dz += 2) {
+      const x = gate.x + dx, z = gate.z + dz, water = world.waterInfoAtBlock(Math.floor(x / 2), Math.floor(z / 2));
+      assert.notEqual(water?.type, 'sea', 'outer gates have forest between them and the coast');
+      if (Math.abs(dx) <= 14 && Math.abs(dz) <= 14)
+        assert.equal(world.waterDepthAt(x, z), 0, 'dry ground around the full replacement gate');
+    }
+  }
   assert.equal(roads.length, 8);
   for (const road of roads) {
     const gate = M.hellGates.sites.find(g => g.id === road.gateId), path = road.path;
@@ -25,6 +33,7 @@ test('four starting forest gates have dry ground routes, collision and protected
     assert.ok(path.some(c => Math.abs((c.bx - gate.bx) * dz - (c.bz - gate.bz) * dx) / Math.hypot(dx, dz) > 3), 'visible bends on every road');
     for (let i = 0; i < path.length; i++) {
       const c = path[i], point = { x: c.bx * 2 + 1, y: c.top * 2, z: c.bz * 2 + 1 };
+      assert.equal(world.waterAt(point.x, point.y + .01, point.z), null, 'grading cannot submerge the paving');
       assert.ok(Number.isFinite(nav.nodeAt(point.x, point.y, point.z)?.distance), 'every road tile reaches the Hearth');
       if (i) {
         const p = path[i - 1];
@@ -95,6 +104,11 @@ test('four starting forest gates have dry ground routes, collision and protected
   assert.equal(scene.getObjectByName('Enemy burst signal'), undefined, 'blast effects expire');
   assert.equal(scene.getObjectByName('Enemy burrow signal').children[0].material.opacity, .9, 'blast fading cannot fade the shared Worm warning');
   for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
+  // Stream the low western approach and let fluids settle. Dry river rims
+  // must survive road excavation instead of spilling onto the paving later.
+  const western = M.hellGates.sites[7];
+  for (let i = 0; i < 160; i++) world.update(western.position, .12, i * .12);
+  for (const c of roadCells) assert.equal(world.waterAt(c.bx * 2 + 1, (c.by + 1) * 2 + .01, c.bz * 2 + 1), null, 'paving stays dry after fluids settle');
   world.update(new THREE.Vector3(600, 14, 600), .05, 1);
   for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz).unbreakable, true);
   assert.equal(M.hellGates.sites.filter(g => g.group.visible).length, 4);

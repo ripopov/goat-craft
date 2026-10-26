@@ -58,7 +58,7 @@ test('real ocean crews sail, remain vulnerable, jump ashore, march to the Hearth
   });
   await t.test('crews disembark before the hull collapses, then walk and attack normally', () => {
     let jumped = false, collapsed = false;
-    for (let i = 0; i < 1450 && crew.some(enemy => enemy.mode !== 'tree'); i++) {
+    for (let i = 0; i < 1800 && crew.some(enemy => enemy.mode !== 'tree'); i++) {
       e.update(.05);
       for (const enemy of e.zombies.slice()) if (!crew.includes(enemy)) e.damageEnemy(enemy, enemy.hp);
       if (crew.some(enemy => enemy.boatExit)) { jumped = true; assert.ok(crew.every(enemy => !enemy.boat)); }
@@ -89,7 +89,7 @@ test('real ocean crews sail, remain vulnerable, jump ashore, march to the Hearth
   await t.test('mixed crews cross the paved shore bridges at 60 Hz without stranding short swimmers', () => {
     e.startWave(15); e.update(1 / 60);
     const mixed = e.boats[0].crew; assert.ok(mixed.some(enemy => enemy.type === 'spider'));
-    for (let i = 0; i < 4500 && mixed.some(enemy => enemy.mode !== 'tree'); i++) {
+    for (let i = 0; i < 5400 && mixed.some(enemy => enemy.mode !== 'tree'); i++) {
       e.update(1 / 60);
       for (const enemy of e.zombies.slice()) if (!mixed.includes(enemy)) e.damageEnemy(enemy, enemy.hp);
     }

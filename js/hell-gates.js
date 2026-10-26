@@ -1,9 +1,9 @@
 (function (M) {
   'use strict';
 
-  const gates = [], sites = [], cells = [], plannedCells = [], roads = [], roadCells = [], roadColumns = new Map();
+  const gates = [], sites = [], cells = [], plannedCells = [], roads = [], roadCells = [], roadSupports = [], roadColumns = new Map();
   let worldRef, treeRef, destroyed = 0, lastTime = 0;
-  const clearance = [], cleared = new Set(), reserved = new Set();
+  const clearance = [], cleared = new Set(), clearedColumns = new Set(), reserved = new Set();
   const time = { value: 0 }, reducedMotion = M.config.reducedMotion;
   function key(bx, by, bz) { return bx + ',' + by + ',' + bz; }
   function isReserved(bx, by, bz) { return reserved.has(key(bx, by, bz)); }
@@ -17,8 +17,9 @@
       const id = bx + ',' + bz;
       if (!columns.has(id)) {
         const x = bx * 2 + 1, z = bz * 2 + 1;
-        const water = world.waterLevelAt(x, z);
-        columns.set(id, { bx, bz, top: Math.max(1, Math.ceil(Math.max(world.surfaceHeight(x, z), water ? water + .15 : 0) / 2)) });
+        const water = Math.max(world.waterLevelAt(x, z), world.naturalWaterLevelAt ? world.naturalWaterLevelAt(x, z) : 0);
+        const ground = world.surfaceHeight(x, z), minTop = water ? Math.ceil((water + .15) / 2) : 1;
+        columns.set(id, { bx, bz, ground, minTop, top: Math.max(minTop, Math.ceil(ground / 2)) });
       }
       return columns.get(id);
     }
@@ -59,10 +60,12 @@
       const a = queue[i];
       directions.forEach(d => {
         const b = columns.get((a.bx + d[0]) + ',' + (a.bz + d[1]));
-        if (b && b.top > a.top + 1) { b.top = a.top + 1; queue.push(b); }
+        if (b && b.top > Math.max(b.minTop, a.top + 1)) { b.top = Math.max(b.minTop, a.top + 1); queue.push(b); }
       });
     }
-    const anchors = [];
+    // Water crossings are anchors too: grading toward low inland gates must
+    // never lower a bridge deck beneath the river's surface.
+    const anchors = Array.from(columns.values()).filter(c => c.minTop > 1);
     sites.forEach(gate => {
       for (let x = -1; x <= 1; x++) for (let z = -1; z <= 1; z++) {
         const c = columns.get((gate.bx + x) + ',' + (gate.bz + z));
@@ -82,6 +85,10 @@
       if (gateBlocks.has(key(cell.bx, cell.by, cell.bz)) || tree.intersectsBlock(cell.bx, cell.by, cell.bz)) return;
       roadColumns.set(c.bx + ',' + c.bz, c.top * 2);
       roadCells.push(cell);
+      // Bank-side approaches are stone embankments, not floating paving.
+      // Leave wet columns open underneath so boats and swimmers can pass.
+      if (c.minTop === 1) for (let by = Math.ceil(c.ground / 2); by < c.top - 1; by++)
+        roadSupports.push({ bx: c.bx, by, bz: c.bz, kind: 'roadstone' });
       const roof = Math.max(c.top + 3, Math.ceil(world.surfaceHeight(c.bx * 2 + 1, c.bz * 2 + 1) / 2) + 3);
       for (let by = c.top - 1; by <= roof; by++) clearance.push({ bx: c.bx, by, bz: c.bz, excavate: by >= c.top });
     });
@@ -164,11 +171,13 @@
     });
     buildRoads(world, tree);
     cells.push(...sites.flatMap(g => g.foundation.concat(g.active ? g.blocks : [])));
-    clearance.forEach(cell => cleared.add(key(cell.bx, cell.by, cell.bz)));
-    if (world.addPermanentBlocks) world.addPermanentBlocks(sites.flatMap(g => g.foundation.concat(g.active ? g.blocks : [])).concat(roadCells), 'hellstone', clearance);
+    clearance.forEach(cell => {
+      cleared.add(key(cell.bx, cell.by, cell.bz)); clearedColumns.add(cell.bx + ',' + cell.bz);
+    });
+    if (world.addPermanentBlocks) world.addPermanentBlocks(sites.flatMap(g => g.foundation.concat(g.active ? g.blocks : [])).concat(roadCells, roadSupports), 'hellstone', clearance);
 
     // One static batch, with warm worn paving distinct from the dark gates.
-    const pavingCells = roadCells.concat(sites.flatMap(g => g.foundation));
+    const pavingCells = roadCells.concat(roadSupports, sites.flatMap(g => g.foundation));
     if (pavingCells.length) {
       const paving = new THREE.InstancedMesh(new THREE.BoxGeometry(2, 2, 2), M.std(0xffffff, .96), pavingCells.length);
       const transform = new THREE.Matrix4();
@@ -291,6 +300,7 @@
     });
   }
   M.hellGates = { init, damage, update, gates, sites, cells, roads, roadCells, isReserved,
+    isClearedColumn: function (bx, bz) { return clearedColumns.has(bx + ',' + bz); },
     get destroyed() { return destroyed; }, get won() { return destroyed === 8; },
     isRoad: function (bx, bz, y) { return roadColumns.get(bx + ',' + bz) === y; },
     roadHeightAt: function (bx, bz) { return roadColumns.get(bx + ',' + bz) || 0; },

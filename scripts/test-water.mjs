@@ -88,7 +88,7 @@ test('water generation: dry clearing, nearby pond, connected rivers and seas', (
   assert.equal(world.waterDepthAt(spawn.x, spawn.z), 0);
   assert.equal(world.waterDepthAt(-20, -4), 0, 'the old pond site is now flat meadow');
   assert.ok(world.waterDepthAt(-54, 6) > 3);
-  assert.ok(world.waterDepthAt(300, 56) > 10);
+  assert.ok(world.waterDepthAt(360, 56) > 10);
   // Trace the continuous river through negative coordinates and into both seas.
   for (let bx = -170; bx <= 170; bx++) {
     const bz = 28 + Math.sin(bx * 0.028) * 10 + Math.sin(bx * 0.011) * 8;
@@ -96,10 +96,25 @@ test('water generation: dry clearing, nearby pond, connected rivers and seas', (
     assert.ok(info, `river disconnected at ${bx},${bz}`);
     assert.ok(info.depth > 3);
     assert.equal(info.level, 13.45);
+    for (let dz = -10; dz <= 10; dz++) {
+      const z = Math.floor(bz) + dz, edge = world.waterInfoAtBlock(bx, z);
+      if (!edge) continue;
+      for (const [dx, offsetZ] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const x = (bx + dx) * 2 + 1, neighbourZ = (z + offsetZ) * 2 + 1;
+        assert.ok(world.naturalWaterLevelAt(x, neighbourZ) || world.terrainHeight(x, neighbourZ) >= edge.level,
+          `river bank leaks at ${bx},${z}`);
+      }
+    }
   }
-  assert.equal(world.waterAt(300, 14, 56), null);
-  assert.equal(world.waterAt(300, 1, 56), null);
-  assert.equal(world.waterAt(300, 5, 56).type, 'sea');
+  assert.equal(world.waterAt(360, 14, 56), null);
+  assert.equal(world.waterAt(360, 1, 56), null);
+  assert.equal(world.waterAt(360, 5, 56).type, 'sea');
+  // Bulk road/foundation placement must displace previously queried water
+  // immediately, including cached spans in chunks that are not loaded yet.
+  world.addPermanentBlocks([{ bx: 180, by: 2, bz: 28 }], 'roadstone');
+  assert.equal(world.waterAt(360, 5, 56), null);
+  assert.equal(world.waterAt(360, 3, 56).type, 'sea');
+  assert.equal(world.waterAt(360, 7, 56).type, 'sea');
 });
 
 test('water columns remain deterministic after cache eviction and terrain edits', () => {

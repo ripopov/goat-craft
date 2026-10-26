@@ -127,13 +127,13 @@ Higher foundations extend tower range by **20% of base range per 2 Y**, beginnin
 | Tower (shortcut) | Height | Attack | Price |
 | --- | --- | --- | --- |
 | Oak Ballista (1) | 1 block | 1 damage / 1.15s, 19m | 6 coins, 2 wood |
-| Iron Mortar (2) | 1 block | 1.5 splash / 2.5s, 22m | 14 coins, 4 stone, 1 iron |
+| Iron Mortar (2) | 1 block | 1.5 splash / 2.5s, 22m; 30 damage vs gates | 14 coins, 4 stone, 1 iron |
 | Frost Spire (3) | 2 blocks | 0.5 / 1.3s, 17m; 45% slow | 12 coins, 3 stone |
-| Ember Cannon (4) | 2 blocks | 1.5 splash / 1.6s, 18m; burn | 27 coins, 5 stone, 3 coal |
+| Ember Cannon (4) | 2 blocks | 1.5 splash / 1.6s, 18m; burn; 30 impact + 15 burn/second vs gates | 27 coins, 5 stone, 3 coal |
 | Venom Idol (5) | 2 blocks | 0.3 splash / 1.2s, 18m; four-second poison | 15 coins, 3 wood, 3 soil |
 | Storm Coil (6) | 2 blocks | 1.8 / 1.8s, 19m; chain to 3 | 36 coins, 5 stone, 3 copper |
 | Watchman (7) | 3 blocks | 5.25 / 2.7s, 32m; pierce up to 2 | 33 coins, 6 wood, 3 iron |
-| Earthshaker (8) | 1 block | 1.8 splash / 2.8s, 16m; 65% slow | 16 coins, 5 stone, 4 soil |
+| Earthshaker (8) | 1 block | 1.8 splash / 2.8s, 16m; 65% slow; 36 damage vs gates | 16 coins, 5 stone, 4 soil |
 | Arcane Prism (9) | 3 blocks | 1.2 / 0.45s, 20m; slash up to 2 nearby foes for 0.6 | 48 coins, 6 stone, 5 copper |
 | Sunspire (0) | 3 blocks | 3.75 / 1.7s, 25m; pierce up to 3 | 68 coins, 8 stone, 5 iron, 3 coal |
 

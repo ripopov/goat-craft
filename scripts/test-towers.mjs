@@ -150,6 +150,10 @@ test('frost slows actual walking, poison and fire linger, and splash / chain / b
     const b = M.enemies.spawnAt(new THREE.Vector3(id === 'sun' ? 17 : id === 'venom' ? 18 : 19, 14, 24), 'brute');
     const initial = a.hp; step(M, 1.1);
     assert.ok(a.hp < initial, id + ' attacks');
+    if (id === 'mortar' || id === 'earth') {
+      assert.ok(Math.abs(initial - a.hp - tower.def.damage) < 1e-8, id + ' retains normal damage against enemies');
+      assert.ok(Math.abs(b.maxHp - b.hp - tower.def.damage) < 1e-8, id + ' retains normal splash damage against enemies');
+    }
     if (tower.def.splash || tower.def.chain || tower.def.pierce) assert.ok(b.hp < 28, id + ' hits multiple enemies');
     if (tower.def.slow) {
       assert.ok(a.towerSlowTime > 0); assert.equal(a.towerSlow, tower.def.slow);
@@ -159,6 +163,7 @@ test('frost slows actual walking, poison and fire linger, and splash / chain / b
     if (tower.def.dot) {
       const hp = a.hp; M.towers.dismantle(tower); step(M, 1);
       assert.ok(a.hp < hp, id + ' effect survives packing source');
+      assert.ok(Math.abs(hp - a.hp - tower.def.dot) < 1e-8, id + ' retains normal lingering damage against enemies');
     }
     if (M.towers.list.includes(tower)) assert.ok(M.towers.dismantle(tower));
     M.enemies.zombies.slice().forEach(enemy => M.enemies.damageEnemy(enemy, 1000));

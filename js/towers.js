@@ -4,13 +4,13 @@
   // Original designs drawing on the elemental / siege roles of classic RTS TD maps.
   const definitions = [
     { id: 'ballista', name: 'Oak Ballista', role: 'Reliable single target', height: 1, damage: 1, interval: 1.15, range: 19, color: 0xdab478, cost: { coins: 6, log: 2 }, style: 'bolt' },
-    { id: 'mortar', name: 'Iron Mortar', role: 'Explosive area damage', height: 1, damage: 1.5, interval: 2.5, range: 22, color: 0xefad63, cost: { coins: 14, stone: 4, iron: 1 }, splash: 4, style: 'shell' },
+    { id: 'mortar', name: 'Iron Mortar', role: 'Explosive area damage · 20× vs gates', height: 1, damage: 1.5, gateDamageMultiplier: 20, interval: 2.5, range: 22, color: 0xefad63, cost: { coins: 14, stone: 4, iron: 1 }, splash: 4, style: 'shell' },
     { id: 'frost', name: 'Frost Spire', role: 'Chills enemies by 45%', height: 2, damage: .5, interval: 1.3, range: 17, color: 0x91eaff, cost: { coins: 12, stone: 3 }, slow: .55, style: 'crystal' },
-    { id: 'ember', name: 'Ember Cannon', role: 'Splash + lingering burn', height: 2, damage: 1.5, interval: 1.6, range: 18, color: 0xff794d, cost: { coins: 27, stone: 5, coal: 3 }, splash: 2.8, dot: .75, style: 'shell' },
+    { id: 'ember', name: 'Ember Cannon', role: 'Splash + lingering burn · 20× vs gates', height: 2, damage: 1.5, gateDamageMultiplier: 20, interval: 1.6, range: 18, color: 0xff794d, cost: { coins: 27, stone: 5, coal: 3 }, splash: 2.8, dot: .75, style: 'shell' },
     { id: 'venom', name: 'Venom Idol', role: 'Toxic splash poisons for 4s', height: 2, damage: .3, interval: 1.2, range: 18, color: 0x9bd55e, cost: { coins: 15, log: 3, dirt: 3 }, splash: 2.4, dot: .7, style: 'crystal' },
     { id: 'storm', name: 'Storm Coil', role: 'Lightning chains to 3 foes', height: 2, damage: 1.8, interval: 1.8, range: 19, color: 0x83bbff, cost: { coins: 36, stone: 5, copper: 3 }, chain: 3, style: 'coil' },
     { id: 'sniper', name: 'Watchman', role: 'Long-range shot pierces 2 foes', height: 3, damage: 5.25, interval: 2.7, range: 32, color: 0xe4ce96, cost: { coins: 33, log: 6, iron: 3 }, pierce: 2, style: 'bolt' },
-    { id: 'earth', name: 'Earthshaker', role: 'Boulder splash + stagger', height: 1, damage: 1.8, interval: 2.8, range: 16, color: 0xc0b17a, cost: { coins: 16, stone: 5, dirt: 4 }, splash: 4.5, slow: .35, style: 'shell' },
+    { id: 'earth', name: 'Earthshaker', role: 'Boulder splash + stagger · 20× vs gates', height: 1, damage: 1.8, gateDamageMultiplier: 20, interval: 2.8, range: 16, color: 0xc0b17a, cost: { coins: 16, stone: 5, dirt: 4 }, splash: 4.5, slow: .35, style: 'shell' },
     { id: 'arcane', name: 'Arcane Prism', role: 'Magic slash cleaves 2 nearby foes', height: 3, damage: 1.2, interval: .45, range: 20, color: 0xc4a0ff, cost: { coins: 48, stone: 6, copper: 5 }, cleave: { radius: 2.8, targets: 2, multiplier: .5 }, style: 'crystal' },
     { id: 'sun', name: 'Sunspire', role: 'Radiant beam pierces 3 foes', height: 3, damage: 3.75, interval: 1.7, range: 25, color: 0xffd975, cost: { coins: 68, stone: 8, iron: 5, coal: 3 }, pierce: 3, style: 'coil' }
   ];
@@ -550,13 +550,13 @@
   }
   function hit(tower, enemy, amount, area) {
     if (!alive(enemy) || M.enemies.isTargetable && !M.enemies.isTargetable(enemy, tower.position)) return;
-    const killed = enemy.isGate ? M.hellGates.damage(enemy, amount, aimAt(enemy)) :
+    const killed = enemy.isGate ? M.hellGates.damage(enemy, amount * (tower.def.gateDamageMultiplier || 1), aimAt(enemy)) :
       M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: area || !!tower.def.splash || !!tower.def.pierce });
     if (killed) tower.kills++;
     if (!enemy.isGate && alive(enemy) && tower.def.slow) { enemy.towerSlow = tower.def.slow; enemy.towerSlowTime = 2.5; }
     if (alive(enemy) && tower.def.dot) {
       enemy.towerDots = enemy.towerDots || {};
-      enemy.towerDots[tower.id] = { remaining: 4, rate: tower.def.dot, tower };
+      enemy.towerDots[tower.id] = { remaining: 4, rate: tower.def.dot * (enemy.isGate ? tower.def.gateDamageMultiplier || 1 : 1), tower };
     }
   }
 

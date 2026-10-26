@@ -172,6 +172,16 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
     const before = first.hp;
     M.towers.update(.25);
     assert.equal(first.hp, before, def.id + ' launch does not damage the gate');
+    if (def.id === 'mortar' || def.id === 'earth' || def.id === 'ember' || def.id === 'ballista') {
+      for (let tick = 0; tick < 180 && first.hp === before; tick++) M.towers.update(1 / 60);
+      const multiplier = def.id === 'ballista' ? 1 : 20;
+      assert.ok(Math.abs(before - first.hp - def.damage * multiplier) < 1e-8, def.id + ' deals exactly ' + multiplier + '× damage to gates');
+    }
+    if (def.id === 'ember') {
+      tower.cooldown = 1000;
+      const beforeBurn = first.hp; advance(1);
+      assert.ok(Math.abs(beforeBurn - first.hp - 15) < 1e-8, 'Ember burn deals 20× damage per second to gates');
+    }
     advance(3);
     assert.ok(first.hp < before, def.id + ' projectile hits the gate');
     assert.ok(first.flash > 0, def.id + ' triggers portal and stone hit feedback');

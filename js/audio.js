@@ -261,6 +261,29 @@
     });
   }
 
+  function aerialStomp(damageScale) {
+    if (!(damageScale > 0)) return;
+    play(0, true, function (voice, when) {
+      // Relative to a normal headbutt: short drops clack, a full single jump
+      // cracks stone, and high multi-jump slams rumble with falling rubble.
+      if (damageScale < 3) {
+        body(voice, when, 185, 0.12, 0.042, 'wood');
+        noise(voice, when, { frequency: 2800, endFrequency: 1300, duration: 0.09, level: 0.055, attack: 0.008 });
+      } else if (damageScale < 12) {
+        body(voice, when, 105, 0.26, 0.07, 'stone');
+        noise(voice, when, { frequency: 1800, endFrequency: 380, duration: 0.22, level: 0.09, attack: 0.008 });
+        tone(voice, when, { type: 'triangle', frequency: 310, duration: 0.07, level: 0.024, attack: 0.008 });
+        fragments(voice, when, 2400, 0.028, 3);
+      } else {
+        body(voice, when, 58, 0.48, 0.085, 'stone');
+        tone(voice, when, { type: 'triangle', frequency: 63, endFrequency: 52, duration: 0.4, level: 0.055, attack: 0.01 });
+        noise(voice, when, { frequency: 2200, endFrequency: 900, duration: 0.09, level: 0.09, attack: 0.008 });
+        noise(voice, when + 0.025, { type: 'lowpass', frequency: 520, endFrequency: 140, duration: 0.55, level: 0.075, attack: 0.015 });
+        fragments(voice, when + 0.025, 1900, 0.04, 5);
+      }
+    });
+  }
+
   function pickup() {
     play(rand(-0.18, 0.18), true, function (voice, when) {
       pickupIndex = when - lastPickup < 0.65 ? (pickupIndex + 1) % 5 : 0;
@@ -617,6 +640,7 @@
     whoosh: whoosh,
     land: land,
     stomp: stomp,
+    aerialStomp: aerialStomp,
     pickup: pickup,
     breath: breath,
     splash: splash

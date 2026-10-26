@@ -83,13 +83,13 @@
     M.goat.jump();
   };
 
-  // Attacks are fully automatic; clicks and E only interact with blocks.
+  // Left click and E interact with blocks; right click slams while airborne.
   M.controls.onHeadbutt = function () {
     M.goat.mine();
   };
 
   M.controls.onStomp = function () {
-    M.goat.mine('hoof');
+    M.goat.kick();
   };
 
   M.controls.onTap = function () {

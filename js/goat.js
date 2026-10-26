@@ -574,6 +574,38 @@
     spellFx.push({ object: mesh, ttl: ttl, life: 0,
       onAge: function (k) { mesh.scale.setScalar(size * (0.2 + k * 1.15)); mesh.material.opacity = 0.55 * (1 - k); } });
   }
+  function aerialShockwave(point, dropDistance, range) {
+    if (range <= 0 || spellFx.length >= MAX_SPELL_FX) return;
+    const group = new THREE.Group();
+    group.name = 'aerial-stomp-shockwave';
+    group.userData.radius = range;
+    group.userData.dropDistance = dropDistance;
+    group.position.copy(point); group.position.y += 0.07;
+    const intensity = clamp(dropDistance / (AERIAL_STOMP_JUMP_HEIGHT * MAX_JUMPS), 0, 1);
+    const opacity = 0.65 + intensity * 0.3;
+    const material = new THREE.MeshBasicMaterial({ color: 0xffd483, transparent: true,
+      opacity: opacity, side: THREE.DoubleSide, depthWrite: false,
+      blending: THREE.AdditiveBlending, toneMapped: false });
+    const boundary = new THREE.Mesh(new THREE.RingGeometry(range * (1 - 0.0125 - intensity * 0.015), range, 96), material);
+    boundary.rotation.x = -Math.PI / 2;
+    group.add(boundary);
+    const wave = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 64), material.clone());
+    wave.rotation.x = -Math.PI / 2;
+    const startRange = Math.min(0.25, range * 0.1);
+    wave.scale.setScalar(M.config.reducedMotion ? range : startRange);
+    group.add(wave);
+    group.userData.disposeGeometries = [boundary.geometry, wave.geometry];
+    const reduced = M.config.reducedMotion;
+    sceneRef.add(group);
+    spellFx.push({ object: group, ttl: 0.7, life: 0, onAge: function (k) {
+      // The outer ring marks the actual damage limit for the entire effect.
+      // Reduced motion keeps that feedback, with a static fading ring.
+      if (!reduced) wave.scale.setScalar(startRange + (range - startRange) * Math.min(1, k / 0.65));
+      wave.material.opacity = 0.75 * (1 - k);
+      boundary.material.opacity = opacity * (1 - k * k);
+    } });
+    sparkBurst(point, [0xffd483, 0xfff2ca, 0xe2b16d], 12 + Math.floor(intensity * 28), 4 + intensity * 4, 0.45, 0.3);
+  }
   // The fireball flies to the spot the target stood when it was aimed at;
   // walls burst it early, and the blast still lands around the impact point.
   function spawnFireball(from, to, dmg, powerLevel) {
@@ -780,6 +812,18 @@
   const STOMP_LIFT_END = 0.24;
   const STOMP_IMPACT = 0.36;
   const STOMP_END = 0.54;
+  const AERIAL_STOMP_JUMP_HEIGHT = JUMP_SPEED * JUMP_SPEED / (2 * GRAVITY);
+  const AERIAL_STOMP_RECOVERY = 0.24;
+
+  function aerialStompProfile(dropDistance, normalDamage) {
+    const fallInJumps = Math.max(0, dropDistance) / AERIAL_STOMP_JUMP_HEIGHT;
+    // Zero at ground level, 5x headbutt damage at one jump's apex and 20x at
+    // three. Radius grows with the drop too; one full jump reaches 8 units.
+    return {
+      range: 8 * Math.sqrt(fallInJumps),
+      damage: normalDamage * 5 * Math.pow(fallInJumps, Math.log(4) / Math.log(MAX_JUMPS))
+    };
+  }
 
   let blinkTimer = rand(1.6, 3.2);
   let blink = 0;
@@ -839,6 +883,7 @@
     const reachLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
     const previousYaw = s.yaw;
     s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
+    s.aerialStompRecovery = Math.max(0, s.aerialStompRecovery - dt);
     recoverOverlap();
 
     const input = controlsRef.getMovement(cameraRef);
@@ -860,6 +905,7 @@
     s.swimming = s.shoreJump <= 0 && !!water && water.depth > 1.2 &&
       goat.position.y < water.level - (s.swimming ? 0.55 : 0.9);
     s.submerged = s.swimming && goat.position.y + 1.95 < s.waterLevel;
+    if (s.inWater) s.aerialStomp = false;
     if (s.swimming) {
       s.grounded = false;
       s.jumps = 0;
@@ -975,8 +1021,24 @@
           s.vy = 0; s.grounded = true; s.jumps = 0;
           s.footTimer = Math.max(s.footTimer, 0.14);
           s.landPulse = impact;
-          if (!s.inWater) audioRef.land(impact);
+          if (!s.inWater && !s.aerialStomp) audioRef.land(impact);
         }
+      }
+    }
+
+    if (s.aerialStomp && s.grounded) {
+      s.aerialStomp = false;
+      const landingWater = worldRef.waterInfoAtBlock(
+        Math.floor(goat.position.x / worldRef.blockSize), Math.floor(goat.position.z / worldRef.blockSize), goat.position.y + 0.1);
+      if (!landingWater || goat.position.y >= landingWater.level - 0.08) {
+        const dropDistance = Math.max(0, s.aerialStompStartY - goat.position.y);
+        const profile = aerialStompProfile(dropDistance, 1 + upgrades.damage);
+        if (profile.damage > 0 && M.enemies) M.enemies.attack(goat.position, s.yaw, true, profile);
+        s.aerialStompRecovery = AERIAL_STOMP_RECOVERY;
+        s.stompCooldown = Math.max(s.stompCooldown, 0.7);
+        s.landPulse = clamp(dropDistance / AERIAL_STOMP_JUMP_HEIGHT * 0.8, 0, 2);
+        if (dropDistance > 0) audioRef.aerialStomp(profile.damage / (1 + upgrades.damage));
+        aerialShockwave(goat.position, dropDistance, profile.range);
       }
     }
 
@@ -1041,8 +1103,9 @@
       : neckFx.animate(stompTime, STOMP_IMPACT, STOMP_END, M.config.reducedMotion);
     if (neckFx.level > 0) buttPose = neckAttack.lunge;
 
-    s.tuck = damp(s.tuck, s.grounded || s.swimming ? 0 : 1, 12, dt);
+    s.tuck = damp(s.tuck, s.grounded || s.swimming || s.aerialStomp ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
+    const aerialRecovery = s.aerialStompRecovery / AERIAL_STOMP_RECOVERY;
     s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
     const stride = s.stride;
 
@@ -1084,6 +1147,14 @@
       const kneeSwim = 0.55 + Math.max(0, -Math.cos(paddle)) * 0.7;
       hipTarget += (hipSwim - hipTarget) * swim;
       kneeTarget += (kneeSwim - kneeTarget) * swim;
+      if (s.aerialStomp) {
+        // Brace all four hooves beneath the body for the landing strike.
+        hipTarget = leg.front ? -0.12 : 0.1;
+        kneeTarget = 0.08;
+      } else if (aerialRecovery > 0) {
+        hipTarget -= 0.12 * aerialRecovery;
+        kneeTarget += 0.5 * aerialRecovery;
+      }
       leg.hip.rotation.z = damp(leg.hip.rotation.z, Math.sign(leg.hip.position.x) * swim * 0.12, 8, dt);
       if (leg === stompLeg) {
         hipTarget -= 0.72 * stompLift;
@@ -1118,7 +1189,7 @@
     chest.scale.set(0.37 * breath, 0.4 * breath, 0.4 * breath);
     const stompTilt = -0.05 * stompLift;
     const swimPitch = clamp(-s.vy * 0.075, -0.26, 0.26) - 0.08;
-    rig.rotation.x = damp(rig.rotation.x, ((jumpK > 0 ? -0.16 * jumpK : 0) + Math.sin(s.runPhase + 0.7) * 0.05 * run) * (1 - swim) + swimPitch * swim + buttPose * 0.08, 6, dt);
+    rig.rotation.x = damp(rig.rotation.x, ((jumpK > 0 ? -0.16 * jumpK : 0) + Math.sin(s.runPhase + 0.7) * 0.05 * run) * (1 - swim) + swimPitch * swim + buttPose * 0.08 + (s.aerialStomp ? 0.18 : -0.1 * aerialRecovery), 6, dt);
     const landRoll = (moving ? Math.sin(s.walkPhase) * 0.018 * (1 - run) : 0) + Math.sin(s.runPhase) * 0.03 * run;
     rig.rotation.z = damp(rig.rotation.z, landRoll * (1 - swim) + Math.sin(s.swimPhase) * 0.035 * swim + stompTilt - (M.config.reducedMotion ? 0 : s.turnLean), 8, dt);
 
@@ -1219,6 +1290,7 @@
   }
 
   function jump() {
+    if (state.aerialStomp) return;
     if (state.swimming) {
       const input = controlsRef.getMovement(cameraRef);
       const dx = input.lengthSq() ? input.x : Math.sin(state.yaw);
@@ -1263,6 +1335,24 @@
     state.stompCooldown = 0.7;
     controlsRef.noteActivity();
     audioRef.unlock();
+  }
+
+  function kick() {
+    if (state.grounded || state.swimming || state.inWater) {
+      mine('hoof');
+      return;
+    }
+    if (state.aerialStomp) return;
+    state.aerialStomp = true;
+    state.aerialStompStartY = goat.position.y;
+    state.vy = Math.min(state.vy, -24);
+    state.shoreJump = 0;
+    state.manualHold = Math.max(state.manualHold, 3);
+    // Each jump can slam, regardless of a previous landing or combat cooldown.
+    state.stomp = -1; state.stompHit = true;
+    state.mining = -1;
+    controlsRef.noteActivity();
+    audioRef.unlock(); audioRef.whoosh();
   }
 
   function greet() {
@@ -1318,7 +1408,10 @@
       headbuttCooldown: 0,
       stomp: -1,
       stompHit: false,
-      stompCooldown: 0
+      stompCooldown: 0,
+      aerialStomp: false,
+      aerialStompStartY: 0,
+      aerialStompRecovery: 0
     };
 
     M.goat.group = goat;
@@ -1331,6 +1424,7 @@
     update: updateGoat,
     jump: jump,
     mine: mine,
+    kick: kick,
     startHeadbutt: startHeadbutt,
     startStomp: startStomp,
     greet: greet,

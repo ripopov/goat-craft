@@ -183,7 +183,22 @@
     return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
   }
 
+  function useHoof(e) {
+    if ((M.devConsole && M.devConsole.isOpen) || (M.upgradeMenu && M.upgradeMenu.isOpen) ||
+        (M.strategy && M.strategy.active)) return;
+    e.preventDefault();
+    noteActivity();
+    if (M.controls.onStomp) M.controls.onStomp();
+  }
+
+  // Mouse-down also fires when the right button is pressed while the left is
+  // held. Pointer-down does not, so it can miss a stomp while orbiting.
+  canvas.addEventListener('mousedown', function (e) {
+    if (e.button === 2) useHoof(e);
+  });
+
   canvas.addEventListener('pointerdown', function (e) {
+    if (e.button === 2) return; // handled immediately by mouse-down
     if (lookActive) {
       lookClick = { button: e.button, time: performance.now(), moved: 0 };
       lastInteraction = performance.now();
@@ -227,12 +242,12 @@
   });
 
   function releasePointer(e) {
+    if (e.button === 2) return; // never repeat a hoof action on release
     const isClickUp = e.type === 'pointerup';
     if (lookActive) {
       if (isClickUp && lookClick && lookClick.button === e.button &&
           performance.now() - lookClick.time < 550 && lookClick.moved < 9) {
         if (e.button === 0 && M.controls.onHeadbutt) M.controls.onHeadbutt();
-        else if (e.button === 2 && M.controls.onStomp) M.controls.onStomp();
       }
       lookClick = null;
       return;
@@ -247,7 +262,6 @@
     } else if (pointers.size === 0) {
       if (isClickUp && drag && drag.id === e.pointerId && drag.moved < 9 && performance.now() - drag.time < 550) {
         if (drag.button === 0 && M.controls.onTap) M.controls.onTap(e.clientX, e.clientY);
-        else if (drag.button === 2 && M.controls.onStomp) M.controls.onStomp();
       }
       drag = null;
       pinch = null;
@@ -300,7 +314,7 @@
     const hint = document.getElementById('hint');
     if (!hint) return;
     hint.innerHTML = active
-      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>F</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click / E</b> mine or place &nbsp;·&nbsp; attacks fire automatically &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
+      ? '<b>mouse</b> look &nbsp;·&nbsp; <b>F</b> release &nbsp;·&nbsp; <b>P</b> camera &nbsp;·&nbsp; <b>space</b> rise / jump &nbsp;·&nbsp; <b>ctrl</b> dive &nbsp;·&nbsp; <b>click / E</b> mine or place &nbsp;·&nbsp; <b>right click / R</b> hoof / aerial stomp &nbsp;·&nbsp; attacks fire automatically &nbsp;·&nbsp; <b>1–0</b> items &nbsp;·&nbsp; <b>scroll</b> zoom'
       : defaultHint;
   }
 
@@ -494,6 +508,12 @@
     if (e.code === 'KeyE' || e.key.toLowerCase() === 'e') {
       e.preventDefault();
       if (!e.repeat && M.controls.onHeadbutt) M.controls.onHeadbutt();
+      return;
+    }
+
+    if (e.code === 'KeyR' || e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      if (!e.repeat) useHoof(e);
       return;
     }
 

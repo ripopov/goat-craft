@@ -107,6 +107,7 @@ const effects = [
   ['cue', 'clear'], ['enemyBurst', { x: 0, y: 0, z: 0 }],
   ['bleat'], ['thud'], ['step', false, 4.8], ['step', true, 9.6], ['jump'], ['whoosh'],
   ['land', 1.2], ['stomp', false], ['stomp', true], ['pickup'], ['breath'], ['splash', 1],
+  ['aerialStomp', 1], ['aerialStomp', 5], ['aerialStomp', 20],
   ['zombie', 'groan'], ['zombie', 'hurt'], ['zombie', 'death'], ['zombie', 'bite'],
   ['animal', 'sheep'], ['animal', 'cow'], ['animal', 'stag'], ['actorStep', 'zombie'],
   ['actorStep', 'cow'], ['actorJump', null, false], ['actorJump', null, true],
@@ -354,6 +355,28 @@ test('important cues duck only music and overlapping cues keep a continuous gain
   h.M.audio.setEffectsEnabled(false);
   h.M.audio.cue('defeat');
   assert.equal(h.sources.length, before, 'muted cues do not trigger a duck');
+});
+
+test('aerial stomp damage selects three distinct impact sounds with clean mute and zero-damage behavior', () => {
+  const h = harness(); h.M.audio.unlock();
+  function signature(scale) {
+    const first = h.sources.length;
+    h.M.audio.aerialStomp(scale);
+    return JSON.stringify(h.sources.slice(first).map(s => [s.type, s.frequency.events, s.stopped-s.started]));
+  }
+  const light = signature(1), medium = signature(5), heavy = signature(20);
+  assert.equal(new Set([light,medium,heavy]).size,3, 'tiers change timbre, layering and decay, beyond volume');
+  assert.equal(signature(2.99),light);
+  assert.equal(signature(3),medium);
+  assert.equal(signature(11.99),medium);
+  assert.equal(signature(12),heavy);
+  assert.equal(signature(100),heavy, 'very high falls retain the heavy impact identity');
+  const before = h.sources.length;
+  h.M.audio.aerialStomp(0);
+  assert.equal(h.sources.length,before, 'a zero-damage landing plays no stomp');
+  h.M.audio.setEffectsEnabled(false);
+  h.M.audio.aerialStomp(20);
+  assert.equal(h.sources.length,before, 'all stomp tiers honor the effects mute');
 });
 
 test('tower identities and block materials have distinct physical sound signatures', () => {

@@ -39,7 +39,8 @@ test('manual mining swings the head or hoof without consuming combat cooldowns o
   for (const style of [undefined, 'hoof']) {
     assert.ok(M.world.placeBlock('stone',7,7,9));
     const headCooldown = s.headbuttCooldown, hoofCooldown = s.stompCooldown;
-    goat.mine(style);
+    if (style === 'hoof') goat.kick();
+    else goat.mine();
     if (style === 'hoof') {
       assert.equal(M.world.blockInfoAt(7,6,7),null, 'hoof immediately breaks the ground beneath it');
       assert.ok(M.world.blockInfoAt(7,7,9), 'hoof ignores the camera target');
@@ -67,7 +68,7 @@ test('hoof mining uses the striking hoof footprint with the camera pointing side
   M.world.placeBlock('stone',9,7,7);
   camera.lookAt(19,15,15);
   assert.ok(M.targeting.aim(camera,goat.group.position), 'camera is aimed at a different block');
-  goat.mine('hoof');
+  goat.kick();
   assert.equal(M.world.blockInfoAt(8,6,8),null, 'breaks beneath the front right hoof across the voxel boundary');
   assert.ok(M.world.blockInfoAt(7,6,7), 'the block beneath the body remains');
   assert.ok(M.world.blockInfoAt(9,7,7), 'the aimed block remains');
@@ -76,12 +77,12 @@ test('hoof mining uses the striking hoof footprint with the camera pointing side
   goat.group.position.set(15,14,15);
   camera.lookAt(15,30,15);
   assert.equal(M.targeting.aim(camera,goat.group.position),null);
-  goat.mine('hoof');
+  goat.kick();
   assert.equal(M.world.blockInfoAt(7,6,7),null, 'skyward camera does not prevent ground mining');
 
   goat.group.position.y = 18; goat.state.grounded = false;
   assert.ok(M.world.blockInfoAt(7,5,7));
-  goat.mine('hoof');
+  goat.kick();
   assert.ok(M.world.blockInfoAt(7,5,7), 'airborne kicks cannot mine distant ground');
 });
 

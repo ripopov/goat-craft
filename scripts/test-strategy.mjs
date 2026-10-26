@@ -90,6 +90,56 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   };
 }
 
+test('right mouse press and R immediately slam in orbit and captured modes, including mouse-button chords', () => {
+  const { M, press, dispatch, advance } = commandGame();
+  let actions = 0, impacts = 0;
+  M.controls.onStomp = () => { actions++; M.goat.kick(); };
+  M.enemies.attack = () => { impacts++; return true; };
+  M.goat.state.manualHold = 100;
+  for (const captured of [false,true]) {
+    if (captured) press('f','KeyF');
+    assert.equal(M.controls.lookActive,captured);
+    M.goat.jump(); advance(.15);
+    // With the primary button held, browsers send mouse-down for the second
+    // button but no new pointer-down. Orbit/mouse-look motion must not cancel it.
+    dispatch('scene','pointerdown',{pointerId:1,button:0,clientX:400,clientY:300});
+    if (captured) dispatch('document','mousemove',{movementX:30,movementY:20});
+    else dispatch('scene','pointermove',{pointerId:1,clientX:450,clientY:350});
+    const before = actions, hits = impacts;
+    const down = dispatch('scene','mousedown',{button:2,buttons:3});
+    assert.equal(down.prevented,true);
+    assert.equal(actions,before+1);
+    assert.equal(M.goat.state.aerialStomp,true, 'slam starts before releasing the button');
+    advance(.6);
+    assert.equal(impacts,hits+1);
+    dispatch('scene','pointerup',{pointerId:1,button:2,buttons:1});
+    dispatch('scene','mouseup',{button:2,buttons:1});
+    assert.equal(actions,before+1, 'release cannot cause a second action after landing');
+    dispatch('scene','pointerup',{pointerId:1,button:0,clientX:450,clientY:350});
+
+    M.goat.jump(); advance(.15);
+    const key = press('к','KeyR');
+    assert.equal(key.prevented,true, 'physical R works on non-Latin keyboard layouts');
+    assert.equal(M.goat.state.aerialStomp,true, 'the next jump can slam with R immediately');
+    assert.equal(actions,before+2);
+    dispatch('window','keydown',{key:'r',code:'KeyR',repeat:true});
+    assert.equal(actions,before+2, 'holding R never repeats the action');
+    advance(.6);
+    assert.equal(impacts,hits+2);
+  }
+  const before = actions;
+  assert.equal(dispatch('window','keydown',{key:'r',code:'KeyR',ctrlKey:true}).prevented,undefined);
+  assert.equal(actions,before, 'Ctrl+R remains a browser shortcut');
+  press('t','KeyT'); press('r','KeyR'); dispatch('scene','mousedown',{button:2});
+  assert.equal(actions,before, 'strategic view cannot activate a stomp');
+  press('t','KeyT'); press('q','KeyQ');
+  press('r','KeyR'); dispatch('scene','mousedown',{button:2});
+  assert.equal(actions,before, 'the training menu blocks both inputs');
+  press('q','KeyQ'); M.devConsole = {isOpen:true};
+  press('r','KeyR'); dispatch('scene','mousedown',{button:2});
+  assert.equal(actions,before, 'the developer console blocks both inputs');
+});
+
 test('all four strategic portraits open remote individual upgrades and return focus to the chosen ally', () => {
   const { M, load, press, dispatch, element, document, flush, advance } = commandGame();
   load('js/upgrades.js');

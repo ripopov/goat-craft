@@ -32,6 +32,35 @@
   const GRID_SIZE = 6;
   let maxEnemyRadius = 0;
   const MAX_TOWERS = 80, SIZE = 2;
+  // A fixed, shadow-free pool keeps an 80-tower defense from multiplying
+  // fragment lighting work or recompiling terrain shaders as towers are packed.
+  const MAX_LIGHTS = 8, lightPool = [];
+  const MAX_PROJECTILE_LIGHTS = 4, projectileLightPool = [];
+  const projectileGlowStyles = {
+    ballista: { color: 0xffcf91, intensity: .8, distance: 4 },
+    mortar: { color: 0xffad63, intensity: 1.2, distance: 5 },
+    frost: { color: 0x91eaff, intensity: 1.1, distance: 5.5 },
+    ember: { color: 0xff794d, intensity: 1.6, distance: 6 },
+    venom: { color: 0x9bd55e, intensity: 1.05, distance: 5 },
+    storm: { color: 0x83bbff, intensity: 1.35, distance: 5.5 },
+    sniper: { color: 0xffedb3, intensity: 1, distance: 4 },
+    earth: { color: 0xd5b17b, intensity: .9, distance: 5 },
+    arcane: { color: 0xc4a0ff, intensity: 1.3, distance: 5.5 },
+    sun: { color: 0xffd975, intensity: 1.6, distance: 6 }
+  };
+  const glowStyles = {
+    frost: { color: 0xa9e0ff, intensity: .85, distance: 9 },
+    ember: { color: 0xffad68, intensity: 1.45, distance: 9 },
+    venom: { color: 0xbadf8c, intensity: .65, distance: 8 },
+    storm: { color: 0xa5c7ff, intensity: .9, distance: 9 },
+    arcane: { color: 0xc6acf4, intensity: 1, distance: 11 },
+    sun: { color: 0xffdfa0, intensity: 1.25, distance: 11 }
+  };
+  const torchGlow = { color: 0xffbc7a, intensity: 1.4, distance: 8 };
+  const flameOuter = new THREE.MeshBasicMaterial({ color: 0xff8a32 });
+  const flameInner = new THREE.MeshBasicMaterial({ color: 0xffdf86 });
+  const lightFrustum = new THREE.Frustum(), lightMatrix = new THREE.Matrix4();
+  const lightSphere = new THREE.Sphere(), glowPosition = new THREE.Vector3();
   let scene, removing = false, visualTime = 0;
   const cube = new THREE.BoxGeometry(1, 1, 1), materials = new Map(), templates = new Map();
   const crystal = new THREE.OctahedronGeometry(1), hoop = new THREE.TorusGeometry(1, .065, 4, 8);
@@ -47,7 +76,7 @@
       if (!batch) {
         const mesh = new THREE.InstancedMesh(node.geometry, node.material, MAX_TOWERS * 4);
         mesh.name = 'Tower batch'; mesh.count = 0; mesh.frustumCulled = false;
-        mesh.castShadow = mesh.receiveShadow = true;
+        mesh.castShadow = node.castShadow; mesh.receiveShadow = node.receiveShadow;
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.matrixAutoUpdate = false;
         batch = { mesh, sources: [] }; materials.set(node.material, batch); scene.add(mesh);
       }
@@ -55,6 +84,9 @@
     });
   }
   function unregisterTower(tower) {
+    for (const slot of lightPool) if (slot.tower === tower) {
+      slot.tower = null; slot.light.intensity = 0;
+    }
     for (const { node, batch } of tower.renderBindings) {
       batch.sources.splice(batch.sources.indexOf(node), 1);
       batch.mesh.count = 0;
@@ -125,6 +157,15 @@
     const mesh = new THREE.Mesh(geometry || cube, material(color, glow));
     mesh.position.set(x, y, z); mesh.scale.set(w, h, d); mesh.castShadow = mesh.receiveShadow = true;
     parent.add(mesh); return mesh;
+  }
+  function flame(parent, x, y, z) {
+    const group = new THREE.Group(); group.name = 'Torch flame'; group.position.set(x, y, z); parent.add(group);
+    const outer = part(group, 0, .14, 0, .23, .35, .23, 0xff8a32);
+    const inner = part(group, .08, .08, .08, .14, .22, .14, 0xffdf86);
+    const tip = part(group, -.04, .35, 0, .11, .15, .11, 0xff8a32);
+    outer.material = tip.material = flameOuter; inner.material = flameInner;
+    for (const mesh of [outer, inner, tip]) mesh.castShadow = mesh.receiveShadow = false;
+    return group;
   }
   function model(id) {
     if (byId[id] && byId[id].baseId) {
@@ -340,6 +381,21 @@
         }
         break;
     }
+    const glow = new THREE.Group(); glow.name = 'Tower glow';
+    if (id === 'ember') {
+      // Flames sit in the two existing copper-rimmed braziers.
+      glow.position.set(0, top - .67, .55); group.add(glow);
+      for (const x of [-.78, .78]) flame(glow, x, -.12, 0);
+    } else if (glowStyles[id]) {
+      glow.position.set(0, .35, 0); weapon.add(glow);
+    } else {
+      // Low corner sconces light the path even on the tall Watchman frame.
+      glow.position.set(.73, Math.min(1.65, top - .7), .73); group.add(glow);
+      part(glow, 0, -.29, 0, .12, .56, .12, 0x785035);
+      part(glow, 0, -.1, 0, .25, .14, .25, 0x34434b);
+      part(glow, -.08, -.42, -.08, .25, .12, .25, trim);
+      flame(glow, 0, 0, 0);
+    }
     // Bake the masonry by material once per blueprint. Instances, pickups and
     // previews reuse geometry; rotating barrels remain a separate small group.
     function bake(parent) {
@@ -406,6 +462,7 @@
     pay();
     tower.group.position.set((bx + .5) * SIZE, by * SIZE, (bz + .5) * SIZE);
     tower.position = tower.group.position;
+    prepareGlow(tower);
     for (let y = by; y < by + def.height; y++) cells.set(bx + ',' + y + ',' + bz, tower);
     scene.add(tower.group); list.push(tower); registerTower(tower);
     if (M.audio && M.audio.pickup) M.audio.pickup();
@@ -446,6 +503,7 @@
       unregisterTower(tower);
       tower.id = def.id; tower.def = def; tower.group = model(def.id);
       tower.group.position.copy(tower.position); tower.position = tower.group.position;
+      prepareGlow(tower);
       tower.mechanism = null; tower.cooldown = Math.min(tower.cooldown, def.interval);
       scene.remove(previous); scene.add(tower.group); registerTower(tower);
     }
@@ -990,6 +1048,11 @@
     weapon.rotation.z = def.id === 'ballista' ? recoil * .035 : 0;
     const mechanism = tower.mechanism || (tower.mechanism = weapon.getObjectByName('Mechanism'));
     const t = visualTime + tower.bx * .7 + tower.bz * .4;
+    for (let i = 0; i < tower.flames.length; i++) {
+      const f = tower.flames[i], wave = M.config.reducedMotion ? 0 : Math.sin(t * 6.3 + i * 2) * .055 + Math.sin(t * 9.7 + i) * .025;
+      f.scale.set(1 - wave * .4, 1 + wave, 1 - wave * .4);
+      f.rotation.z = wave * .25;
+    }
     const charge = 1 - M.utils.clamp(tower.cooldown / def.interval, 0, 1);
     if (mechanism) {
       if (def.id === 'arcane') { mechanism.rotation.y = t * .8; mechanism.position.y = Math.sin(t * 2) * .055; }
@@ -1061,6 +1124,9 @@
     // by an impact start moving on the next tick, never all in one frame.
     for (const p of projectiles.slice()) {
       if (M.hearthTree.health <= 0 || advanceProjectile(p, dt)) {
+        for (const slot of projectileLightPool) if (slot.projectile === p) {
+          slot.projectile = null; slot.light.intensity = 0;
+        }
         scene.remove(p.mesh); projectiles.splice(projectiles.indexOf(p), 1);
       }
     }
@@ -1088,10 +1154,97 @@
     updateParticles(dt);
     if (!deferRender) syncRender();
   }
+  function prepareGlow(tower) {
+    tower.glowAnchor = tower.group.getObjectByName('Tower glow');
+    tower.glowStyle = glowStyles[tower.def.baseId || tower.id] || torchGlow;
+    tower.flames = [];
+    tower.group.traverse(node => { if (node.name === 'Torch flame') tower.flames.push(node); });
+  }
+  function updateLighting(camera, dt) {
+    const night = M.environment ? M.environment.getState().night : 0;
+    camera.updateMatrixWorld();
+    lightMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    lightFrustum.setFromProjectionMatrix(lightMatrix);
+    const candidates = [];
+    for (const tower of list) {
+      tower.glowAnchor.getWorldPosition(glowPosition);
+      lightSphere.center.copy(glowPosition); lightSphere.radius = tower.glowStyle.distance;
+      if (!lightFrustum.intersectsSphere(lightSphere)) continue;
+      const assigned = lightPool.some(slot => slot.tower === tower);
+      candidates.push({ tower, score: camera.position.distanceToSquared(glowPosition) * (assigned ? .8 : 1) });
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    const desired = new Set(candidates.slice(0, MAX_LIGHTS).map(entry => entry.tower));
+    // Fade outgoing lamps before moving their light, so camera movement never
+    // drags a bright pool across the ground. Existing assignments get priority.
+    for (const slot of lightPool) {
+      if (slot.tower && desired.has(slot.tower)) continue;
+      slot.light.intensity = M.utils.damp(slot.light.intensity, 0, 8, dt);
+      if (slot.light.intensity < .015) { slot.tower = null; slot.light.intensity = 0; }
+    }
+    for (const tower of desired) {
+      if (lightPool.some(slot => slot.tower === tower)) continue;
+      const slot = lightPool.find(slot => !slot.tower);
+      if (slot) slot.tower = tower;
+    }
+    for (const slot of lightPool) {
+      const tower = slot.tower;
+      if (!tower || !desired.has(tower)) continue;
+      const style = tower.glowStyle, t = visualTime + tower.bx * .7 + tower.bz * .4;
+      const flicker = tower.flames.length && !M.config.reducedMotion ? 1 + Math.sin(t * 6.3) * .035 + Math.sin(t * 9.7) * .02 : 1;
+      tower.glowAnchor.getWorldPosition(slot.light.position);
+      slot.light.color.setHex(style.color); slot.light.distance = style.distance;
+      slot.light.intensity = M.utils.damp(slot.light.intensity, style.intensity * night * flicker, 5, dt);
+    }
+    updateProjectileLighting(camera, dt, night);
+  }
+  function updateProjectileLighting(camera, dt, night) {
+    const candidates = [];
+    for (const p of projectiles) {
+      lightSphere.center.copy(p.position); lightSphere.radius = projectileGlowStyles[p.id].distance;
+      if (!lightFrustum.intersectsSphere(lightSphere)) continue;
+      const assigned = projectileLightPool.some(slot => slot.projectile === p);
+      candidates.push({ projectile: p, score: camera.position.distanceToSquared(p.position) * (assigned ? .8 : 1) });
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    const desired = new Set(candidates.slice(0, MAX_PROJECTILE_LIGHTS).map(entry => entry.projectile));
+    for (const slot of projectileLightPool) {
+      if (slot.projectile && desired.has(slot.projectile)) continue;
+      slot.light.intensity = M.utils.damp(slot.light.intensity, 0, 18, dt);
+      if (slot.light.intensity < .015) { slot.projectile = null; slot.light.intensity = 0; }
+    }
+    for (const p of desired) {
+      if (projectileLightPool.some(slot => slot.projectile === p)) continue;
+      const slot = projectileLightPool.find(slot => !slot.projectile);
+      if (slot) slot.projectile = p;
+    }
+    for (const slot of projectileLightPool) {
+      const p = slot.projectile;
+      if (!p) continue;
+      // Follow the actual swept flight, including arcs, homing and chain hops.
+      // Packing the launcher leaves an in-flight shot and its light intact.
+      slot.light.position.copy(p.position);
+      if (!desired.has(p)) continue;
+      const style = projectileGlowStyles[p.id];
+      slot.light.color.setHex(style.color); slot.light.distance = style.distance;
+      // Short, steady pools of color stay readable without flashing the whole
+      // battlefield. Daylight keeps a subdued glow; reduced motion adds no pulse.
+      const intensity = style.intensity * (.25 + .75 * night);
+      slot.light.intensity = M.utils.damp(slot.light.intensity, intensity, 18, dt);
+    }
+  }
   M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget, rangeAt,
     builderDefinition, placeBuilder, trainBuilder,
     model, lineClear, maxTowers: MAX_TOWERS, init: function (value) {
       scene = value;
+      if (!lightPool.length) for (let i = 0; i < MAX_LIGHTS; i++) {
+        const light = new THREE.PointLight(0xffbc7a, 0, 10, 2);
+        light.name = 'Tower light'; scene.add(light); lightPool.push({ light, tower: null });
+      }
+      if (!projectileLightPool.length) for (let i = 0; i < MAX_PROJECTILE_LIGHTS; i++) {
+        const light = new THREE.PointLight(0xffffff, 0, 6, 2);
+        light.name = 'Tower projectile light'; scene.add(light); projectileLightPool.push({ light, projectile: null });
+      }
       if (!particlePools.length) { particlePool(false, 900); particlePool(true, 220); }
-    }, update, syncRender };
+    }, update, syncRender, updateLighting };
 })(window.Meadow = window.Meadow || {});

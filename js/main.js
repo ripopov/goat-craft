@@ -160,6 +160,7 @@
     M.hearthTree.update(dt, elapsed);
     M.fish.update(dt, elapsed, M.goat.group.position);
     M.environment.update(camera, M.goat.group, dt, elapsed);
+    M.towers.updateLighting(camera, dt);
     const underground = M.goat.group.position.y + 2 < M.world.surfaceHeight(M.goat.group.position.x, M.goat.group.position.z);
     caveLight.position.copy(M.goat.group.position); caveLight.position.y += 1.4;
     caveLight.intensity = M.utils.damp(caveLight.intensity, underground ? 5 : 0, 6, dt);

@@ -137,6 +137,10 @@ The five premium towers (Ember, Storm, Watchman, Arcane and Sunspire) cost 50% m
 
 Each cannon has its own architecture: timber bow limbs and strings, an open braced Watchman frame with a ladder and scope, armored cannon bores, a crown of ice, a vine-covered fanged idol, copper coil windings, a stone siege cradle, an orbiting arcane armillary, and a gilded sun wheel. Staggered masonry, buttresses, inset runes, rivets and distinct stone, timber and metal palettes keep them readable from the strategic camera. Model geometry and materials are baked and shared; firing mechanisms animate independently on each deployed tower.
 
+Ballista, Mortar, Watchman and Earthshaker towers carry warm voxel torches; Ember's braziers burn with matching flames. Frost crystals, Venom runes, Storm coils, Arcane prisms and Sunspire crowns cast soft light in their own colors after dark. Lighting fades with the day/night cycle. Up to eight nearby visible towers share shadow-free lights, with smooth handoffs as the camera moves; packed items and placement previews emit no light. Reduced motion keeps the flames and lighting steady.
+
+Flying projectiles also illuminate nearby terrain and enemies: amber bolts, orange mortar shells, icy cyan shards, red-orange embers, green venom, blue lightning, pale-gold sniper darts, ochre boulders, violet arcane shots and golden sun lances. Four additional shadow-free lights follow nearby visible shots, including arcing, homing and chained flights. Their glow is subdued in daylight and clears on impact or expiry; packing a tower preserves the light of its shots already in flight.
+
 Each cannon also has its own visual attack signature:
 
 | Cannon | Firing, flight and impact |

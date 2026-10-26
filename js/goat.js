@@ -1006,10 +1006,9 @@
     // The goat fights by itself (Vampire Survivors / Megabonk style) whenever
     // an enemy is in reach, but it never steers the player: bolts and fireballs
     // auto-aim at the nearest enemy, and melee stomps strike around your own
-    // facing, which stays fully mouse-controlled. Holding a block to place
-    // keeps the goat out of a fight.
-    const holdsBlock = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
-    if (!holdsBlock && !(M.strategy && M.strategy.active)) {
+    // facing, which stays fully mouse-controlled. Combat is independent of
+    // the selected inventory item.
+    if (!(M.strategy && M.strategy.active)) {
       const headbuttRange = reachLevel >= 1 ? upgrades.reach : MELEE_RANGE;
       if (s.headbutt < 0 && s.headbuttCooldown <= 0) {
         const target = autoTarget(headbuttRange);
@@ -1145,12 +1144,7 @@
     // Automatic lunges only fight; mining and placing live on the click action.
     if (headbuttPending) {
       s.headbuttHit = true;
-      const carrying = M.items && M.items.hasSelectedBlock && M.items.hasSelectedBlock();
-      if (carrying) {
-        if (M.items.placeSelectedBlock()) {
-          recoverOverlap();
-        }
-      } else if (reachLevel >= 1 && castSpell(reachLevel)) {
+      if (reachLevel >= 1 && castSpell(reachLevel)) {
         // Long horns channel an elemental strike instead of a melee lunge.
       } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: MELEE_RANGE, damage: 1 + upgrades.damage, maxTargets: 1 })) {
         audioRef.thud();

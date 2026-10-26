@@ -180,6 +180,54 @@ test('automatic attacks idle without enemies and never mine anything', () => {
   assert.ok(M.world.blockInfoAt(7, 8, 9), 'standing near blocks never mines them automatically');
 });
 
+test('automatic melee and stomps work with blocks, tools, empty slots and selection changes during windup', () => {
+  const { M, controls } = training(), goat = M.goat;
+  controls.firstPerson = true; goat.group.position.set(15,14,15);
+  const camera = goat.aimCamera;
+  camera.position.set(15,15.75,15); camera.lookAt(15,15.75,21);
+  const logSlot = M.items.addItem('log',3), stoneSlot = M.items.addItem('stone',3);
+  M.items.selectSlot(logSlot);
+  M.world.placeBlock('stone',7,7,10);
+  assert.ok(M.items.placementTarget().valid, 'an unintended placement would succeed');
+  const enemy = M.enemies.spawnAt({ x:15,y:14,z:17 }); enemy.hp = 100;
+  for (const [selected, switched] of [[0], [logSlot], [9], [0,logSlot], [logSlot,stoneSlot]]) {
+    Object.assign(goat.state, { headbutt:-1, headbuttCooldown:0, stompCooldown:100 });
+    M.items.selectSlot(selected);
+    const hp = enemy.hp;
+    advancePlayer(M,1/60);
+    assert.ok(goat.state.headbutt >= 0, 'selection never prevents an automatic windup');
+    if (switched !== undefined) M.items.selectSlot(switched);
+    advancePlayer(M,.2);
+    assert.equal(enemy.hp,hp-1, 'horn impact fights regardless of the item selected at impact');
+    assert.equal(M.items.count('log'),3); assert.equal(M.items.count('stone'),3);
+    assert.equal(M.world.blockInfoAt(7,7,9),null, 'attacks never place the selected block');
+  }
+  Object.assign(goat.state, { headbuttCooldown:100, stompCooldown:0 });
+  M.items.selectSlot(logSlot);
+  const hp = enemy.hp;
+  advancePlayer(M,.5);
+  assert.equal(enemy.hp,hp-2, 'hoof attacks also continue while carrying a block');
+  assert.equal(M.items.count('log'),3);
+});
+
+test('all automatic elemental strikes fire while carrying a block without placing or consuming it', () => {
+  const { M, controls } = training(); supplies(M);
+  controls.firstPerson = true; M.goat.group.position.set(15,14,15);
+  const slot = M.items.addItem('leaves',3);
+  M.items.selectSlot(slot);
+  const enemy = M.enemies.spawnAt({ x:15,y:14,z:21 }); enemy.hp = 100;
+  for (let tier=1; tier<=3; tier++) {
+    train(M,M.upgrades.player,'reach',1);
+    Object.assign(M.goat.state, { headbutt:-1, headbuttCooldown:0, stompCooldown:100 });
+    const hp = enemy.hp;
+    advancePlayer(M,.2);
+    if (tier === 3) M.goat.advanceSpellFx(1,1);
+    assert.equal(enemy.hp,hp-1, `elemental tier ${tier} still deals its normal damage`);
+    assert.equal(M.items.count('leaves'),3);
+    assert.equal(M.items.selectedSlot,slot);
+  }
+});
+
 test('spell targeting respects range and walls, and the blast burns around impact', () => {
   const { M } = training();
   const origin = { x: 15, y: 14, z: 15 };

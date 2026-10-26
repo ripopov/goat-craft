@@ -116,7 +116,7 @@
   function indexEnemies() {
     for (const bucket of enemyGrid.values()) { bucket.length = 0; gridPool.push(bucket); }
     enemyGrid.clear(); liveEnemies.clear(); maxEnemyRadius = 0;
-    for (const enemy of M.enemies.zombies) {
+    for (const enemy of M.enemies.zombies.concat(M.hellGates ? M.hellGates.gates : [])) {
       if (enemy.hp <= 0) continue;
       liveEnemies.add(enemy); maxEnemyRadius = Math.max(maxEnemyRadius, enemy.body.radius);
       const p = enemy.position, key = Math.floor(p.x / GRID_SIZE) + ',' + Math.floor(p.z / GRID_SIZE);
@@ -439,8 +439,8 @@
     const def = byId[id];
     if (!def || !Number.isInteger(bx) || !Number.isInteger(by) || !Number.isInteger(bz)) return { valid: false, reason: 'Choose solid, dry ground.' };
     if (list.length >= MAX_TOWERS) return { valid: false, reason: 'Tower limit reached (80).' };
-    // The arena stays streamed and simulated even when the player explores.
-    if (Math.hypot((bx + .5) * SIZE, (bz + .5) * SIZE) > 50) return { valid: false, reason: 'Build within 50m of the Hearth.' };
+    // Forward siege positions must reach the second line, 50 voxels farther out.
+    if (Math.hypot((bx + .5) * SIZE, (bz + .5) * SIZE) > 220) return { valid: false, reason: 'Build within 220m of the Hearth.' };
     if (!M.world.blockInfoAt(bx, by - 1, bz) || atCell(bx, by - 1, bz)) return { valid: false, reason: 'A tower needs a solid foundation.' };
     for (let y = by; y < by + def.height; y++) {
       if (!M.world.canPlaceBlock(bx, y, bz)) return { valid: false, reason: 'Blocked: leave room for the full tower.' };
@@ -530,24 +530,30 @@
     const bx = hit.bx + hit.normal.x, by = hit.by + hit.normal.y, bz = hit.bz + hit.normal.z;
     return { kind, bx, by, bz, x: (bx + .5) * SIZE, y: (by + .5) * SIZE, z: (bz + .5) * SIZE, valid: site(def.id, bx, by, bz).valid };
   }
-  function lineClear(origin, destination, tower) {
+  function lineClear(origin, destination, tower, target) {
     const delta = destination.clone().sub(origin), distance = delta.length(), steps = Math.ceil(distance / .45);
     const p = new THREE.Vector3();
     for (let i = 1; i < steps; i++) {
       p.copy(origin).addScaledVector(delta, i / steps);
+      if (target && target.isGate && insideGate(p, target)) return true;
       if (tower && atCell(Math.floor(p.x / SIZE), Math.floor(p.y / SIZE), Math.floor(p.z / SIZE)) === tower) continue;
       if (M.world.blockedAt(p.x, p.z, p.y, p.y + .05)) return false;
     }
     return true;
   }
-  function alive(enemy) { return enemy.hp > 0 && liveEnemies.has(enemy); }
+  function insideGate(p, gate) {
+    return Math.abs(p.x - gate.x) <= (gate.tx ? 7 : 1) && Math.abs(p.z - gate.z) <= (gate.tz ? 7 : 1) && p.y >= gate.y && p.y <= gate.y + 14;
+  }
+  function alive(enemy) { return enemy.hp > 0 && (!enemy.isGate || enemy.active) && liveEnemies.has(enemy); }
   function aimAt(enemy) {
-    return enemy.position.clone().add(new THREE.Vector3(0, Math.min(1.25, enemy.body.height * .6), 0));
+    return enemy.position.clone().add(new THREE.Vector3(0, enemy.isGate ? 4 : Math.min(1.25, enemy.body.height * .6), 0));
   }
   function hit(tower, enemy, amount, area) {
     if (!alive(enemy) || M.enemies.isTargetable && !M.enemies.isTargetable(enemy, tower.position)) return;
-    if (M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: area || !!tower.def.splash || !!tower.def.pierce })) tower.kills++;
-    if (alive(enemy) && tower.def.slow) { enemy.towerSlow = tower.def.slow; enemy.towerSlowTime = 2.5; }
+    const killed = enemy.isGate ? M.hellGates.damage(enemy, amount, aimAt(enemy)) :
+      M.enemies.damageEnemy(enemy, amount, { origin: tower.position, area: area || !!tower.def.splash || !!tower.def.pierce });
+    if (killed) tower.kills++;
+    if (!enemy.isGate && alive(enemy) && tower.def.slow) { enemy.towerSlow = tower.def.slow; enemy.towerSlowTime = 2.5; }
     if (alive(enemy) && tower.def.dot) {
       enemy.towerDots = enemy.towerDots || {};
       enemy.towerDots[tower.id] = { remaining: 4, rate: tower.def.dot, tower };
@@ -889,8 +895,9 @@
     for (let axis = 0; axis < 3; axis++) {
       const a = axis === 0 ? from.x : axis === 1 ? from.y : from.z;
       const b = axis === 0 ? to.x : axis === 1 ? to.y : to.z;
-      const min = axis === 0 ? pos.x - r : axis === 1 ? pos.y - padding : pos.z - r;
-      const max = axis === 0 ? pos.x + r : axis === 1 ? pos.y + enemy.body.height + padding : pos.z + r;
+      const extent = enemy.isGate ? (axis === 0 ? enemy.tx ? 7 : 1 : enemy.tz ? 7 : 1) + padding : r;
+      const min = axis === 0 ? pos.x - extent : axis === 1 ? pos.y - padding : pos.z - extent;
+      const max = axis === 0 ? pos.x + extent : axis === 1 ? pos.y + enemy.body.height + padding : pos.z + extent;
       const d = b - a;
       if (Math.abs(d) < 1e-8) { if (a < min || a > max) return null; }
       else {
@@ -918,7 +925,7 @@
       // Evaluate victims at impact, not launch. The struck enemy is always in
       // the blast; other victims need an unobstructed path from the near side.
       queryEnemies(point.x - def.splash, point.x + def.splash, point.z - def.splash, point.z + def.splash, splashCandidates).forEach(e => {
-        if (e === enemy || aimAt(e).distanceTo(point) <= def.splash && lineClear(point, aimAt(e), null)) hit(tower, e, def.damage);
+        if (e === enemy || aimAt(e).distanceTo(point) <= def.splash && lineClear(point, aimAt(e), null, e)) hit(tower, e, def.damage);
       });
     } else if (enemy) hit(tower, enemy, def.damage);
     if (def.cleave && enemy) {
@@ -1019,8 +1026,8 @@
     const def = tower.def, reach = rangeAt(def, tower.position.y), center = tower.position.clone(), id = def.baseId || tower.id; center.y += def.height * SIZE - .4;
     const enemies = queryEnemies(center.x - reach, center.x + reach, center.z - reach, center.z + reach, shotCandidates).filter(e => alive(e) && (!M.enemies.isTargetable || M.enemies.isTargetable(e, center)) && (e.position.x - center.x) ** 2 + (e.position.z - center.z) ** 2 <= reach ** 2 &&
       Math.abs(e.position.y - tower.position.y) <= Math.max(15, reach));
-    enemies.sort((a, b) => a.position.lengthSq() - b.position.lengthSq() || a.id - b.id);
-    const target = enemies.find(e => lineClear(center, aimAt(e), tower));
+    enemies.sort((a, b) => Number(!!a.isGate) - Number(!!b.isGate) || a.position.lengthSq() - b.position.lengthSq() || a.id - b.id);
+    const target = enemies.find(e => lineClear(center, aimAt(e), tower, e));
     if (!target) return false;
     const aim = aimAt(target), turret = tower.group.userData.turret;
     turret.rotation.y = Math.atan2(center.x - aim.x, center.z - aim.z);
@@ -1084,7 +1091,7 @@
   function update(dt, deferRender) {
     visualTime += dt;
     indexEnemies();
-    for (const enemy of M.enemies.zombies.slice()) {
+    for (const enemy of M.enemies.zombies.concat(M.hellGates ? M.hellGates.gates : [])) {
       let movement = motion.get(enemy);
       if (!movement) { movement = { position: enemy.position.clone(), velocity: new THREE.Vector3() }; motion.set(enemy, movement); }
       movement.velocity.copy(enemy.position).sub(movement.position).divideScalar(Math.max(.0001, dt));
@@ -1093,7 +1100,7 @@
       if (enemy.towerSlowTime > 0) enemy.towerSlowTime = Math.max(0, enemy.towerSlowTime - dt);
       if (enemy.towerDots) Object.entries(enemy.towerDots).forEach(([id, dot]) => {
         const tick = Math.max(0, Math.min(dt, dot.remaining)); dot.remaining -= tick;
-        if (tick > 0 && M.enemies.damageEnemy(enemy, dot.rate * tick)) dot.tower.kills++;
+        if (tick > 0 && (enemy.isGate ? M.hellGates.damage(enemy, dot.rate * tick) : M.enemies.damageEnemy(enemy, dot.rate * tick))) dot.tower.kills++;
         if (dot.remaining <= 0) delete enemy.towerDots[id];
       });
       // Lingering effects stay attached to the victim, even after the source
@@ -1123,7 +1130,7 @@
     // Flights already in the air resolve before new shots. Chain jumps created
     // by an impact start moving on the next tick, never all in one frame.
     for (const p of projectiles.slice()) {
-      if (M.hearthTree.health <= 0 || advanceProjectile(p, dt)) {
+      if (M.hearthTree.health <= 0 || M.hellGates?.won || advanceProjectile(p, dt)) {
         for (const slot of projectileLightPool) if (slot.projectile === p) {
           slot.projectile = null; slot.light.intensity = 0;
         }
@@ -1133,7 +1140,7 @@
     for (const tower of list.slice()) {
       if (!M.world.blockInfoAt(tower.bx, tower.by - 1, tower.bz)) { dismantle(tower); continue; }
       animateTower(tower, dt);
-      if (M.hearthTree.health <= 0) continue;
+      if (M.hearthTree.health <= 0 || M.hellGates?.won) continue;
       if (tower.snareTime > 0) {
         tower.snareTime = Math.max(0, tower.snareTime - dt);
         if (!tower.snareOwner || tower.snareOwner.hp <= 0) tower.snareTime = 0;

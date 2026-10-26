@@ -80,7 +80,7 @@ test('blocked cells, dry foundations, occupied actors, arena limits and balances
   const blocked = M.world.placeBlock('stone', 8, 8, 8); assert.equal(blocked, true);
   assert.equal(M.towers.place('sniper', 8, 7, 8), false, 'upper cell blocked');
   assert.equal(M.towers.place('ballista', 8, 10, 8), false, 'floating');
-  assert.equal(M.towers.place('ballista', 30, 7, 8), false, 'beyond arena');
+  assert.equal(M.towers.place('ballista', 120, 7, 8), false, 'beyond arena');
   assert.equal(M.towers.place('ballista', .5, 7, 8), false);
   M.goat.group.position.set(17, 14, 17);
   assert.equal(M.towers.place('ballista', 8, 7, 8), false, 'goat collision');

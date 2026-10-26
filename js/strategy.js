@@ -46,7 +46,7 @@
     if (active) {
       M.controls.suspendLook();
       const p = M.goat.group.position;
-      focus.set(M.utils.clamp(p.x * .25, -35, 35), 14, M.utils.clamp(p.z * .25, -35, 35));
+      focus.set(M.utils.clamp(p.x, -210, 210), 14, M.utils.clamp(p.z, -210, 210));
       camera.fov = 48; camera.updateProjectionMatrix();
       M.goat.group.visible = true;
       Object.assign(M.goat.state, { manualHold: 0, wait: .2, mode: 'idle', headbutt: -1, stomp: -1 });
@@ -135,12 +135,12 @@
   }
   function recenter(goat) {
     const p = goat ? M.goat.group.position : M.hearthTree.position;
-    focus.x = M.utils.clamp(p.x, -48, 48); focus.z = M.utils.clamp(p.z, -48, 48);
+    focus.x = M.utils.clamp(p.x, -210, 210); focus.z = M.utils.clamp(p.z, -210, 210);
   }
   function init(sceneValue, cameraValue) {
     scene = sceneValue; camera = cameraValue; canvas = document.getElementById('scene');
     panel = document.getElementById('rts-hud'); toggleButton = document.getElementById('strategy-toggle');
-    grid = new THREE.GridHelper(100, 50, 0xb5d2a0, 0x94bfa4); grid.position.y = 14.035;
+    grid = new THREE.GridHelper(440, 220, 0xb5d2a0, 0x94bfa4); grid.position.y = 14.035;
     grid.material.transparent = true; grid.material.opacity = .12; grid.material.depthWrite = false; grid.visible = false; scene.add(grid);
     range = new THREE.Mesh(new THREE.RingGeometry(.99, 1, 96), new THREE.MeshBasicMaterial({ color: 0x9bd7bc, side: THREE.DoubleSide, transparent: true, opacity: .65, depthWrite: false }));
     range.rotation.x = -Math.PI / 2; range.visible = false; scene.add(range);
@@ -236,7 +236,7 @@
     const speed = zoom * .65 * dt * (keys.has('shift') ? 1.8 : 1);
     focus.x += ((keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0)) * speed;
     focus.z += ((keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0)) * speed;
-    focus.x = M.utils.clamp(focus.x, -48, 48); focus.z = M.utils.clamp(focus.z, -48, 48);
+    focus.x = M.utils.clamp(focus.x, -210, 210); focus.z = M.utils.clamp(focus.z, -210, 210);
     // Keep the command camera above tall trees and hills, independent of the goat.
     focus.y = M.utils.damp(focus.y, Math.max(14, M.world.surfaceHeight(focus.x, focus.z)), 5, dt);
     camera.position.set(focus.x, focus.y + zoom, focus.z + zoom * .72); camera.lookAt(focus); camera.updateMatrixWorld();

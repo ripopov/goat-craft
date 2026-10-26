@@ -34,6 +34,29 @@
   body.ocean-cinematic > :not(#scene):not(#ocean-cinematic):not(script) { visibility: hidden !important; }
   body.ocean-cinematic #scene { cursor: default; }
 
+  .gate-objective { width: 100%; margin-top: 3px; padding-top: 6px; border-top: 1px solid #ddcc9955; font-size: 11px; color: #e6d7bb; }
+  .gate-objective b { float: right; margin-left: 12px; color: #f2c279; }
+  .gate-objective small { display: block; margin-top: 3px; font-size: 9px; color: #bfcbb6; }
+  @media (max-width: 760px) { .gate-objective { font-size: 10px; } .gate-objective small { display: none; } }
+  #victory {
+    --victory-reveal: 0;
+    position: fixed; inset: 0; z-index: 1100; color: #fff1c8;
+    display: grid; align-items: end; justify-items: center;
+    padding: max(30px, 7vh) 24px; box-sizing: border-box; text-align: center;
+    background: linear-gradient(180deg, #20160738, transparent 36%, #122519aa);
+    border-top: 5vh solid #142019; border-bottom: 5vh solid #142019;
+  }
+  #victory[hidden], #victory-replay[hidden] { display: none; }
+  .victory-card { opacity: var(--victory-reveal); transform: translateY(calc((1 - var(--victory-reveal)) * 18px)); text-shadow: 0 3px 24px #102616; }
+  .victory-sigil { display: block; color: #ffe4a0; font-size: 38px; }
+  .victory-eyebrow { font-size: 10px; letter-spacing: .3em; }
+  #victory-title { margin: 12px 0; font: 400 clamp(32px, 5vw, 64px) Georgia, serif; letter-spacing: .03em; }
+  .victory-card > p:last-of-type { font-size: 14px; color: #dfebce; }
+  #victory-replay { margin-top: 18px; padding: 12px 28px; border: 1px solid #edd796; border-radius: 4px; background: #1a3428e6; color: #fff0c7; font: inherit; cursor: pointer; }
+  #victory-replay:hover, #victory-replay:focus-visible { background: #3b583c; outline: 2px solid #fff0c7; outline-offset: 4px; }
+  body.victorious > :not(#scene):not(#victory):not(script) { visibility: hidden !important; }
+  body.victorious #scene { cursor: default; }
+
   :root {
     --ink: #33412e;
     --cream: #fdf7e8;
@@ -399,7 +422,7 @@
     #music, #look, #effects { padding: 8px 10px; }
     .defense-wave { top: max(100px, calc(env(safe-area-inset-top) + 88px)); padding: 7px 14px; min-width: 170px; }
     .defense-stats { top: max(69px, calc(env(safe-area-inset-top) + 57px)); right: 12px; gap: 12px; padding: 5px 9px; font-size: 10px; }
-    #water-status { top: 158px; }
+    #water-status { top: 186px; }
     #controls-help { left: 12px; bottom: calc(var(--bar-bottom) + 88px); }
     #controls-help summary span { display: none; }
     #hi { right: 12px; bottom: calc(var(--bar-bottom) + 88px); padding: 9px 13px; }

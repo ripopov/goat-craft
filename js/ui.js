@@ -41,7 +41,7 @@
   function init() {
     bubbleEl = document.getElementById('bubble');
     defenseEls = {};
-    ['tree-hp', 'tree-health', 'tree-health-fill', 'defense-coins', 'defense-enemies', 'defense-wave', 'defense-status', 'defeat'].forEach(function (id) {
+    ['tree-hp', 'tree-health', 'tree-health-fill', 'defense-coins', 'defense-enemies', 'defense-gates', 'defense-wave', 'defense-status', 'defeat'].forEach(function (id) {
       defenseEls[id] = document.getElementById(id);
     });
     const retry = document.getElementById('defense-retry');
@@ -107,9 +107,10 @@
     text('tree-hp', state.health + ' / ' + state.maxHealth + ' HP');
     text('defense-coins', state.coins);
     text('defense-enemies', state.count + ' / ' + state.maxEnemies);
+    text('defense-gates', (state.gatesDestroyed || 0) + ' / 8');
     const approaches = state.approaches ? ' · ' + state.approaches : '';
     text('defense-wave', state.wave ? 'Wave ' + state.wave + (state.phase === 'combat' ? approaches : '') : 'Prepare your defenses');
-    text('defense-status', state.defeated ? 'The Hearth has fallen' :
+    text('defense-status', state.victorious ? 'All eight gates sealed · Victory!' : state.defeated ? 'The Hearth has fallen' :
       state.phase === 'combat' ? (state.pending ? state.pending + ' incoming' + (state.nextSquad ? ' · squad in ' + state.nextSquad + 's' : '') : 'Clear the remaining enemies') :
       state.wave ? 'Next wave in ' + state.nextWave + 's' + approaches + ' · Q to train' : 'First wave in ' + state.nextWave + 's' + approaches);
     const bar = defenseEls['tree-health'];

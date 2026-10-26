@@ -12,6 +12,7 @@
   let elapsed = 0, wave = 0, nextWave = rules.firstWaveDelay, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
   let plan = wavePlan(1), spawnLanes = [], seaLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
+  let gateRevision = 0, victorious = false;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
   const position = new THREE.Vector3(), scale = new THREE.Vector3();
@@ -446,7 +447,7 @@
 
   function updateHud() {
     const state = getState();
-    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated, state.approaches, state.nextSquad].join('/');
+    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated, state.approaches, state.nextSquad, state.gatesDestroyed, state.victorious].join('/');
     if (key === hudKey) return;
     hudKey = key;
     if (M.ui && M.ui.setDefense) M.ui.setDefense(state);
@@ -455,7 +456,8 @@
     const laneLevel = Number.isFinite(nextWave) ? wave + 1 : wave;
     const lanes = rules.specialWaves[laneLevel]?.delivery === 'boat' ? seaLanes : spawnLanes.concat(seaLanes);
     return { health: tree ? tree.health : 100, maxHealth: 100, coins: coins, count: zombies.length,
-      wave: wave, pending: pending, phase: nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
+      wave: wave, pending: pending, victorious: victorious, gatesDestroyed: M.hellGates.destroyed,
+      phase: victorious ? 'victory' : nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
       maxEnemies: MAX_ENEMIES, approaches: lanes.map(function (lane) { return lane.label; }).join(' / '),
       spawnLanes: lanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
       nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
@@ -501,19 +503,19 @@
     updateHud();
   }
   function startNextWave() {
-    if (!mesh || !tree || tree.health <= 0) return false;
+    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won) return false;
     beginWave();
     return true;
   }
   // Developer shortcut: jump to an exact wave level, forwards or backwards.
   // Living enemies stay in the world; only queued spawns are replaced.
   function startWave(level) {
-    if (!mesh || !tree || tree.health <= 0 || !Number.isSafeInteger(level) || level < 1) return false;
+    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won || !Number.isSafeInteger(level) || level < 1) return false;
     beginWave(level);
     return true;
   }
   function spawnAt(node, type, options) {
-    if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || !node) return null;
+    if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || victorious || M.hellGates.won || !node) return null;
     type = TYPES[type] ? type : 'zombie';
     const def = TYPES[type];
     // Difficulty is locked in at spawn so each enemy keeps its wave's stats.
@@ -863,9 +865,14 @@
     } else zombie.grounded = false;
   }
   function update(dt) {
-    if (!mesh) return;
+    if (!mesh || victorious) return;
     elapsed += dt;
     M.hellGates.update(elapsed);
+    if (M.hellGates.won) { finishVictory(); return; }
+    if (gateRevision !== M.hellGates.destroyed) {
+      gateRevision = M.hellGates.destroyed;
+      prepareSpawns(Number.isFinite(nextWave) ? wave + 1 : wave);
+    }
     digBudget = 32; advanceSignals(dt);
     for (let i = fallen.length - 1; i >= 0; i--) {
       fallen[i].death += dt;
@@ -964,7 +971,7 @@
     scene = options.scene; world = options.world; tree = options.tree;
     // The shared field must clear the widest species as well as the walkers.
     M.hellGates.init(scene, world, tree);
-    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.gates, roads: M.hellGates.roads });
+    navigation = M.zombieNavigation.create(world, tree, { bodyRadius: 0.44, gates: M.hellGates.sites, roads: M.hellGates.roads });
     navigation.rebuild();
     fleet = M.enemyBoats.create(scene, world, tree, navigation, spawnAt);
     prepareSpawns(1);
@@ -999,7 +1006,15 @@
     updateHud();
     return killed;
   }
-  M.enemies = { init: init, update: update,
+  function finishVictory() {
+    if (victorious || !M.hellGates.won || tree.health <= 0) return false;
+    victorious = true; pending = 0; nextWave = Infinity; spawnLanes = []; seaLanes = [];
+    zombies.length = 0; fallen.length = 0; mesh.count = outlineMesh.count = 0;
+    signals.forEach(fx => { fx.ttl = 0; }); advanceSignals(0); mudPools.length = 0;
+    fleet.boats.length = 0; fleet.render();
+    updateHud(); return true;
+  }
+  M.enemies = { init: init, update: update, finishVictory: finishVictory,
     beginFrame: function () { renderDeferred = true; },
     syncRender: function () { renderDeferred = false; render(elapsed); },
     attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,

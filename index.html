@@ -28,8 +28,19 @@
       <div id="tree-health" role="progressbar" aria-label="Hearth Tree health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="tree-health-fill"></div></div>
     </div>
     <div class="defense-stats"><span><i class="coin-symbol" aria-hidden="true"></i><b id="defense-coins">0</b> coins</span><span>Enemies <b id="defense-enemies">0 / 200</b></span></div>
-    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First wave in 10s</span></div>
+    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First wave in 10s</span>
+      <div class="gate-objective">Seal the Oblivion gates <b id="defense-gates">0 / 8</b><small>Four gates. Two lives each. Towers can shatter them.</small></div>
+    </div>
   </aside>
+  <section id="victory" aria-labelledby="victory-title" hidden>
+    <div class="victory-card" role="status" aria-live="polite">
+      <span class="victory-sigil" aria-hidden="true">✦</span>
+      <p class="victory-eyebrow">VICTORY · ALL EIGHT GATES SEALED</p>
+      <h2 id="victory-title">The Hearth endures</h2>
+      <p>The last rift is silent. Your forest is free.</p>
+      <button id="victory-replay" type="button" hidden>Defend again</button>
+    </div>
+  </section>
   <div id="defeat" role="dialog" aria-modal="false" aria-labelledby="defeat-title" hidden>
     <span class="defeat-ember" aria-hidden="true">♥</span>
     <h2 id="defeat-title">The Hearth has fallen</h2>
@@ -131,6 +142,7 @@
 <script src="js/animal-style.js"></script>
 <script src="js/goat.js"></script>
 <script src="js/ocean-horror.js"></script>
+<script src="js/victory.js"></script>
 <script src="js/animal-recovery.js"></script>
 <script src="js/animal-navigation.js"></script>
 <script src="js/animal-models.js"></script>

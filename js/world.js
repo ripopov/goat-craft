@@ -557,6 +557,14 @@
     });
   }
 
+  // Objective structures own their collision until their combat controller
+  // destroys them. Mining still cannot remove permanent roads or plinths.
+  function removePermanentBlocks(cells) {
+    cells.forEach(function (cell) {
+      if (permanentBlocks.delete(blockKey(cell.bx, cell.by, cell.bz))) recordChange(cell.bx, cell.bz);
+    });
+  }
+
   function propKindAt(bx, by, bz) {
     if (by < 0) return null;
     const permanent = permanentBlocks.get(blockKey(bx, by, bz));
@@ -1518,7 +1526,8 @@
       chunks.forEach(function (ch, key) {
         const home = M.hearthTree && M.hearthTree.position;
         const gateNearby = M.hellGates && M.hellGates.gates.some(gate => Math.abs(ch.cx - Math.floor(gate.x / CHUNK_SIZE)) <= 1 && Math.abs(ch.cz - Math.floor(gate.z / CHUNK_SIZE)) <= 1);
-        const retained = gateNearby || permanentChunks.has(key) || home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
+        const towerNearby = M.towers && M.towers.list.some(tower => Math.abs(ch.cx - Math.floor(tower.position.x / CHUNK_SIZE)) <= 1 && Math.abs(ch.cz - Math.floor(tower.position.z / CHUNK_SIZE)) <= 1);
+        const retained = gateNearby || towerNearby || permanentChunks.has(key) || home && Math.abs(ch.cx - Math.floor(home.x / CHUNK_SIZE)) <= 2 &&
           Math.abs(ch.cz - Math.floor(home.z / CHUNK_SIZE)) <= 2;
         if (!retained && (Math.abs(ch.cx - pcx) > RENDER_RADIUS + 1 || Math.abs(ch.cz - pcz) > RENDER_RADIUS + 1)) {
           worldGroup.remove(ch.group);
@@ -2019,6 +2028,7 @@
     findBreakableNear: findBreakableNear,
     blockInfoAt: blockInfoAt,
     addPermanentBlocks: addPermanentBlocks,
+    removePermanentBlocks: removePermanentBlocks,
     topSoilInfo: topSoilInfo,
     isPlacedBlock: isPlacedBlock,
     isWaterColumn: isWaterColumn,

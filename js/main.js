@@ -76,6 +76,7 @@
   M.highlights.init(scene);
   M.towers.init(scene);
   M.strategy.init(scene, camera);
+  M.victory.init({ scene: scene, camera: camera, tree: M.hearthTree });
 
   M.controls.snapTo(M.goat.group.position);
   M.items.refreshHeld();
@@ -144,6 +145,18 @@
 
   function frame() {
     const dt = Math.min(clock.getDelta(), 0.1);
+    M.victory.check();
+    if (M.victory.active) {
+      accumulator = 0;
+      if (document.hidden) { M.music.update(dt, { paused: true }); return; }
+      elapsed += dt;
+      M.world.update(M.hearthTree.position, dt, elapsed);
+      M.hellGates.update(elapsed); M.hearthTree.update(dt, elapsed); M.towers.update(dt);
+      M.environment.update(camera, M.goat.group, 0, elapsed);
+      M.victory.update(dt); caveLight.intensity = 0;
+      M.audio.setListener(camera); M.music.update(dt, { paused: true });
+      renderer.render(scene, camera); return;
+    }
     if (M.oceanHorror.active) {
       if (!document.hidden) renderOceanCutscene(dt);
       return;
@@ -161,6 +174,7 @@
       if (M.oceanHorror.check()) break;
       M.enemies.update(STEP, elapsed);
       M.towers.update(STEP, true);
+      if (M.victory.check()) break;
       M.items.update(STEP, elapsed, M.goat.group);
       M.animals.update(STEP, elapsed, M.goat.group);
       accumulator -= STEP;
@@ -172,7 +186,7 @@
       M.enemies.syncRender();
       M.towers.syncRender();
     }
-    M.world.update(M.goat.group.position, dt, elapsed);
+    M.world.update(M.strategy.active ? M.strategy.focus : M.goat.group.position, dt, elapsed);
     M.controls.update(dt, elapsed, M.goat.group, M.goat.state, M.world);
     M.strategy.update(dt);
     M.hearthTree.update(dt, elapsed);

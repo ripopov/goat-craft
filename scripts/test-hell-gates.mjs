@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { game } from './helpers/animal-game.mjs';
 
-test('four permanent forest gates have dry ground routes, collision and protected openings', () => {
+test('four starting forest gates have dry ground routes, collision and protected openings', () => {
   const { M, THREE, scene } = game({ renderRadius: 3 });
   const { gates, cells, roads, roadCells } = M.hellGates, world = M.world, nav = M.enemies.navigation;
   assert.equal(gates.length, 4);
@@ -16,9 +16,9 @@ test('four permanent forest gates have dry ground routes, collision and protecte
     assert.equal(world.canPlaceBlock(gate.bx, gate.by, gate.bz), false);
     assert.equal(world.navigationBlockedAt(gate.x, gate.z, gate.y + .01, gate.y + 2.8), false);
   }
-  assert.equal(roads.length, 4);
+  assert.equal(roads.length, 8);
   for (const road of roads) {
-    const gate = gates.find(g => g.id === road.gateId), path = road.path;
+    const gate = M.hellGates.sites.find(g => g.id === road.gateId), path = road.path;
     assert.equal(path[0].bx, gate.bx); assert.equal(path[0].bz, gate.bz);
     assert.ok(Math.hypot(path.at(-1).bx * 2 + 1, path.at(-1).bz * 2 + 1) < 10);
     const dx = path.at(-1).bx - gate.bx, dz = path.at(-1).bz - gate.bz;
@@ -97,7 +97,7 @@ test('four permanent forest gates have dry ground routes, collision and protecte
   for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
   world.update(new THREE.Vector3(600, 14, 600), .05, 1);
   for (const c of [...cells, ...roadCells]) assert.equal(world.blockInfoAt(c.bx, c.by, c.bz).unbreakable, true);
-  assert.equal(scene.getObjectByName('Living hell gate portals').count, 4);
+  assert.equal(M.hellGates.sites.filter(g => g.group.visible).length, 4);
 });
 
 test('ground arrivals use gates while boats and parachutes retain separate delivery', () => {
@@ -140,4 +140,101 @@ test('ground arrivals use gates while boats and parachutes retain separate deliv
   }
   assert.equal(species.size, Object.keys(enemies.types).length - 2);
   assert.ok(usedGates.size === 4); assert.ok(air); assert.ok(worm); assert.ok(sea);
+});
+
+test('all tower weapons damage gates on contact, each lane retreats once, and eight kills end the siege', () => {
+  const { M, THREE, scene, load, context } = game({ seed: 17, renderRadius: 0 });
+  const gates = M.hellGates, first = gates.gates[0], initial = gates.gates.slice();
+  const bossHp = M.enemyRules.healthForWave('boss', M.enemyRules.types.boss.unlock);
+  assert.equal(first.hp, bossHp * 100);
+  assert.equal(first.successor.hp, bossHp * 200);
+  for (const gate of initial) {
+    const next = gate.successor;
+    assert.ok(Math.abs(Math.hypot(next.x, next.z) - Math.hypot(gate.x, gate.z) - 100) < 1.5, '50 two-unit blocks farther from the Hearth');
+    assert.equal(next.group.visible, false);
+    assert.equal(M.world.blockInfoAt(next.blocks[0].bx, next.blocks[0].by, next.blocks[0].bz), null, 'dormant frame has no collision');
+  }
+  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  M.enemies.addCoins(10000);
+  for (const kind of ['log', 'stone', 'dirt', 'coal', 'iron', 'copper']) M.items.addItem(kind, 1000);
+  const road = gates.roads.find(r => r.gateId === first.id);
+  for (const c of road.path) if (Math.hypot(c.bx * 2 + 1 - first.x, c.bz * 2 + 1 - first.z) < 20)
+    M.world.update(new THREE.Vector3(c.bx * 2 + 1, c.top * 2, c.bz * 2 + 1), 0, 0);
+  const advance = seconds => { for (let i = 0; i < seconds * 60; i++) M.towers.update(1 / 60); };
+  let site;
+  for (const def of M.towers.definitions) {
+    site = road.path.find(c => {
+      const distance = Math.hypot(c.bx * 2 + 1 - first.x, c.bz * 2 + 1 - first.z);
+      return distance > 9 && distance < 14 && M.towers.site(def.id, c.bx, c.top, c.bz).valid;
+    });
+    assert.ok(site, def.id + ' can deploy a forward siege tower');
+    const tower = M.towers.place(def.id, site.bx, site.top, site.bz); assert.ok(tower);
+    const before = first.hp;
+    M.towers.update(.25);
+    assert.equal(first.hp, before, def.id + ' launch does not damage the gate');
+    advance(3);
+    assert.ok(first.hp < before, def.id + ' projectile hits the gate');
+    assert.ok(first.flash > 0, def.id + ' triggers portal and stone hit feedback');
+    M.towers.dismantle(tower); advance(5);
+  }
+  // An actual bolt, rather than a test-only damage call, earns the first kill.
+  const tower = M.towers.place('ballista', site.bx, site.top, site.bz); assert.ok(tower);
+  first.hp = 1; advance(3);
+  assert.equal(first.active, false); assert.equal(first.hp, 0); assert.equal(gates.destroyed, 1);
+  assert.equal(gates.gates.length, 4); assert.ok(gates.gates.includes(first.successor));
+  assert.equal(first.successor.active, true); assert.equal(first.successor.hp, bossHp * 200);
+  for (const c of first.blocks) assert.equal(M.world.blockInfoAt(c.bx, c.by, c.bz), null, 'shattered frame loses collision');
+  for (const c of first.successor.blocks) assert.equal(M.world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
+  assert.equal(gates.damage(first, 1000000), false, 'stale projectiles cannot create a third gate');
+  M.enemies.update(.05);
+  const next = first.successor;
+  assert.ok(Number.isFinite(M.enemies.navigation.nodeAt(next.x, next.y, next.z)?.distance), 'replacement has a live route');
+  assert.ok(!M.enemies.getState().spawnLanes.some(lane => lane.x === first.x && lane.z === first.z), 'queued lanes abandon the dead gate');
+  gates.update(3); assert.equal(first.group.visible, false, 'collapse animation finishes');
+  M.towers.dismantle(tower);
+  const nextRoad = gates.roads.find(r => r.gateId === next.id);
+  for (const c of nextRoad.path) if (Math.hypot(c.bx * 2 + 1 - next.x, c.bz * 2 + 1 - next.z) < 20)
+    M.world.update(new THREE.Vector3(c.bx * 2 + 1, c.top * 2, c.bz * 2 + 1), 0, 0);
+  const forward = nextRoad.path.find(c => Math.hypot(c.bx * 2 + 1 - next.x, c.bz * 2 + 1 - next.z) > 9 &&
+    Math.hypot(c.bx * 2 + 1 - next.x, c.bz * 2 + 1 - next.z) < 14 && M.towers.site('ballista', c.bx, c.top, c.bz).valid);
+  assert.ok(forward, 'the expanded build area reaches the final gate');
+  const siege = M.towers.place('ballista', forward.bx, forward.top, forward.bz); assert.ok(siege);
+  const nextHp = next.hp; advance(3); assert.ok(next.hp < nextHp, 'replacement gates take real projectile damage');
+  M.towers.dismantle(siege);
+  M.enemies.startWave(4);
+  assert.ok(M.enemies.spawnAt({ x: 17, y: 14, z: 17 }));
+  for (const gate of initial.slice(1)) gates.damage(gate, gate.hp);
+  for (const gate of gates.gates.slice(0, 3)) gates.damage(gate, gate.hp);
+  assert.equal(gates.destroyed, 7); assert.equal(gates.won, false);
+  const last = gates.gates[0]; gates.damage(last, last.hp);
+  assert.equal(gates.destroyed, 8); assert.equal(gates.won, true); assert.equal(gates.gates.length, 0);
+
+  const elements = new Map(), listeners = {}, classes = new Set(); let reloads = 0;
+  for (const id of ['victory', 'victory-replay']) elements.set(id, { hidden: true, style: { setProperty() {} }, focus() { this.focused = true; },
+    addEventListener(type, fn) { this[type] = fn; } });
+  context.document.getElementById = id => elements.get(id);
+  context.document.body = { classList: { add: value => classes.add(value) } };
+  context.window.addEventListener = (type, fn) => { listeners[type] = fn; };
+  context.window.location = { reload: () => reloads++ };
+  M.controls = { stopSteering() {}, suspendLook() {} };
+  load('js/victory.js');
+  const camera = new THREE.PerspectiveCamera(42, .46, .1, 400); camera.position.set(last.x, last.y + 5, last.z);
+  M.victory.init({ scene, camera, tree: M.hearthTree });
+  assert.equal(M.victory.check(), true); assert.equal(M.victory.check(), false);
+  assert.equal(M.enemies.getState().victorious, true); assert.equal(M.enemies.getState().pending, 0);
+  assert.equal(M.enemies.zombies.length, 0); assert.equal(M.enemies.startNextWave(), false);
+  assert.equal(M.enemies.spawnAt({ x: 17, y: 14, z: 17 }), null);
+  const health = M.hearthTree.health; M.enemies.update(100); assert.equal(M.hearthTree.health, health);
+  let blocked = 0;
+  listeners.keydown({ key: 'q', target: { id: 'victory-replay' }, preventDefault() { blocked++; }, stopImmediatePropagation() { blocked++; } });
+  assert.equal(blocked, 2);
+  M.victory.update(3); assert.equal(elements.get('victory-replay').hidden, true);
+  M.victory.update(3); assert.equal(elements.get('victory-replay').hidden, false);
+  assert.equal(elements.get('victory-replay').focused, true);
+  assert.ok(classes.has('victorious')); assert.equal(elements.get('victory').hidden, false);
+  assert.ok(camera.position.toArray().every(Number.isFinite));
+  assert.ok(scene.getObjectByName('Hearth victory celebration'));
+  M.config.reducedMotion = true; M.victory.update(.1);
+  assert.ok(camera.position.toArray().every(Number.isFinite));
+  elements.get('victory-replay').click(); assert.equal(reloads, 1);
 });

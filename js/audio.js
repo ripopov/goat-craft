@@ -564,7 +564,8 @@
   function cue(kind) {
     nearby(null, 1, 'cue-' + kind, kind === 'damage' ? 1 : 0.5, function (voice, when) {
       duckMusic(kind === 'damage' ? .55 : .4, kind === 'defeat' ? 2.5 : 1.1);
-      const notes = kind === 'wave' ? [293.66, 440, 329.63, 587.33] : kind === 'clear' ? [587.33, 659.25, 880, 1174.66] :
+      const notes = kind === 'victory' ? [392, 493.88, 587.33, 783.99, 987.77, 1174.66, 1567.98] :
+        kind === 'wave' ? [293.66, 440, 329.63, 587.33] : kind === 'clear' ? [587.33, 659.25, 880, 1174.66] :
         kind === 'defeat' ? [293.66, 261.63, 220, 146.83] : [196, 146.83];
       notes.forEach(function (frequency, i) {
         const at = when + i * (kind === 'damage' ? .11 : .14);

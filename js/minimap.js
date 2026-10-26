@@ -47,7 +47,7 @@
       if (p.outside) { ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, kind === 'tree' ? 7.5 : 5, 0, Math.PI * 2); ctx.stroke(); }
       ctx.restore();
     }
-    if (M.hellGates) M.hellGates.gates.forEach(gate => marker(gate, '#ff603d', 'gate'));
+    if (M.hellGates) M.hellGates.gates.forEach(gate => marker(gate, gate.stage === 2 ? '#d38cff' : '#ff603d', 'gate'));
     let coinStacks = 0;
     const defense = M.enemies.getState ? M.enemies.getState() : null;
     const approaches = defense && !defense.defeated && (defense.pending > 0 || defense.phase !== 'combat') ? defense.spawnLanes : [];
@@ -72,7 +72,7 @@
     ctx.fillStyle = '#afc4a5'; ctx.font = '9px system-ui, sans-serif'; ctx.fillText(RANGE + 'm', 0, radius - 8);
     ctx.restore();
     ctx.strokeStyle = '#d4c58999'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(center, center, radius, 0, Math.PI * 2); ctx.stroke();
-    canvas.setAttribute('aria-label', 'Minimap, north up, player centered. ' + M.enemies.zombies.length + ' enemies: red ground dots, lavender air triangles, amber burrow bars, cyan boats and gold boss stars; ' + M.animals.list.length + ' animals in green, ' + coinStacks + ' coin stacks as gold dots, Hearth as a gold diamond, starter cave in cyan. Red horned arches mark permanent hell gates. Amber warning triangles mark incoming enemy approaches. Rings at the edge mark locations outside the 80 meter range.');
+    canvas.setAttribute('aria-label', 'Minimap, north up, player centered. ' + M.enemies.zombies.length + ' enemies: red ground dots, lavender air triangles, amber burrow bars, cyan boats and gold boss stars; ' + M.animals.list.length + ' animals in green, ' + coinStacks + ' coin stacks as gold dots, Hearth as a gold diamond, starter cave in cyan. Red horned arches mark starting gates; violet arches mark their final forms. Amber warning triangles mark incoming enemy approaches. Rings at the edge mark locations outside the 80 meter range.');
   }
   function init() {
     canvas = document.getElementById('minimap'); context = canvas && canvas.getContext('2d');

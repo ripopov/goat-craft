@@ -324,11 +324,13 @@
     if (enemy.airborne) {
       enemy.mode = 'air'; enemy.moving = false;
       const water = world.waterInfoAtBlock && world.waterInfoAtBlock(Math.floor(p.x / SIZE), Math.floor(p.z / SIZE));
-      const floor = Math.max(world.landingHeight(p.x, p.z, p.y + .01), water && water.depth > 1.3 ? water.level - physics.swimDepth(enemy.body) : 0);
+      const floor = Math.max(physics.support(world, p, p.y + .01, enemy.body),
+        water && water.depth > 1.3 ? water.level - physics.swimDepth(enemy.body) : -Infinity);
+      if (Number.isFinite(floor)) enemy.landingY = floor;
       const next = Math.max(floor, p.y - 3.8 * dt);
-      if (p.y > floor + .01) physics.moveVertical(world, p, enemy.body, next);
-      if (p.y <= floor + .02 || next <= floor) {
-        p.y = floor; enemy.landingY = floor; enemy.airborne = false; enemy.grounded = true;
+      const clear = p.y <= floor + .01 || physics.moveVertical(world, p, enemy.body, next);
+      if (p.y <= floor + .02 || !clear) {
+        enemy.landingY = p.y; enemy.airborne = false; enemy.grounded = true;
         enemy.recoverTime = .9; enemy.mode = 'recover'; enemy.target = null;
         signal('land', p, 1.15, .45); sound('parachute', 'land', p);
       }
@@ -537,11 +539,68 @@
       sound('worm', 'dig', new THREE.Vector3(node.x, zombie.surfaceY, node.z));
     }
     if (options && options.airborne) {
-      zombie.airborne = true; zombie.landingY = node.y; zombie.position.y += 16;
-      zombie.grounded = false; zombie.mode = 'air';
-      signal('air', new THREE.Vector3(node.x, node.y, node.z), 1.2, 12, zombie); sound('parachute', 'open', zombie.position);
+      deployParachute(zombie, node);
     }
     return zombie;
+  }
+  function deployParachute(enemy, landing) {
+    for (let i = signals.length - 1; i >= 0; i--) if (signals[i].owner === enemy) {
+      scene.remove(signals[i].group); signals.splice(i, 1);
+    }
+    enemy.position.set(landing.x, landing.y + 16, landing.z);
+    enemy.airborne = true; enemy.landingY = landing.y;
+    enemy.grounded = false; enemy.mode = 'air'; enemy.moving = false; enemy.vy = 0;
+    signal('air', new THREE.Vector3(landing.x, landing.y, landing.z), 1.2, 12, enemy);
+    sound('parachute', 'open', enemy.position);
+  }
+  function voidLandingPoint(enemy) {
+    const clearance = { ...enemy.body, height: 16 + Math.max(5.6, enemy.body.height) };
+    const nearby = [], outer = [];
+    for (const node of navigation.nodes) {
+      const distance = Math.hypot(node.x - tree.position.x, node.z - tree.position.z);
+      // Stay well outside the core. If defenses occupy the entire first band,
+      // look farther out rather than dropping directly beside the objective.
+      if (distance < 24 || distance > 48 || node.swim || world.waterDepthAt(node.x, node.z) >= .3 ||
+          node.y < surfaceAt(node.x, node.z, node.y) - .01) continue;
+      (distance <= 32 ? nearby : outer).push(node);
+    }
+    for (const sites of [nearby, outer]) {
+      const reachable = sites.filter(node => Number.isFinite(node.distance));
+      for (const pool of [reachable, sites]) {
+        const start = Math.floor(Math.random() * pool.length);
+        let crowded = null;
+        // Validate random sites lazily: a mass fall should not sweep every
+        // landing column for every member of the horde before choosing one.
+        for (let i = 0; i < pool.length; i++) {
+          const node = pool[(start + i) % pool.length];
+          if (Math.abs(physics.support(world, node, node.y + .01, enemy.body) - node.y) > .02 ||
+              !physics.clear(world, node.x, node.y, node.z, clearance)) continue;
+          if (!zombies.some(other => other !== enemy &&
+              Math.hypot(other.position.x - node.x, other.position.z - node.z) < 2)) return node;
+          if (!crowded) crowded = node;
+        }
+        if (crowded) return crowded;
+      }
+    }
+    return null;
+  }
+  function returnFromVoid(enemy) {
+    if (enemy.position.y > -3 * SIZE || elapsed < (enemy.voidRetry || 0)) return false;
+    const landing = voidLandingPoint(enemy);
+    if (!landing) { enemy.voidRetry = elapsed + 1; return false; }
+    // Reuse the living actor: no healing, loot, extra wave member or cap slot.
+    // Cancel old routes, casts and transport before opening the new parachute.
+    Object.assign(enemy, { path: null, target: null, jump: null, retry: 0, stuck: 0,
+      bite: 0, blockBite: 0, blockKey: '', charge: 0, snareTarget: null,
+      swimming: false, swimBlend: 0, shoreJump: 0, shoreTarget: null,
+      boat: null, boatExit: null, burrowed: false, recoverTime: 0, voidRetry: 0,
+      stride: 0, eatBlend: 0, progressAt: elapsed,
+      bestTreeDistance: Math.hypot(landing.x - tree.position.x, landing.z - tree.position.z) });
+    if (M.towers) for (const tower of M.towers.list) if (tower.snareOwner === enemy) {
+      tower.snareOwner = null; tower.snareTime = 0;
+    }
+    deployParachute(enemy, landing);
+    return true;
   }
   function spawn() {
     const type = typeForWave(wave, waveSpawned);
@@ -839,8 +898,10 @@
     fleet.update(dt);
     zombies.forEach(function (zombie) {
       zombie.flash = Math.max(0, zombie.flash - dt); zombie.retry -= dt;
-      if (specialMovement(zombie, dt)) return;
+      if (returnFromVoid(zombie)) return;
+      if (specialMovement(zombie, dt)) { returnFromVoid(zombie); return; }
       updatePhysics(zombie, dt);
+      if (returnFromVoid(zombie)) return;
       if ((zombie.grounded || zombie.swimming) && navigation.contact(zombie.position.x, zombie.position.y, zombie.position.z)) {
         zombie.mode = 'tree'; zombie.moving = false; zombie.blockBite = 0;
         zombie.yaw = turnToward(zombie.yaw, Math.atan2(tree.position.x - zombie.position.x, tree.position.z - zombie.position.z), dt * 5);

@@ -82,11 +82,18 @@
     const probe = body.radius + size * 0.85;
     const x = position.x + dir.x * probe;
     const z = position.z + dir.z * probe;
-    const top = world.supportHeight(x, z, position.y + size + 0.1);
+    const physics = M.actorPhysics;
+    const top = physics ? physics.support(world, { x, z }, position.y + size + .1, body) : world.supportHeight(x, z, position.y + size + .1);
     const rise = top - position.y;
-    if (rise <= 0.12 || rise > size + 0.12) return null;
-    if (!canStand(x, z, top)) return null;
-    if (world.blockedAt(position.x, position.z, position.y + body.height - 0.08, top + body.height + 0.12)) return null;
+    if (rise <= 0.12 || rise > size + 0.12 || !canStand(x, z, top)) return null;
+    if (M.hearthTree && M.hearthTree.boxSupportHeight &&
+        M.hearthTree.boxSupportHeight(x, z, body.radius, top + .01) > position.y + .1) return null;
+    if (world.blockedAt(position.x, position.z, position.y + body.height - 0.08, top + body.height + 0.05)) return null;
+    if (physics) {
+      for (let y = position.y; y <= top + .05; y += .2) if (!physics.clear(world, position.x, y, position.z, body)) return null;
+      for (let k = 0; k <= 1.001; k += .1) if (!physics.clear(world,
+        position.x + (x - position.x) * k, top + .05, position.z + (z - position.z) * k, body)) return null;
+    }
     return { x: x, z: z, top: top };
   }
 

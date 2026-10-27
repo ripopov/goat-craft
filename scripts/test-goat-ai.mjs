@@ -49,7 +49,7 @@ test('routes around a tall wall and collects without mining it', () => {
   assert.ok(M.world.blockInfoAt(9,7,7), 'does not destroy defenses');
 });
 
-test('bounded search skips sealed loot and ignores distant lures', () => {
+test('bounded search skips sealed loot', () => {
   const { M, advance } = fixture();
   for (let x = 10; x <= 12; x++) for (let z = 6; z <= 8; z++) {
     if (x === 11 && z === 7) continue;
@@ -59,9 +59,6 @@ test('bounded search skips sealed loot and ignores distant lures', () => {
   M.items.dropCoins({ x: 15, y: 14, z: 22 }, 2);
   advance(8);
   assert.equal(M.enemies.getState().coins, 2, 'unreachable nearest loot cannot monopolize the goat');
-  M.items.dropCoins({ x: 150, y: 14, z: 150 }, 20);
-  advance(4);
-  assert.ok(Math.hypot(M.goat.group.position.x, M.goat.group.position.z) < 40);
 });
 
 test('jumps a one-block obstacle, survives frame rates and replans construction changes', () => {
@@ -350,4 +347,28 @@ test('failed mining attempts cannot reset the recovery clock forever', () => {
   advance(15);
   assert.ok(attempts>0,'attempts actual mining before using the last-resort fallback');
   assert.ok(p.y>=14,'a failed cut does not cause an endless escape animation');
+});
+
+test('coins have no Hearth-distance leash and a long trip continues across route budgets', () => {
+  const { M,pilot }=navigationFixture(),p={x:12,y:14,z:0};
+  const coin={position:{x:2000,y:14.65,z:0},userData:{drop:{kind:'coin'}}};
+  M.items.drops=[coin];
+  for(let i=0;i<1200;i++) {
+    const command=pilot.update(.25,p,{grounded:true},8.4);
+    assert.equal(command.mode,'collect','distant loot remains a valid objective');
+    assert.ok(!command.rescue);
+    if(command.waypoint) Object.assign(p,command.waypoint);
+    if(Math.hypot(p.x-coin.position.x,p.z-coin.position.z)<.8) break;
+  }
+  assert.ok(Math.hypot(p.x-coin.position.x,p.z-coin.position.z)<.8,'reaches loot far beyond the former 30-unit cap');
+  M.items.drops=[];
+  assert.equal(pilot.update(.25,p,{grounded:true},8.4).mode,'guard','returns toward the Hearth after the coin is collected');
+});
+
+test('strategic goat physically collects a real drop beyond the former coin radius', () => {
+  const { M,advance }=fixture();
+  const point={x:43,y:M.world.surfaceHeight(43,15),z:15};
+  M.items.dropCoins(point,7);
+  advance(15);
+  assert.equal(M.enemies.getState().coins,7,'distant coin is credited through normal pickup');
 });

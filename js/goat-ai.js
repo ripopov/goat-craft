@@ -110,7 +110,7 @@
       // attacker while a coin route is already committed.
       const result = threats.map(e => ({ kind: 'defend', ref: e, position: e.position, range }));
       if (!threats.length) {
-        const coins = (M.items ? M.items.drops : []).filter(d => d.userData.drop.kind === 'coin' && distance(d.position, home) <= 30);
+        const coins = (M.items ? M.items.drops : []).filter(d => d.userData.drop.kind === 'coin');
         coins.sort((a, b) => distance(a.position, p) - distance(b.position, p));
         coins.forEach(c => result.push({ kind: 'collect', ref: c, position: c.position }));
       }

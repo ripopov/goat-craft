@@ -149,3 +149,134 @@ test('a hunter clears an obstacle and resumes attacking its zombie', () => {
   assert.equal(animal.state.recovery.rescues, 0);
   assert.ok(clearBody(M, animal));
 });
+
+test('all four NPC bodies route around short walls without jumping, excavation or rescue', () => {
+  const { M,place }=isolatedAnimal();
+  M.goat.group.position.set(-30,14,-30);
+  for(let z=5;z<=9;z++) place(9,z,7,9);
+  const revision=M.world.revision;
+  for(const animal of M.animals.list) {
+    for(const [i,other] of M.animals.list.entries()) {
+      other.group.position.set(-24+i*3,14,-24);
+      Object.assign(other.state,{mode:'idle',wait:1000,retired:true,pitTimer:1000,buildTimer:1000});
+    }
+    const p=animal.group.position,s=animal.state;
+    p.set(15,14,15);s.target.set(25,14,15);
+    Object.assign(s,{mode:'walk',grounded:true,vy:0,speed:0,navigation:null,escape:null,detourTarget:null,detourTime:0,jumpReason:null});
+    let arrived=false;
+    for(let i=0;i<600;i++) {
+      M.animals.update(.05,i*.05);
+      assert.ok(clearBody(M,animal));
+      if(Math.hypot(p.x-25,p.z-15)<.4) {arrived=true;break;}
+    }
+    assert.ok(arrived,animal.name+' goes around the wall: '+JSON.stringify(p));
+    assert.equal(s.jumpReason,null,animal.name+' never jumps at a tall wall');
+    assert.equal(s.recovery.rescues,0);
+    assert.equal(M.world.revision,revision,'routing leaves the wall intact');
+  }
+});
+
+test('a concave wall requires an initial retreat instead of oscillating into its corners', () => {
+  const { M,animal,place,walkTo,advanceUntil }=isolatedAnimal();
+  M.goat.group.position.set(-30,14,-30);
+  for(let x=7;x<=10;x++) {place(x,6,7,9);place(x,9,7,9);}
+  for(let z=7;z<=8;z++) place(10,z,7,9);
+  animal.group.position.set(17,14,15);walkTo(27,15);
+  const revision=M.world.revision;
+  assert.ok(advanceUntil(30,()=>Math.hypot(animal.group.position.x-27,animal.group.position.z-15)<.4),JSON.stringify(animal.group.position));
+  assert.equal(M.world.revision,revision,'walks out of the open end instead of digging');
+  assert.equal(animal.state.recovery.rescues,0);
+});
+
+test('an impossible wander point inside the Hearth is abandoned without repeated jumping', () => {
+  const { M,animal,walkTo,advance }=isolatedAnimal();
+  animal.group.position.set(10,14,0);walkTo(0,0);
+  const revision=M.world.revision;
+  advance(1.5);
+  assert.equal(animal.state.mode,'idle');
+  assert.equal(animal.state.jumpReason,null);
+  assert.equal(animal.state.escape,null);
+  assert.equal(animal.state.recovery.rescues,0);
+  assert.equal(M.world.revision,revision);
+});
+
+test('construction across a committed wall detour triggers a fresh route', () => {
+  const { M,animal,place,walkTo,advance,advanceUntil }=isolatedAnimal();
+  M.goat.group.position.set(-30,14,-30);
+  for(let z=5;z<=9;z++) place(9,z,7,9);
+  animal.group.position.set(15,14,15);walkTo(25,15);
+  advance(.2);
+  const route=animal.state.navigation.path;
+  assert.ok(route && route.length>2);
+  const crossing=route.find(n=>n.x>=19 && (n.z<10 || n.z>20));
+  assert.ok(crossing);
+  place(9,Math.floor(crossing.z/2),7,9);
+  const revision=M.world.revision;
+  assert.ok(advanceUntil(30,()=>Math.hypot(animal.group.position.x-25,animal.group.position.z-15)<.4),JSON.stringify(animal.group.position));
+  assert.equal(M.world.revision,revision,'replans without mining the newly placed block');
+  assert.equal(animal.state.recovery.rescues,0);
+});
+
+test('stationary combat is useful work, not a stuck movement request', () => {
+  const { M,animal,advance }=isolatedAnimal('Bramble');
+  animal.group.position.set(17,14,1);
+  const enemy=M.enemies.spawnAt({x:23,y:14,z:1});enemy.hp=500;
+  const start=animal.group.position.clone();
+  advance(12);
+  assert.ok(enemy.hp<500,'continues attacking');
+  assert.ok(animal.group.position.distanceTo(start)<.2,'holds its combat position');
+  assert.equal(animal.state.escape,null);
+  assert.equal(animal.state.jumpReason,null);
+  assert.equal(animal.state.recovery.rescues,0);
+});
+
+test('a wall beside the Hearth uses the same terrain routing instead of jumping into roots', () => {
+  const { M,animal,place,walkTo,advanceUntil }=isolatedAnimal();
+  M.goat.group.position.set(-30,14,-30);
+  for(let z=-4;z<=4;z++) place(4,z,7,10);
+  animal.group.position.set(12,14,0);walkTo(-12,0);
+  const revision=M.world.revision;
+  assert.ok(advanceUntil(50,()=>Math.hypot(animal.group.position.x+12,animal.group.position.z)<.4),JSON.stringify(animal.group.position));
+  assert.equal(animal.state.jumpReason,null);
+  assert.equal(animal.state.recovery.rescues,0);
+  assert.equal(M.world.revision,revision);
+});
+
+test('the slower builder follows wall routes at low and high update rates', () => {
+  const { M,animal,place,walkTo }=isolatedAnimal('Clover');
+  M.goat.group.position.set(-30,14,-30);
+  for(let z=5;z<=9;z++) place(9,z,7,9);
+  for(const hz of [20,144]) {
+    animal.group.position.set(15,14,15);
+    Object.assign(animal.state,{grounded:true,vy:0,speed:0,navigation:null,escape:null,detourTarget:null,detourTime:0});
+    walkTo(25,15);
+    let arrived=false;
+    for(let i=0;i<hz*30;i++) {
+      M.animals.update(1/hz,i/hz);
+      if(Math.hypot(animal.group.position.x-25,animal.group.position.z-15)<.4){arrived=true;break;}
+    }
+    assert.ok(arrived,'reaches the goal at '+hz+' Hz');
+    assert.equal(animal.state.recovery.rescues,0);
+  }
+});
+
+test('hunters skip a target inside solid wood and keep attacking reachable enemies', () => {
+  const { M,animal,advance }=isolatedAnimal('Bramble');
+  M.goat.group.position.set(-30,14,-30);
+  animal.group.position.set(10,14,0);
+  const blocked=M.enemies.spawnAt({x:11,y:14,z:0});blocked.position.set(0,14,0);
+  const reachable=M.enemies.spawnAt({x:18,y:14,z:8});
+  advance(10);
+  assert.ok(reachable.hp<reachable.maxHp || !M.enemies.zombies.includes(reachable));
+  assert.equal(animal.state.jumpReason,null);
+  assert.equal(animal.state.recovery.rescues,0);
+});
+
+test('strategic coin expeditions do not relocate the working herd away from the Hearth', () => {
+  const { M,animal,advance }=isolatedAnimal('Clover');
+  animal.group.position.set(17,14,1);
+  const start=animal.group.position.clone();
+  M.strategy={active:true}; M.goat.group.position.set(200,14,200);
+  advance(1);
+  assert.ok(animal.group.position.distanceTo(start)<.1,'keeps its Hearth position while the goat is away');
+});

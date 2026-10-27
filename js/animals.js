@@ -179,12 +179,21 @@
   function moveAnimal(animal, dx, dz, yaw) {
     const s = animal.state;
     const p = animal.group.position;
-    if (navigation && !s.swimming && s.grounded && ['walk', 'hunt', 'seekBreak', 'seekPlace'].includes(s.mode)) {
+    if (navigation && !s.swimming && s.shoreJump <= 0 && ['walk', 'hunt', 'seekBreak', 'seekPlace'].includes(s.mode)) {
       const motion = recoveryMotion(animal, true);
       if (motion) {
-        const target = navigation.waypoint(p, motion.target, bodyOf(animal), s.navigation);
+        // Preserve the committed direction in the air instead of turning
+        // straight back toward a goal on the other side of a wall or root.
+        const target = !s.grounded && s.navigation.target ? s.navigation.target :
+          navigation.waypoint(p, motion.target, bodyOf(animal), s.navigation);
         s.navigation.target = target;
+        if (!target) return false;
+        if (s.navigation.progress !== s.navProgress) {
+          s.navProgress = s.navigation.progress;
+          s.recoveryJumps = 0; s.detourCount = 0;
+        }
         const tx = target.x - p.x, tz = target.z - p.z, distance = Math.hypot(tx, tz);
+        if (distance <= .001) return false;
         if (distance > .001) {
           const step = Math.min(distance, Math.hypot(dx, dz));
           dx = tx / distance * step; dz = tz / distance * step; yaw = Math.atan2(tx, tz);
@@ -1856,7 +1865,7 @@
     let bestDistance = Infinity;
     for (let i = 0; i < M.enemies.zombies.length; i++) {
       const zombie = M.enemies.zombies[i];
-      if (zombie.hp <= 0) continue;
+      if (zombie.hp <= 0 || (animal.state.blockedHunts && animal.state.blockedHunts.some(b => b.target === zombie))) continue;
       const q = zombie.position;
       const distance = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2;
       if (distance < bestDistance) {
@@ -1948,6 +1957,12 @@
     else if (s.mode === 'climbBuild') target = s.pendingClimb;
     else if (s.mode === 'descend') target = s.descendTarget;
     if (!target) return null;
+    if (!direct && s.mode === 'hunt' && M.enemies) {
+      const stats = M.upgrades ? M.upgrades.stats(animal) : { reach: 0 };
+      const tier = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
+      const range = tier && M.upgrades.spellRanges ? M.upgrades.spellRanges()[tier] : 7.35 + stats.reach;
+      if (M.enemies.canHit(s.huntTarget, p, s.yaw, true, range)) return null;
+    }
     if (!direct && s.navigation && s.navigation.path && s.navigation.path.length) target = s.navigation.path[0];
     const dx = target.x - p.x;
     const dz = target.z - p.z;
@@ -1959,6 +1974,20 @@
     const s = animal.state;
     const p = animal.group.position;
     const motion = recoveryMotion(animal);
+    if (motion && s.navigation && s.navigation.invalid && s.navigation.goal &&
+        s.navigation.revision === worldRef.revision &&
+        Math.hypot(motion.target.x - s.navigation.goal.x, motion.target.z - s.navigation.goal.z) < 1) {
+      // A wander point inside solid wood is not an invitation to jump at it.
+      if (s.mode === 'walk') { s.mode = 'idle'; s.wait = 2; s.speed = 0; s.coinTarget = null; }
+      else if (s.mode === 'seekBreak' || s.mode === 'seekPlace') finishSeek(animal, true);
+      else if (s.mode === 'hunt') {
+        if (!s.blockedHunts) s.blockedHunts = [];
+        s.blockedHunts.push({ target: s.huntTarget, x: motion.target.x, z: motion.target.z, time: 3, revision: worldRef.revision });
+        s.huntTarget = null; s.mode = 'idle'; s.wait = .2; s.speed = 0;
+      }
+      recovery.reset(s.recovery);
+      return;
+    }
     if (s.detourTime > 0) {
       s.detourTime -= dt;
       if (s.detourTime <= 0) s.detourTarget = null;
@@ -1993,7 +2022,8 @@
     if ((stage === 'detour' || stage === 'escape') && !s.detourTarget && (s.detourCount || 0) < 2) {
       const detour = recovery.findDetour(p, motion.x, motion.z, function (x, z) {
         if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) return false;
-        return canStandAt(animal, x, z, p.y) && actorSpotClear(animal, x, z, 0.2);
+        return canStandAt(animal, x, z, p.y) && actorSpotClear(animal, x, z, 0.2) &&
+          (!navigation || navigation.clear(p, { x: x, y: p.y, z: z }, bodyOf(animal)));
       });
       if (detour) {
         s.detourTarget = detour;
@@ -2047,6 +2077,11 @@
     const p = animal.group.position;
     if (!s.navigation) s.navigation = { retry: 0, path: null };
     s.navigation.retry -= dt; s.navigationDt = dt;
+    if (s.blockedHunts && s.blockedHunts.length) s.blockedHunts = s.blockedHunts.filter(b => {
+      b.time -= dt;
+      return b.time > 0 && b.target.hp > 0 && b.revision === worldRef.revision &&
+        Math.hypot(b.target.position.x - b.x, b.target.position.z - b.z) < 1;
+    });
     if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
     physics.updateSwimming(worldRef, p, bodyOf(animal), s, dt);
     if (s.swimming || s.shoreJump > 0) { updateSwimmingAnimal(animal, dt, t); return; }
@@ -2077,7 +2112,9 @@
     s.buildTimer = Math.max(0, (s.buildTimer || 0) - dt * workRate);
     s.actionTimer = Math.max(0, (s.actionTimer || 0) - dt * workRate);
 
-    if (playerDistance > 92 && !s.action) {
+    // Strategic coin expeditions must not pull the working herd away from
+    // the Hearth. Direct exploration retains the normal follow behavior.
+    if (playerDistance > 92 && !s.action && !(M.strategy && M.strategy.active)) {
       relocate(animal);
     }
 

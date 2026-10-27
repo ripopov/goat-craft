@@ -113,3 +113,14 @@ test('a parachute landing in deep water settles at the surface and starts swimmi
   assert.equal(enemy.airborne, false); assert.equal(enemy.swimming, true);
   assert.ok(enemy.position.y > 8 && !enemy.exploded);
 });
+
+test('strategic pilot independently swims ashore and resumes guard duty', () => {
+  bank = 12; ceiling = Infinity; M.enemies.zombies.length = 0;
+  resetPlayer(); input.set(0, 0); M.strategy = { active: true };
+  M.goat.group.position.set(16, 8.7, 1);
+  advance(8, (dt, t) => M.goat.update(dt, t));
+  assert.equal(M.goat.state.swimming, false, 'escapes water without player input');
+  assert.equal(M.goat.group.position.y, bank);
+  assert.ok(!wet(M.goat.group.position.x, M.goat.group.position.z));
+  M.strategy.active = false;
+});

@@ -26,7 +26,7 @@ export function game({ seed, renderRadius = 1 } = {}) {
   const fixture = classicModules({ seed }), { M, THREE, load } = fixture;
   for (const file of ['js/actor-physics.js', 'js/voxel-water.js']) load(file);
   M.config.renderRadius = renderRadius;
-  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat.js', 'js/animal-navigation.js', 'js/animal-recovery.js', 'js/animal-models.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemy-boats.js', 'js/enemies.js']) load(file);
+  for (const file of ['js/animal-style.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js', 'js/targeting.js', 'js/goat-excavation.js', 'js/goat-ai.js', 'js/goat.js', 'js/animal-navigation.js', 'js/animal-recovery.js', 'js/animal-models.js', 'js/animals.js', 'js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemy-boats.js', 'js/enemies.js']) load(file);
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
   M.hearthTree.init(scene);

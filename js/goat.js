@@ -12,6 +12,7 @@
   let uiRef = null;
   let state = null;
   let goatYaw = 0.15;
+  let pilot = null, wasStrategic = false;
 
   // ------------------------------------------------------------------- goat
   function makeCoatTexture() {
@@ -906,6 +907,12 @@
     s.aerialStompRecovery = Math.max(0, s.aerialStompRecovery - dt);
     recoverOverlap();
 
+    const strategic = !!(M.strategy && M.strategy.active);
+    if (strategic !== wasStrategic) {
+      if (pilot) pilot.reset();
+      s.mode = 'idle'; s.speed = 0; s.manualHold = strategic ? 0 : 3;
+      wasStrategic = strategic;
+    }
     const input = controlsRef.getMovement(cameraRef);
     const steering = input.lengthSq() > 0;
     if (controlsRef.firstPerson) {
@@ -933,7 +940,49 @@
       s.mode = 'manual';
     }
 
-    if (steering) {
+    if (strategic && pilot) {
+      const command = pilot.update(dt, goat.position, s, reachLevel >= 1 ? upgrades.reach : MELEE_RANGE);
+      s.mode = command.mode;
+      if (command.rescue) {
+        goat.position.set(command.rescue.x, command.rescue.y, command.rescue.z);
+        Object.assign(s, { speed: 0, vy: 0, grounded: true, jumps: 0, shoreJump: 0, shoreTarget: null,
+          inWater: false, swimming: false, submerged: false, aerialStomp: false, aerialStompRecovery: 0,
+          mining: -1, headbutt: -1, headbuttHit: true, stomp: -1, stompHit: true });
+        if (uiRef && uiRef.showBubble) uiRef.showBubble('Goat rescued — returning to defend the Hearth');
+      }
+      if (command.dig && pilot.canDig(goat.position, command.dig)) {
+        const block = command.dig;
+        const x = (block.bx + .5) * worldRef.blockSize - goat.position.x;
+        const z = (block.bz + .5) * worldRef.blockSize - goat.position.z;
+        face(Math.atan2(x, z));
+        s.mining = 0; s.miningHoof = false;
+        s.miningPitch = Math.atan2((block.by + .5) * worldRef.blockSize - goat.position.y - 1.75, Math.hypot(x, z));
+        // Camera aim and the selected hotbar item never affect escape mining.
+        if (worldRef.breakBlockAt(block.bx, block.by, block.bz, { protectPlaced: true })) {
+          audioRef.unlock(); audioRef.whoosh();
+        }
+      }
+      const waypoint = command.waypoint;
+      s.speed = damp(s.speed, waypoint ? (s.swimming || s.shoreJump > 0 ? 3.5 : 9.6) * upgrades.move * terrainSpeed : 0, 5, dt);
+      if (waypoint) {
+        const dx = waypoint.x - goat.position.x, dz = waypoint.z - goat.position.z;
+        const distance = Math.hypot(dx, dz);
+        face(turnToward(s.yaw, Math.atan2(dx, dz), dt * 7));
+        if (s.grounded && waypoint.y > goat.position.y + .1) {
+          s.vy = JUMP_SPEED; s.grounded = false; s.jumps = 1;
+        }
+        const step = Math.min(distance, s.speed * dt);
+        if (distance > .001) {
+          if (s.swimming || s.shoreJump > 0) moving = moveGoat(dx / distance * step, dz / distance * step);
+          else moving = physics.moveHorizontal(worldRef, goat.position, BODY,
+            dx / distance * step, dz / distance * step,
+            (x, z) => !s.grounded || pilot.accept(x, goat.position.y, z));
+        }
+        if (moving) { s.walkPhase += step * 2.4; s.runPhase += step * 2.4; }
+      }
+      if (command.enemy && !waypoint) face(turnToward(s.yaw,
+        Math.atan2(command.enemy.position.x - goat.position.x, command.enemy.position.z - goat.position.z), dt * 9));
+    } else if (steering) {
       // Player steering overrides the autonomous wanderer.
       const running = controlsRef.running;
       s.manualHold = 3.0;
@@ -993,7 +1042,7 @@
 
     goat.rotation.y = s.yaw;
 
-    s.runBlend = damp(s.runBlend, (!s.swimming && controlsRef.running && steering && moving) ? 1 : 0, 10, dt);
+    s.runBlend = damp(s.runBlend, (!s.swimming && moving && (strategic || (controlsRef.running && steering))) ? 1 : 0, 10, dt);
     s.swimBlend = damp(s.swimBlend, s.swimming ? 1 : 0, 7, dt);
     s.swimPhase += dt * (s.swimming ? 4.4 + s.speed * 1.3 : 2);
     const swim = s.swimBlend;
@@ -1089,15 +1138,15 @@
     }
 
     // ---- automatic attacks ----
-    // The goat fights by itself (Vampire Survivors / Megabonk style) whenever
-    // an enemy is in reach, but it never steers the player: bolts and fireballs
-    // auto-aim at the nearest enemy, and melee stomps strike around your own
-    // facing, which stays fully mouse-controlled. Combat is independent of
-    // the selected inventory item.
-    if (!(M.strategy && M.strategy.active)) {
+    // Both control modes share attack timing, upgrades, targeting and damage.
+    // Strategic melee can turn toward a target; direct control keeps the
+    // player's facing. Combat is independent of the selected inventory item.
+    {
       const headbuttRange = reachLevel >= 1 ? upgrades.reach : MELEE_RANGE;
       if (s.headbutt < 0 && s.headbuttCooldown <= 0) {
         const target = autoTarget(headbuttRange);
+        if (strategic && target) face(turnToward(s.yaw,
+          Math.atan2(target.position.x - goat.position.x, target.position.z - goat.position.z), dt * 9));
         const projectile = reachLevel >= 1; // elemental strikes aim themselves
         // Melee headbutts only swing at enemies inside the facing arc; the
         // player decides direction by looking, never by the goat turning.
@@ -1337,7 +1386,7 @@
 
   function startHeadbutt() {
     if (state.headbuttCooldown > 0) return;
-    if (cameraRef) {
+    if (cameraRef && !(M.strategy && M.strategy.active)) {
       const direction = new THREE.Vector3(); cameraRef.getWorldDirection(direction);
       state.yaw = Math.atan2(direction.x, direction.z);
       state.aimPitch = Math.asin(clamp(direction.y, -1, 1));
@@ -1390,6 +1439,8 @@
     cameraRef = deps.camera;
     controlsRef = deps.controls;
     worldRef = deps.world;
+    pilot = M.goatAI ? M.goatAI.create(worldRef, BODY) : null;
+    wasStrategic = false;
     audioRef = deps.audio;
     uiRef = deps.ui;
 

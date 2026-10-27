@@ -520,6 +520,10 @@
   .rts-camera-actions { pointer-events: auto; display: flex; gap: 4px; }
   .rts-camera-actions button, #rts-close, #rts-pack { padding: 6px 8px; border: 1px solid #a2b5a24d; border-radius: 5px; color: #dfdfcb; background: #162b24ed; font-size: 10px; white-space: nowrap; }
   .rts-camera-actions button:hover, #rts-close:hover, #rts-pack:hover { border-color: #e2c481; color: #fff1ca; }
+  #rts-rotate-left, #rts-rotate-right { font-size: 18px; line-height: 1; }
+  #rts-compass { width: 36px; display: grid; place-items: center; padding: 2px; }
+  #rts-compass-needle { display: flex; flex-direction: column; align-items: center; color: #f3cf7d; font-size: 12px; line-height: .8; }
+  #rts-compass-needle small { font-size: 8px; line-height: 1; }
   #rts-resources { position: absolute; top: 78px; right: 20px; display: flex; border: 1px solid #97b39e45; border-radius: 7px; background: #10251fed; box-shadow: 0 5px 20px #091e1733; font-variant-numeric: tabular-nums; }
   #rts-resources > span { display: flex; align-items: baseline; gap: 5px; padding: 7px 10px; border-right: 1px solid #97b39e25; }
   #rts-resources > span:last-child { border: 0; }
@@ -568,6 +572,7 @@
   body.rts-active #minimap-hud { --minimap-size: 112px; bottom: 236px; }
   @media (max-width: 1000px) {
     .rts-live { display: none; }
+    .rts-banner { top: 130px; }
     #rts-resources > span { padding: 7px; }
     .rts-detail { gap: 8px; }
   }
@@ -578,8 +583,11 @@
     body.rts-active .objective-card { width: 175px; }
     body.rts-active .defense-wave { top: 108px; left: 10px; transform: none; min-width: 160px; padding: 5px 8px; }
     body.rts-active .defense-wave strong { font-size: 10px; }
-    .rts-banner { top: 114px; left: auto; right: 10px; }
-    .rts-camera-actions button { padding: 6px 8px; }
+    .rts-banner { top: 108px; left: auto; right: 10px; }
+    .rts-camera-actions { display: grid; grid-template-columns: repeat(3, 44px); grid-auto-rows: 44px; }
+    .rts-camera-actions button { padding: 4px; }
+    #rts-hearth { grid-column: span 2; }
+    #rts-rotate-left, #rts-rotate-right, #rts-compass { min-width: 44px; min-height: 44px; }
     .rts-camera-actions kbd { display: none; }
     #rts-resources { top: 70px; left: 10px; right: 10px; }
     #rts-resources > span { flex: 1; justify-content: center; gap: 3px; padding: 6px 3px; }
@@ -613,7 +621,7 @@
     .rts-footer > span { display: none; }
   }
   @media (max-height: 500px) and (max-width: 760px) {
-    .rts-banner { top: 103px; }
+    .rts-banner { top: 108px; }
     .rts-dock-top { padding: 2px 6px; }
     .rts-animal img { width: 24px; height: 24px; }
     .tower-card { grid-template-columns: 30px minmax(0, 1fr); grid-template-rows: 30px auto; }

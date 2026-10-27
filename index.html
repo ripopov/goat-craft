@@ -88,13 +88,13 @@
   <button id="hi" type="button"><span></span>Say hi</button>
   <button id="strategy-toggle" type="button" aria-pressed="false" aria-controls="rts-hud"><i aria-hidden="true">⌘</i><span>Strategic view</span><kbd>T</kbd></button>
   <section id="rts-hud" aria-label="Strategic command" hidden>
-    <header class="rts-banner"><span class="rts-live" title="Your goat is roaming on autopilot">● STRATEGY</span><div class="rts-camera-actions"><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Goat</button></div></header>
+    <header class="rts-banner"><span class="rts-live" title="Your goat is roaming on autopilot">● STRATEGY</span><div class="rts-camera-actions" role="group" aria-label="Camera controls"><button id="rts-rotate-left" type="button" aria-label="Rotate map counterclockwise 90 degrees" title="Rotate map counterclockwise (Z)">↶ <kbd>Z</kbd></button><button id="rts-compass" type="button" aria-label="Reset camera to north" title="Reset camera to north"><span id="rts-compass-needle" aria-hidden="true">▲<small>N</small></span></button><button id="rts-rotate-right" type="button" aria-label="Rotate map clockwise 90 degrees" title="Rotate map clockwise (X)">↷ <kbd>X</kbd></button><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Goat</button></div></header>
     <div id="rts-resources" aria-label="Building resources"></div>
     <div class="rts-dock">
       <div class="rts-dock-top"><h2>Workshop <small id="rts-count">0 / 80 deployed</small></h2><div id="rts-animals" role="group" aria-label="Animal upgrades"></div><button id="rts-close" type="button">Close <kbd>T</kbd></button></div>
       <div class="rts-workspace"><div id="rts-roster" role="group" aria-label="Tower blueprints · scroll horizontally for more"></div></div>
       <aside id="rts-detail" class="rts-detail" aria-label="Tower details" hidden><img id="rts-detail-icon" alt="" hidden><div><h3 id="rts-detail-title"></h3><p id="rts-detail-role"></p></div><p id="rts-detail-stats"></p><p id="rts-detail-cost"></p><button id="rts-pack" type="button" hidden>Pack tower</button></aside>
-      <footer class="rts-footer"><p id="rts-message" role="status" aria-live="polite">Select a tower to begin</p><span><b>WASD / drag</b> Pan <b>Scroll</b> Zoom <b>1–0</b> Tower <b>Right click</b> Cancel</span></footer>
+      <footer class="rts-footer"><p id="rts-message" role="status" aria-live="polite">Select a tower to begin</p><span><b>WASD / left drag</b> Pan <b>Z / X / right drag</b> Rotate <b>Scroll</b> Zoom <b>1–0</b> Tower <b>Right click</b> Cancel</span></footer>
     </div>
   </section>
   <div class="top-actions">

@@ -3,6 +3,8 @@
   let active = false, camera, canvas, scene, panel, toggleButton;
   let selected = null, inspected = null, ghost, range, grid, target = null, pointer = null, drag = null;
   let zoom = 52, hudTime = 0, messageTime = 0, lastHud = '';
+  let yaw = 0, yawTarget = 0, turnStart = 0, turnTime = .2;
+  const TURN_DURATION = .2;
   const focus = new THREE.Vector3(0, 14, 7), keys = new Set(), cards = [];
   const raycaster = new THREE.Raycaster();
   const names = { coins: 'Gold', log: 'Wood', stone: 'Stone', dirt: 'Soil', coal: 'Coal', copper: 'Copper', iron: 'Iron' };
@@ -53,6 +55,7 @@
       announce('Goat on autopilot · The battle continues');
       refresh(true);
     } else {
+      yaw = yawTarget; turnTime = TURN_DURATION;
       cancel(); M.controls.resumeCamera();
       M.goat.state.manualHold = 3;
       M.controls.resumeLook();
@@ -137,6 +140,12 @@
     const p = goat ? M.goat.group.position : M.hearthTree.position;
     focus.x = M.utils.clamp(p.x, -210, 210); focus.z = M.utils.clamp(p.z, -210, 210);
   }
+  function turnTo(angle) {
+    turnStart = yaw; yawTarget = angle; turnTime = 0;
+    if (M.config.reducedMotion) { yaw = yawTarget; turnTime = TURN_DURATION; }
+  }
+  function turnBy(angle) { turnTo(yawTarget + angle); }
+  function resetNorth() { turnTo(yaw - Math.atan2(Math.sin(yaw), Math.cos(yaw))); }
   function init(sceneValue, cameraValue) {
     scene = sceneValue; camera = cameraValue; canvas = document.getElementById('scene');
     panel = document.getElementById('rts-hud'); toggleButton = document.getElementById('strategy-toggle');
@@ -174,6 +183,9 @@
     document.getElementById('rts-close').addEventListener('click', () => setActive(false));
     document.getElementById('rts-hearth').addEventListener('click', () => recenter(false));
     document.getElementById('rts-goat').addEventListener('click', () => recenter(true));
+    document.getElementById('rts-rotate-left').addEventListener('click', () => turnBy(-Math.PI / 2));
+    document.getElementById('rts-rotate-right').addEventListener('click', () => turnBy(Math.PI / 2));
+    document.getElementById('rts-compass').addEventListener('click', resetNorth);
     document.getElementById('rts-pack').addEventListener('click', () => {
       if (inspected && M.towers.dismantle(inspected)) { cancel(); announce('Packed on the ground · Walk your goat over it to collect'); }
     });
@@ -185,7 +197,15 @@
       }
       if (!active || M.upgradeMenu.isOpen) return;
       const key = e.key.toLowerCase();
+      // Let focused controls receive Space as their native activation key.
+      if ((e.code === 'Space' || key === ' ') && e.target && e.target.closest && e.target.closest('button')) return;
       if (key === 'escape') { e.preventDefault(); e.stopImmediatePropagation(); if (selected || inspected) cancel(); else setActive(false); return; }
+      const leftTurn = e.code === 'KeyZ' || key === 'z', rightTurn = e.code === 'KeyX' || key === 'x';
+      if (leftTurn || rightTurn) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!e.repeat) turnBy((leftTurn ? -1 : 1) * Math.PI / 2);
+        return;
+      }
       if ('wasd'.includes(key) || key.startsWith('arrow') || key === 'shift') keys.add(key);
       const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
       if (digit && !e.repeat) select(M.towers.definitions[digit[1] === '0' ? 9 : +digit[1] - 1].id);
@@ -201,24 +221,33 @@
       if (!active) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (drag) return;
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: 0, button: e.button };
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, moved: 0, dragging: false, button: e.button };
       pointer = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId);
     }, true);
     canvas.addEventListener('pointermove', e => {
       if (!active) return;
       e.stopImmediatePropagation(); pointer = { x: e.clientX, y: e.clientY };
       if (drag && drag.id === e.pointerId) {
-        const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        let dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         drag.moved += Math.abs(dx) + Math.abs(dy); drag.x = e.clientX; drag.y = e.clientY;
-        if (drag.moved > 8) { focus.x -= dx * zoom * .0018; focus.z -= dy * zoom * .0025; }
+        if (drag.moved > 8) {
+          if (!drag.dragging) { dx = e.clientX - drag.startX; dy = e.clientY - drag.startY; drag.dragging = true; }
+          if (drag.button === 2) {
+            yaw += dx * .006; yawTarget = yaw; turnTime = TURN_DURATION;
+          } else if (drag.button === 0) {
+            const side = -dx * zoom * .0018, forward = dy * zoom * .0025;
+            focus.x += side * Math.cos(yaw) - forward * Math.sin(yaw);
+            focus.z += -side * Math.sin(yaw) - forward * Math.cos(yaw);
+          }
+        }
       }
     }, true);
     canvas.addEventListener('pointerup', e => {
       if (!active) return;
       e.stopImmediatePropagation();
       if (drag && drag.id === e.pointerId) {
-        if (drag.moved < 8 && e.button === 0) click(e);
-        if (drag.moved < 8 && e.button === 2) cancel();
+        if (drag.moved <= 8 && e.button === 0) click(e);
+        if (drag.moved <= 8 && e.button === 2) cancel();
         drag = null;
       }
     }, true);
@@ -233,13 +262,21 @@
     if (!active) return;
     messageTime -= dt;
     if (inspected && !M.towers.list.includes(inspected)) cancel();
+    if (turnTime < TURN_DURATION) {
+      turnTime = Math.min(TURN_DURATION, turnTime + dt);
+      const t = turnTime / TURN_DURATION, smooth = t * t * (3 - 2 * t);
+      yaw = turnStart + (yawTarget - turnStart) * smooth;
+    }
     const speed = zoom * .65 * dt * (keys.has('shift') ? 1.8 : 1);
-    focus.x += ((keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0)) * speed;
-    focus.z += ((keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0)) * speed;
+    const side = ((keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0)) * speed;
+    const forward = ((keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0)) * speed;
+    focus.x += side * Math.cos(yaw) - forward * Math.sin(yaw);
+    focus.z += -side * Math.sin(yaw) - forward * Math.cos(yaw);
     focus.x = M.utils.clamp(focus.x, -210, 210); focus.z = M.utils.clamp(focus.z, -210, 210);
     // Keep the command camera above tall trees and hills, independent of the goat.
     focus.y = M.utils.damp(focus.y, Math.max(14, M.world.surfaceHeight(focus.x, focus.z)), 5, dt);
-    camera.position.set(focus.x, focus.y + zoom, focus.z + zoom * .72); camera.lookAt(focus); camera.updateMatrixWorld();
+    camera.position.set(focus.x + Math.sin(yaw) * zoom * .72, focus.y + zoom, focus.z + Math.cos(yaw) * zoom * .72); camera.lookAt(focus); camera.updateMatrixWorld();
+    document.getElementById('rts-compass-needle').setAttribute('style', 'transform: rotate(' + yaw + 'rad)');
     M.goat.group.visible = true;
     updateTarget();
     hudTime -= dt; if (hudTime <= 0) { hudTime = .15; refresh(false); }

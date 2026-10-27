@@ -207,6 +207,65 @@ test('T releases captured FPS, hands the goat to AI, pans independently and rest
   advance(.1); assert.equal(M.goat.group.visible, false);
 });
 
+test('strategic rotation keeps focus, pans relative to view, and preserves the goat camera', () => {
+  const { M, camera, press, dispatch, element, advance } = commandGame();
+  press('t', 'KeyT'); advance(.1);
+  const originalFocus = M.strategy.focus.clone(), originalCamera = camera.position.clone();
+  assert.equal(dispatch('window', 'keydown', { key: 'я', code: 'KeyZ' }).prevented, true);
+  advance(.3);
+  assert.ok(camera.position.x < originalFocus.x - 35, 'Z turns the map counterclockwise');
+  assert.ok(Math.abs(camera.position.z - originalFocus.z) < .01);
+  assert.ok(M.strategy.focus.distanceTo(originalFocus) < .01, 'rotation keeps the focus fixed');
+  assert.match(element('rts-compass-needle').attrs.style, /rotate\(-1\.570796/);
+  const panStart = M.strategy.focus.clone();
+  press('w', 'KeyW'); advance(.2); dispatch('window', 'keyup', { key: 'w' });
+  assert.ok(M.strategy.focus.x > panStart.x + 1, 'W moves toward the top of the rotated view');
+  assert.ok(Math.abs(M.strategy.focus.z - panStart.z) < .01);
+  const beforeDrag = M.strategy.focus.clone();
+  dispatch('scene', 'pointerdown', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+  dispatch('scene', 'pointermove', { pointerId: 1, clientX: 440, clientY: 300 });
+  dispatch('scene', 'pointerup', { pointerId: 1, button: 0, clientX: 440, clientY: 300 });
+  assert.ok(M.strategy.focus.z < beforeDrag.z - 1, 'left drag moves the map with the pointer after rotation');
+  dispatch('rts-hearth', 'click'); advance(.1);
+  assert.ok(camera.position.x < M.strategy.focus.x - 35, 'recentering preserves orientation');
+  dispatch('rts-compass', 'click'); advance(.3);
+  assert.ok(Math.abs(camera.position.x - M.strategy.focus.x) < .01, 'compass resets north');
+  assert.ok(camera.position.z > M.strategy.focus.z + 35);
+  press('x', 'KeyX'); advance(.3);
+  assert.ok(camera.position.x > M.strategy.focus.x + 35, 'X turns clockwise');
+  dispatch('window', 'keydown', { key: 'x', code: 'KeyX', repeat: true }); advance(.3);
+  assert.ok(camera.position.x > M.strategy.focus.x + 35, 'key repeat does not cause accidental turns');
+  press('t', 'KeyT'); advance(.1); press('t', 'KeyT'); advance(.1);
+  assert.ok(camera.position.x > M.strategy.focus.x + 35, 'strategy orientation survives a round trip');
+  dispatch('rts-rotate-left', 'click'); advance(.3);
+  assert.ok(Math.abs(camera.position.x - M.strategy.focus.x) < .01, 'visible button turns back');
+  const spaceOnButton = dispatch('window', 'keydown', { key: ' ', code: 'Space', target: { closest: () => element('rts-compass') } });
+  assert.equal(spaceOnButton.prevented, undefined, 'Space can activate a focused camera button');
+  assert.ok(originalCamera.z > originalFocus.z + 35);
+  press('q', 'KeyQ'); assert.equal(M.upgradeMenu.isOpen, true, 'Q still opens training');
+});
+
+test('right drag rotates freely without panning or canceling, while right click cancels', () => {
+  const { M, camera, press, dispatch, advance } = commandGame();
+  press('t', 'KeyT'); advance(.1); M.strategy.select(M.towers.definitions[0].id);
+  const focus = M.strategy.focus.clone();
+  dispatch('scene', 'pointerdown', { pointerId: 1, button: 2, clientX: 400, clientY: 300 });
+  dispatch('scene', 'pointermove', { pointerId: 1, button: -1, clientX: 500, clientY: 300 });
+  dispatch('scene', 'pointerup', { pointerId: 1, button: 2, clientX: 500, clientY: 300 });
+  advance(.1);
+  assert.ok(camera.position.x > focus.x + 15, 'dragging right rotates the map right');
+  assert.ok(M.strategy.focus.distanceTo(focus) < .01, 'right drag does not pan');
+  assert.equal(M.strategy.selected, M.towers.definitions[0].id, 'right drag keeps the selected tower');
+  dispatch('scene', 'pointerdown', { pointerId: 2, button: 2, clientX: 400, clientY: 300 });
+  dispatch('scene', 'pointerup', { pointerId: 2, button: 2, clientX: 400, clientY: 300 });
+  assert.equal(M.strategy.selected, null, 'right click still cancels');
+  dispatch('rts-compass', 'click'); advance(.3);
+  assert.ok(Math.abs(camera.position.x - M.strategy.focus.x) < .01, 'north reset works after a free turn');
+  M.config.reducedMotion = true;
+  dispatch('rts-rotate-right', 'click'); advance(1 / 60);
+  assert.ok(camera.position.x > M.strategy.focus.x + 35, 'reduced motion skips the animation');
+});
+
 test('upgrades restore capture on Q, Esc, close button, backdrop and native dialog close', () => {
   const { M, press, dispatch, element, document, flush } = commandGame();
   press('f', 'KeyF');

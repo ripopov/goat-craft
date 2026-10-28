@@ -56,11 +56,12 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
   const xs = new Set(wall.plan.map(target => target.bx));
   const zs = new Set(wall.plan.map(target => target.bz));
   const ys = new Set(wall.plan.map(target => target.by));
-  assert.equal(xs.size, 10);
-  assert.equal(zs.size, 1);
+  assert.deepEqual([xs.size, zs.size].sort((a, b) => a - b), [1, 10]);
   assert.equal(ys.size, 2);
+  assert.equal(wall.site.axis, Math.abs(wall.site.centerX - M.hearthTree.position.x) > Math.abs(wall.site.centerZ - M.hearthTree.position.z) ? 'z' : 'x');
   for (const target of wall.plan) {
-    assert.ok(Math.hypot(target.x - M.hearthTree.position.x, target.z - M.hearthTree.position.z) >= 20);
+    assert.ok(Math.hypot(target.x - M.hearthTree.position.x, target.z - M.hearthTree.position.z) >= 24);
+    assert.ok(Math.hypot(target.x - M.config.startingArea.x, target.z - M.config.startingArea.z) <= M.config.startingArea.radiusBlocks * 2, 'wall stays on the starting meadow');
     assert.ok(M.world.blockInfoAt(target.bx, target.by, target.bz), 'every planned wall cell is filled');
   }
 
@@ -126,7 +127,7 @@ test('player and every NPC rig articulate through walk, airborne and action pose
     assert.equal(animal.parts.eyes.length, 2);
     assert.equal(animal.parts.ears.length, 2);
     assert.ok(animal.parts.legs.every(leg => leg.ankle && leg.ankle.children.length === 2), animal.species + ' has split articulated hooves');
-    Object.assign(animal.state, { mode: 'walk', speed: animal.def.walkSpeed, grounded: true, wait: 1000, buildTimer: 1000, pitTimer: 1000 });
+    Object.assign(animal.state, { mode: 'walk', speed: M.config.locomotion.runSpeed, grounded: true, wait: 1000, buildTimer: 1000, pitTimer: 1000 });
     animal.state.target.copy(animal.group.position).add({ x: 0, y: 0, z: 4 });
     const before = animal.parts.legs[0].hip.rotation.x;
     M.animals.update(.1, 1);
@@ -167,4 +168,43 @@ test('Hearth routes cache collision work and invalidate immediately after constr
   solid = true;
   nav.waypoint(p, { x: 2, y: 14, z: 10 }, body, state);
   assert.ok(state.path.length > 1, 'a moving hunt target replans');
+});
+
+test('both builders start and complete outer-meadow walls in a fresh herd', () => {
+  for (const seed of [1, 42]) {
+    const { M } = game({ seed });
+    const builders = M.animals.list.filter(a => a.role === 'builder');
+    advanceAnimals(M, 12);
+    assert.ok(builders.every(a => a.state.project), 'both builders find a site and quarry promptly');
+    for (let i = 0; i < 1400 && builders.some(a => !a.state.walls.length); i++) M.animals.update(.05, 12 + i * .05);
+    for (const animal of builders) {
+      assert.ok(animal.state.walls.length, animal.name + ' completes a wall without intervention');
+      assert.equal(animal.state.lastAbandon, null, 'viable quarry prevents project abandonment');
+      for (const cell of animal.state.walls[0].plan) {
+        const radius = Math.hypot(cell.x - M.hearthTree.position.x, cell.z - M.hearthTree.position.z);
+        assert.ok(radius >= 24 && radius <= 30, 'wall is on the starting meadow, away from the Hearth');
+        assert.ok(M.world.blockInfoAt(cell.bx, cell.by, cell.bz));
+      }
+    }
+  }
+});
+
+test('hunter chase uses shared gallop speed and applies terrain slowdown once', () => {
+  const { M } = game({ seed: 42 });
+  M.goat.group.position.set(-25, 14, -25);
+  M.animals.list.forEach((a, i) => {
+    a.group.position.set(-20 + i * 3, 14, -18);
+    Object.assign(a.state, { mode: 'idle', wait: 1000, buildTimer: 1000, pitTimer: 1000 });
+  });
+  const hunter = M.animals.list.find(a => a.name === 'Bramble');
+  hunter.group.position.set(15, 14, 15);
+  const enemy = M.enemies.spawnAt({ x: 35, y: 14, z: 15 });
+  assert.ok(enemy);
+  M.enemies.movementScale = () => .65;
+  const before = hunter.group.position.clone();
+  advanceAnimals(M, 1);
+  assert.equal(hunter.state.mode, 'hunt');
+  assert.ok(hunter.group.position.distanceTo(before) > 4.5, 'hunter actually gallops toward its target');
+  const fullSpeed = M.config.locomotion.runSpeed * .65;
+  assert.ok(hunter.state.speed > fullSpeed * .98 && hunter.state.speed <= fullSpeed, 'no role-specific chase multiplier');
 });

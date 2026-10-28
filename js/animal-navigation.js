@@ -72,7 +72,7 @@
     }
     function stepClear(a, b, body) {
       const size = world.blockSize || 2;
-      if (!Number.isFinite(b.y) || b.y < 0 || b.y - a.y > size + .01 || a.y - b.y > size + .25) return false;
+      if (!Number.isFinite(b.y) || b.y < 0 || b.y - a.y > size + .01 || a.y - b.y > size * 4 + .25) return false;
       const rise = b.y > a.y + .1;
       // A root is not a staircase. Ordinary travel stays around the Hearth;
       // explicit construction climbs keep their own movement controller.
@@ -87,7 +87,7 @@
         const k = i / steps, x = a.x + (b.x - a.x) * k, z = a.z + (b.z - a.z) * k;
         if (!physics.clear(world, x, high, z, body)) return false;
         const floor = physics.support(world, { x, z }, high + .01, body);
-        if (!Number.isFinite(floor) || high - floor > size + .25 ||
+        if (!Number.isFinite(floor) || high - floor > size * 4 + .25 ||
             (world.waterAt && world.waterAt(x, floor + .1, z))) return false;
       }
       return true;
@@ -117,7 +117,7 @@
           const id = [x, y, z].join('/');
           if (b.cost >= (seen.get(id) ?? Infinity) || !stepClear(a, b, body)) continue;
           seen.set(id, b.cost);
-          b.score = b.cost + Math.hypot(goal.x - x, goal.z - z);
+          b.score = b.cost + Math.hypot(goal.x - x, goal.z - z) + Math.abs(goal.y - y);
           open.push(b);
         }
       }

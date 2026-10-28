@@ -46,14 +46,14 @@ test('escape digging skips permanent gate and road blocks in favor of breakable 
   assert.equal(recovery.findDig(world, position, body, { x: 1, z: 0 }), null);
 });
 
-test('a walker jumps a one-block ledge without emergency relocation', () => {
-  const { M, animal, advance, place, walkTo } = isolatedAnimal();
+test('a walker clears a one-block ledge without emergency relocation', () => {
+  const { M, animal, advanceUntil, place, walkTo } = isolatedAnimal();
   animal.group.position.set(17, 14, 1);
   place(9, 0, 7, 7);
   walkTo(27, 1);
-  advance(8);
+  assert.ok(advanceUntil(8, () => animal.group.position.x > 21 && animal.state.grounded));
   assert.ok(animal.group.position.x > 21, `x=${animal.group.position.x}`);
-  assert.ok(['ledge', 'stuck-ledge'].includes(animal.state.jumpReason));
+  assert.equal(animal.state.escape, null, 'a short ledge needs no excavation');
   assert.equal(animal.state.recovery.rescues, 0);
   assert.ok(clearBody(M, animal));
 });
@@ -70,7 +70,7 @@ test('a walker digs through a tall solid wall and continues past it', () => {
   assert.ok(clearBody(M, animal));
 });
 
-test('a trapped builder digs and places steps to climb out of a deep pit', () => {
+test('a trapped builder excavates a safe ascending route out of a deep pit', () => {
   const { M, animal, advanceUntil, walkTo } = isolatedAnimal('Clover');
   // Dig beside the permanent road, which deliberately cannot become a pit.
   for (const [bx, bz] of [[9, -6], [9, -5], [10, -6], [10, -5]]) {
@@ -83,11 +83,7 @@ test('a trapped builder digs and places steps to climb out of a deep pit', () =>
   walkTo(27, -11);
   const escaped = advanceUntil(35, () => animal.group.position.y >= 13.9);
   assert.ok(escaped, JSON.stringify({ p: animal.group.position, recovery: animal.state.recovery, escape: animal.state.escape }));
-  let placedStep = false;
-  for (let bx = 9; bx <= 12; bx++) for (let bz = -7; bz <= -4; bz++) for (let by = 5; by <= 7; by++) {
-    if (M.world.blockInfoAt(bx, by, bz)?.type === 'placed') placedStep = true;
-  }
-  assert.ok(placedStep, 'recovered material was placed as an escape step');
+  assert.ok(animal.state.carryCount > 0, 'excavated material is retained');
   assert.equal(animal.state.recovery.rescues, 0);
   assert.ok(clearBody(M, animal));
 });
@@ -129,9 +125,14 @@ test('two animals detour around each other without digging or relocation', () =>
   Object.assign(other.state, { mode: 'walk', wait: 0, buildTimer: 1000, pitTimer: 1000, retired: false });
   other.state.target.set(15, 14, 1);
   walkTo(25, 1);
-  advance(8);
+  let crossed = false, otherCrossed = false;
+  advance(8, () => {
+    if (other.group.position.x < 17) { otherCrossed = true; other.state.mode = 'idle'; other.state.wait = 1000; }
+    if (animal.group.position.x > 23) { crossed = true; animal.state.mode = 'idle'; animal.state.wait = 1000; }
+  });
+  assert.ok(crossed);
   assert.ok(animal.group.position.x > 19, `first x=${animal.group.position.x}`);
-  assert.ok(other.group.position.x < 19, `second x=${other.group.position.x}`);
+  assert.ok(otherCrossed, `second x=${other.group.position.x}`);
   assert.equal(animal.state.recovery.rescues, 0);
   assert.equal(other.state.recovery.rescues, 0);
   assert.equal(animal.state.escape, null);
@@ -279,4 +280,77 @@ test('strategic coin expeditions do not relocate the working herd away from the 
   M.strategy={active:true}; M.goat.group.position.set(200,14,200);
   advance(1);
   assert.ok(animal.group.position.distanceTo(start)<.1,'keeps its Hearth position while the goat is away');
+});
+
+test('all NPC bodies share physical cave excavation and roof descent', () => {
+  for (const name of ['Mallow', 'Clover', 'Bramble', 'Poppy']) {
+    const { M, animal, advanceUntil, walkTo, place } = isolatedAnimal(name, { seed: 42 });
+    for (let bx = 8; bx <= 9; bx++) for (let bz = 8; bz <= 9; bz++) for (let by = 1; by <= 2; by++) {
+      assert.ok(M.world.breakBlockAt(bx, by, bz, { drop: false }));
+    }
+    animal.group.position.set(17, 2, 17);
+    animal.state.pitTimer = 0;
+    walkTo(27, 17);
+    let maxStep = 0, previous = animal.group.position.clone();
+    assert.ok(advanceUntil(35, () => {
+      maxStep = Math.max(maxStep, previous.distanceTo(animal.group.position));
+      previous.copy(animal.group.position);
+      return animal.group.position.y >= 14 && animal.state.grounded;
+    }), name + ' leaves the buried pocket');
+    assert.ok(maxStep < 2.1, name + ' escapes without teleporting');
+    assert.equal(animal.state.recovery.rescues, 0);
+    place(12, 0, 7, 9);
+    animal.group.position.set(25, 20, 1);
+    Object.assign(animal.state, { mode: 'idle', wait: 0, escape: null, project: null, grounded: true, vy: 0 });
+    assert.ok(advanceUntil(15, () => animal.group.position.y <= 14.1 && animal.state.grounded), name + ' leaves a roof');
+    assert.equal(animal.state.recovery.rescues, 0);
+  }
+});
+
+test('travel watchdog survives changing jobs and jumping in place but ignores useful travel and idle time', () => {
+  const context = vm.createContext({ window: {} });
+  vm.runInContext(readFileSync(new URL('../js/animal-recovery.js', import.meta.url), 'utf8'), context);
+  const r = context.window.Meadow.animalRecovery, state = r.create();
+  for (let i = 0; i < 140; i++) {
+    const p = { x: Math.sin(i) * .4, y: 12 + Math.abs(Math.sin(i)) * 2, z: 1 };
+    r.update(state, p, i % 2 ? 'walk' : 'seekPlace', true, .05, { x: i % 2 ? 20 : -20, z: 1 });
+    r.trackTravel(state, p, false, true, .05);
+  }
+  assert.ok(r.trackTravel(state, { x: 0, y: 12, z: 1 }, true, true, .05));
+  assert.equal(r.trackTravel(state, { x: 3, y: 12, z: 1 }, true, true, .05), false);
+  for (let i = 0; i < 400; i++) assert.equal(r.trackTravel(state, { x: 3, y: 12, z: 1 }, true, false, .05), false);
+});
+
+test('a recovery climb cannot restart its timeout when a landing becomes unreachable', () => {
+  const { M, animal, advanceUntil, place } = isolatedAnimal('Clover', { seed: 42 });
+  for (let bz = -6; bz <= -4; bz++) assert.ok(M.world.breakBlockAt(9, 6, bz, { drop: false }));
+  place(8, -6, 7, 9);
+  animal.group.position.set(19, 12, -11);
+  Object.assign(animal.state, { mode: 'climbBuild', grounded: true,
+    pendingClimb: { x: 17, z: -11, top: 14 }, seekTime: 4.5,
+    escape: { time: 20, attempts: 0, rim: 14, resumeMode: 'walk' } });
+  assert.ok(advanceUntil(5, () => animal.group.position.y >= 14 && animal.state.grounded), 'blocked recovery reaches dry ground within its remaining deadline');
+});
+
+
+test('a cow physically exits a narrow trench beneath an overhang at low and high update rates', () => {
+  for (const hz of [20, 60]) {
+    const { M, animal, place, walkTo } = isolatedAnimal('Clover', { seed: 42 });
+    for (let bz = -6; bz <= -4; bz++) M.world.breakBlockAt(9, 6, bz, { drop: false });
+    for (let bx = 8; bx <= 10; bx++) place(bx, -6, 8, 8);
+    animal.group.position.set(19.4, 12, -11);
+    Object.assign(animal.state, { mode: 'idle', escape: null, action: null, grounded: true, vy: 0,
+      pitTimer: 0, escapeCooldown: 0, navigation: null });
+    walkTo(27, -11);
+    let exited = false, previous = animal.group.position.clone();
+    for (let i = 0; i < hz * 12; i++) {
+      M.animals.update(1 / hz, i / hz);
+      assert.ok(previous.distanceTo(animal.group.position) < 1.5, 'no relocation or snap');
+      assert.ok(clearBody(M, animal));
+      previous.copy(animal.group.position);
+      if (animal.state.grounded && animal.group.position.y >= 14) { exited = true; break; }
+    }
+    assert.ok(exited, 'cow escapes at ' + hz + ' Hz');
+    assert.equal(animal.state.recovery.rescues, 0);
+  }
 });

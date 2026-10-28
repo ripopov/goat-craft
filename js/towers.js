@@ -495,6 +495,14 @@
     if (tower) tower.builder = animal;
     return tower;
   }
+  function placeSalvaged(animal, bx, by, bz) {
+    if (!animal || animal.role !== 'builder' || !M.animals.list.includes(animal)) return false;
+    const s = animal.state, def = itemDefinition(s.salvagedTower);
+    if (!def) return false;
+    const tower = construct(def.id, bx, by, bz, function () { s.salvagedTower = null; });
+    if (tower && def.builderTier) tower.builder = animal;
+    return tower;
+  }
   function trainBuilder(animal) {
     const def = builderDefinition(animal);
     if (!def) return;
@@ -1241,7 +1249,7 @@
     }
   }
   M.towers = { definitions, byId, list, atCell, site, place, dismantle, available, inventoryCount, itemDefinition, localTarget, rangeAt,
-    builderDefinition, placeBuilder, trainBuilder,
+    builderDefinition, placeBuilder, placeSalvaged, trainBuilder,
     model, lineClear, maxTowers: MAX_TOWERS, init: function (value) {
       scene = value;
       if (!lightPool.length) for (let i = 0; i < MAX_LIGHTS; i++) {

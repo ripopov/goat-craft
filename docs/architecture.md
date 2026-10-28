@@ -63,8 +63,10 @@ species definitions supply both the model proportions and collision body.
 `animal-navigation.js` plans around the Hearth before physical recovery is
 needed. It caches graph edges by body dimensions, standing height and world
 revision, commits to waypoints, and replans for terrain or target changes.
+`core.js` owns shared goat/herd locomotion speeds and gait cadence. All NPC jobs use `travelSpeed`, `moveAnimal` and `updateRecovery`; roles choose goals without speed multipliers or separate navigation. Wall planning stays on the starting meadow, outside the 24-unit Hearth exclusion, and checks quarry availability with the same selector used during gathering.
+`animals.js` also uses `goat-excavation.js` for body-sized ascending cave exits. Wall sites store their X/Z axis, and footprint/quarry checks must honor it. Salvage claims one physical tower item through `items.js`; `towers.js` consumes it only after successful validated construction.
 `animal-recovery.js` remains the fallback for ledges, walls and pits elsewhere.
-Permanent blocks must never become excavation targets.
+`actor-physics.js` owns `shoreRoute`, the bounded water-corridor search shared by the goat and herd; `shoreExit` validates every final jump. Recovery uses a short per-target monitor plus a spatial travel monitor that survives job changes, and its deadline must run across all escape modes. Permanent blocks must never become excavation targets.
 
 ## Validate changes
 

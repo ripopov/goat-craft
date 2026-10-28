@@ -46,12 +46,12 @@ test('insufficient coins or blocks never partially debit, and invalid or maxed p
 test('NPC training is individual, role appropriate, and leaves shared species definitions intact', () => {
   const { M } = training(), u = M.upgrades; supplies(M);
   const [builder, cow, stag, sheep] = M.animals.list;
-  const base = sheep.def.walkSpeed;
+  const base = sheep.def;
   train(M, stag, 'power', 2); train(M, builder, 'craft'); train(M, builder, 'move');
   assert.ok(Math.abs(u.stats(stag).damage - 4 / 3) < 1e-9); assert.equal(u.stats(sheep).damage, 0); assert.equal(u.stats().damage, 0);
   assert.equal(u.stats(builder).craft, 3.5, 'Fleet hooves doubles the Practiced builder work rate'); assert.equal(u.stats(cow).craft, 1);
   assert.equal(u.buy(builder, 'power'), false); assert.equal(u.buy(stag, 'craft'), false);
-  assert.equal(builder.def.walkSpeed, base, 'two sheep share definitions without sharing training');
+  assert.equal(builder.def, base, 'two sheep share definitions without sharing training');
   assert.equal(u.stats(builder).move, 2, 'fully trained fleet hooves double movement speed'); assert.equal(u.stats(sheep).move, 1);
 });
 

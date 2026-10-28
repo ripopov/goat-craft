@@ -963,7 +963,7 @@
         }
       }
       const waypoint = command.waypoint;
-      s.speed = damp(s.speed, waypoint ? (s.swimming || s.shoreJump > 0 ? 3.5 : 9.6) * upgrades.move * terrainSpeed : 0, 5, dt);
+      s.speed = damp(s.speed, waypoint ? (s.swimming || s.shoreJump > 0 ? 3.5 : M.config.locomotion.runSpeed) * upgrades.move * terrainSpeed : 0, 5, dt);
       if (waypoint) {
         const dx = waypoint.x - goat.position.x, dz = waypoint.z - goat.position.z;
         const distance = Math.hypot(dx, dz);
@@ -978,7 +978,7 @@
             dx / distance * step, dz / distance * step,
             (x, z) => !s.grounded || pilot.accept(x, goat.position.y, z));
         }
-        if (moving) { s.walkPhase += step * 2.4; s.runPhase += step * 2.4; }
+        if (moving) { s.walkPhase += step * M.config.locomotion.runCadence; s.runPhase += step * M.config.locomotion.runCadence; }
       }
       if (command.enemy && !waypoint) face(turnToward(s.yaw,
         Math.atan2(command.enemy.position.x - goat.position.x, command.enemy.position.z - goat.position.z), dt * 9));
@@ -988,13 +988,13 @@
       s.manualHold = 3.0;
       s.mode = 'manual';
       if (!controlsRef.firstPerson && s.headbutt < 0) face(turnToward(s.yaw, Math.atan2(input.x, input.y), dt * 7));
-      s.speed = damp(s.speed, (s.swimming ? (running ? 4.6 : 3.1) : (running ? 9.6 : 4.8)) * upgrades.move * terrainSpeed, s.swimming ? 3.5 : 5, dt);
+      s.speed = damp(s.speed, (s.swimming ? (running ? 4.6 : 3.1) : (running ? M.config.locomotion.runSpeed : M.config.locomotion.walkSpeed)) * upgrades.move * terrainSpeed, s.swimming ? 3.5 : 5, dt);
 
       const mx = input.x * s.speed * dt;
       const mz = input.y * s.speed * dt;
       if (moveGoat(mx, mz, s.yaw)) {
-        s.walkPhase += s.speed * dt * (running ? 2.4 : 4.6);
-        if (running) s.runPhase += s.speed * dt * 2.4;
+        s.walkPhase += s.speed * dt * (running ? M.config.locomotion.runCadence : M.config.locomotion.walkCadence);
+        if (running) s.runPhase += s.speed * dt * M.config.locomotion.runCadence;
         moving = true;
       }
     } else if (s.shoreJump > 0 && s.shoreTarget) {
@@ -1022,7 +1022,7 @@
         const mx = dx / dist * s.speed * dt;
         const mz = dz / dist * s.speed * dt;
         if (moveGoat(mx, mz, s.yaw)) {
-          s.walkPhase += s.speed * dt * 4.6;
+          s.walkPhase += s.speed * dt * M.config.locomotion.walkCadence;
           moving = true;
         } else {
           // The goat will not scramble up ledges on its own.

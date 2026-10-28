@@ -13,7 +13,6 @@
   const CARRY_LIMIT = 34;
   const JUMP_SPEED = 12.8;
   const JUMP_COOLDOWN = 0.52;
-  const AIR_CONTROL = 2.15;
   const ESCAPE_TIMEOUT = 22;
   const PIT_CHECK_INTERVAL = 0.55;
 
@@ -123,7 +122,9 @@
     if (!canStandAt(animal, nx, nz, p.y, yaw, loose)) return false;
     if (s.grounded && s.mode !== 'descend') {
       const floor = physics.support(worldRef, { x: nx, y: p.y, z: nz }, p.y + BODY_CLEARANCE, bodyOf(animal));
-      if (p.y - floor > BLOCK + 0.25) return false;
+      const waypoint = s.navigation && s.navigation.target;
+      const drop = waypoint && waypoint.y < p.y - .1 ? BLOCK * 4 : BLOCK;
+      if (p.y - floor > drop + 0.25) return false;
     }
 
     // Avoid stepping down into water, while allowing dry bridges over it.
@@ -284,7 +285,7 @@
   // ------------------------------------------------------------------------
   const WALL_LENGTH = 10;
   const WALL_HEIGHT = 2;
-  const WALL_TREE_DISTANCE = 10 * BLOCK;
+  const WALL_TREE_DISTANCE = 12 * BLOCK;
 
   function cellCenter(bx, bz) {
     const bs = sizeOf();
@@ -293,9 +294,9 @@
 
   function inSiteFootprint(project, bx, bz, margin) {
     const m = margin || 0;
-    return bx >= project.site.bx - WALL_LENGTH / 2 - m &&
-      bx < project.site.bx + WALL_LENGTH / 2 + m &&
-      Math.abs(bz - project.site.bz) <= m;
+    const along = project.site.axis === 'z' ? bz - project.site.bz : bx - project.site.bx;
+    const across = project.site.axis === 'z' ? bx - project.site.bx : bz - project.site.bz;
+    return along >= -WALL_LENGTH / 2 - m && along < WALL_LENGTH / 2 + m && Math.abs(across) <= m;
   }
 
   function entityBlocksCell(animal, x, z, radius) {
@@ -313,7 +314,7 @@
     return false;
   }
 
-  function validSiteAt(animal, bx, bz) {
+  function validSiteAt(animal, bx, bz, axis) {
     const bs = sizeOf();
     const c = cellCenter(bx, bz);
     const groundY = worldRef.surfaceHeight(c.x, c.z);
@@ -328,16 +329,19 @@
       // looks fine on the wall line itself yet strands the builder on an
       // unreachable lip, so the whole five-row strip must be flat.
       for (let dz = -2; dz <= 2; dz++) {
-        const px = (bx + dx + 0.5) * bs;
-        const pz = (bz + dz + 0.5) * bs;
-        if (tree && Math.hypot(px - tree.x, pz - tree.z) < WALL_TREE_DISTANCE) return null;
-        if (worldRef.isPondArea(bx + dx, bz + dz)) return null;
-        if (worldRef.isProtectedArea && worldRef.isProtectedArea(bx + dx, bz + dz)) return null;
-        if (worldRef.isWaterColumn(bx + dx, bz + dz)) return null;
+        const cx = bx + (axis === 'z' ? dz : dx), cz = bz + (axis === 'z' ? dx : dz);
+        const px = (cx + 0.5) * bs;
+        const pz = (cz + 0.5) * bs;
+        if (dz === 0 && tree && Math.hypot(px - tree.x, pz - tree.z) < WALL_TREE_DISTANCE) return null;
+        const meadow = M.config.startingArea;
+        if (dz === 0 && Math.hypot(px - meadow.x, pz - meadow.z) > meadow.radiusBlocks * bs) return null;
+        if (worldRef.isPondArea(cx, cz)) return null;
+        if (worldRef.isProtectedArea && worldRef.isProtectedArea(cx, cz)) return null;
+        if (worldRef.isWaterColumn(cx, cz)) return null;
         if (Math.abs(worldRef.surfaceHeight(px, pz) - groundY) > 0.01) return null;
-        if (!worldRef.canPlaceBlock(bx + dx, baseBy, bz + dz)) return null;
+        if (!worldRef.canPlaceBlock(cx, baseBy, cz)) return null;
         for (let k = 0; k < WALL_HEIGHT + 1; k++) {
-          if (worldRef.blockInfoAt(bx + dx, baseBy + k, bz + dz)) return null;
+          if (worldRef.blockInfoAt(cx, baseBy + k, cz)) return null;
         }
         if (entityBlocksCell(animal, px, pz, 1.25)) return null;
       }
@@ -356,6 +360,7 @@
     }
 
     return {
+      axis: axis,
       bx: bx,
       bz: bz,
       centerX: c.x,
@@ -368,16 +373,31 @@
   function chooseBuildSite(animal) {
     const bs = sizeOf();
     const p = animal.group.position;
-    const anchorBX = Math.floor(p.x / bs);
-    const anchorBZ = Math.floor(p.z / bs);
+    const tree = M.hearthTree ? M.hearthTree.position : p;
+    const anchorBX = Math.floor(tree.x / bs);
+    const anchorBZ = Math.floor(tree.z / bs);
 
     for (let attempt = 0; attempt < 176; attempt++) {
       const angle = rand(0, Math.PI * 2);
-      const distance = attempt < 96 ? rand(10, 20) : rand(20, 34);
+      // Stay on the flat starting meadow: the previous 46–64 unit ring
+      // lay outside it and almost never supplied a valid flat project.
+      const distance = rand(27, 29);
       const bx = anchorBX + Math.round(Math.sin(angle) * distance / bs);
       const bz = anchorBZ + Math.round(Math.cos(angle) * distance / bs);
-      const site = validSiteAt(animal, bx, bz);
-      if (site) return site;
+      // Use the dominant incoming lane, falling back to the radial approach
+      // toward the Hearth when no wave is nearby. Voxel walls use its cross axis.
+      const c = cellCenter(bx, bz);
+      let source = null, nearest = 48;
+      for (const enemy of (M.enemies ? M.enemies.zombies : [])) {
+        const d = Math.hypot(enemy.position.x - c.x, enemy.position.z - c.z);
+        if (enemy.hp > 0 && d < nearest && Math.hypot(enemy.position.x - tree.x, enemy.position.z - tree.z) > distance) {
+          source = enemy.position; nearest = d;
+        }
+      }
+      const dx = source ? source.x - c.x : c.x - tree.x;
+      const dz = source ? source.z - c.z : c.z - tree.z;
+      const site = validSiteAt(animal, bx, bz, Math.abs(dx) > Math.abs(dz) ? 'z' : 'x');
+      if (site && findSurfaceQuarryTarget(animal, { site }, { x: site.centerX, y: site.groundY, z: site.centerZ })) return site;
     }
     return null;
   }
@@ -387,8 +407,8 @@
     const plan = [];
     for (let layer = 0; layer < WALL_HEIGHT; layer++) {
       for (let dx = -WALL_LENGTH / 2; dx < WALL_LENGTH / 2; dx++) {
-        const bx = site.bx + dx;
-        const bz = site.bz;
+        const bx = site.bx + (site.axis === 'z' ? 0 : dx);
+        const bz = site.bz + (site.axis === 'z' ? dx : 0);
         const c = cellCenter(bx, bz);
         plan.push({
           phase: 'wall',
@@ -450,12 +470,11 @@
   // A quarry pass is intentionally local and shallow: shave the top turf
   // course around the animal, one block at a time. This keeps NPCs on the
   // surface instead of digging themselves into ever-deeper pits.
-  function findSurfaceQuarryTarget(animal, project) {
-    const p = animal.group.position;
+  function findSurfaceQuarryTarget(animal, project, position) {
+    const p = position || animal.group.position;
     const player = goatRef.group.position;
     const bs = sizeOf();
     const levelY = project.site.groundY;
-    if (Math.abs(p.y - levelY) > 0.35) return null;
     const bx0 = Math.floor(p.x / bs);
     const bz0 = Math.floor(p.z / bs);
     const r = Math.ceil(14.0 / bs);
@@ -469,12 +488,9 @@
         const c = cellCenter(bx, bz);
         const dist = Math.hypot(c.x - p.x, c.z - p.z);
         if (dist < 1.65 || dist > 14.0) continue;
-        // Guard the two flank rows the builder stands on while placing wall
-        // blocks, so quarrying never carves pits under its own footing. The
-        // wall row itself (dz 0) may be quarried freely: the finished wall
-        // fills those cells again, and the survivors stay level.
-        const flank = Math.abs(bz - project.site.bz);
-        if (flank >= 1 && flank <= 2) continue;
+        // Preserve the wall foundation and its two approach rows on either
+        // side, in the project's own orientation.
+        if (inSiteFootprint(project, bx, bz, 2)) continue;
         let nearSite = false;
         for (let i = 0; i < animals.length; i++) {
           const other = animals[i];
@@ -488,8 +504,7 @@
         if (worldRef.isPondArea(bx, bz) || worldRef.isWaterColumn(bx, bz)) continue;
         const info = worldRef.topSoilInfo(bx, bz);
         if (!info) continue;
-        if (Math.abs(info.top - levelY) > 0.35 &&
-            Math.abs(info.top - (levelY - BLOCK)) > 0.35) continue;
+        if (Math.abs(info.top - levelY) > BLOCK * 2 + 0.35) continue;
         if (!worldRef.canPlaceBlock(info.bx, info.by + 1, info.bz)) continue;
         if (Math.hypot(c.x - player.x, c.z - player.z) < 3.2) continue;
         let nearAnimal = false;
@@ -543,7 +558,22 @@
     s.batchGoal = s.batchGoal || CARRY_LIMIT;
     s.gathering = true;
     s.quarryMisses = 0;
-    beginAction(animal);
+    if (Math.hypot(target.x - animal.group.position.x, target.z - animal.group.position.z) > 3.7 ||
+        Math.abs(target.y - animal.group.position.y) > BLOCK + .4) {
+      const approach = findApproach(animal, target.x, target.z, 2.35, { maxRise: BLOCK * 2 + .45 });
+      if (!approach) { s.action = null; return false; }
+      s.action.approach = approach; s.mode = 'seekBreak'; s.seekTime = 9; s.stuck = 0;
+    } else beginAction(animal);
+    return true;
+  }
+
+  function startSalvage(animal) {
+    const s = animal.state;
+    if (s.salvagedTower || !M.items || !M.items.nearestTower || s.coinCooldown > 0) return false;
+    const drop = M.items.nearestTower(animal.group.position, 24);
+    if (!drop) return false;
+    s.coinTarget = drop; s.coinTime = 12; s.coinCooldown = 3;
+    s.target.copy(drop.position); s.mode = 'walk'; s.wait = 0;
     return true;
   }
 
@@ -559,11 +589,12 @@
 
   function startTowerJob(animal) {
     const s = animal.state, p = animal.group.position;
-    const def = M.towers && M.towers.builderDefinition(animal);
+    const salvaged = s.salvagedTower && M.towers && M.towers.itemDefinition(s.salvagedTower);
+    const def = salvaged || M.towers && M.towers.builderDefinition(animal);
     // Establish a wall before mixing in a tower, preserving that wall project
     // across the detour. An unaffordable tower never blocks ordinary wall work.
     const wallWork = s.walls.length || s.project && s.project.stepCount >= 4;
-    if (!def || !wallWork || s.towerTimer > 0 || s.coins < def.cost.coins) return false;
+    if (!def || (!salvaged && (!wallWork || s.coins < def.cost.coins)) || s.towerTimer > 0) return false;
     const bx0 = Math.floor(p.x / BLOCK), bz0 = Math.floor(p.z / BLOCK);
     let target = null, score = Infinity;
     for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) {
@@ -571,7 +602,7 @@
       const distance = Math.hypot(c.x - p.x, c.z - p.z);
       if (distance < 2.4 || distance > 8 || distance >= score || entityBlocksCell(animal, c.x, c.z, 1.5)) continue;
       if (animals.some(other => [other.state.project, ...other.state.walls].some(project => project && inSiteFootprint(project, bx, bz, 1)))) continue;
-      if (s.towerStone < def.cost.stone) {
+      if (!salvaged && s.towerStone < def.cost.stone) {
         const info = worldRef.topSoilInfo(bx, bz);
         if (!info || !['grass', 'dirt', 'stone'].includes(info.kind) || worldRef.isPlacedBlock(bx, info.by, bz) ||
             worldRef.blockInfoAt(bx, info.by + 1, bz) ||
@@ -588,7 +619,7 @@
       score = distance;
     }
     if (!target) { s.towerTimer = 8; return false; }
-    if (s.towerStone < def.cost.stone) {
+    if (!salvaged && s.towerStone < def.cost.stone) {
       s.action = { kind: 'break', target, time: 0, duration: .72, hit: false, towerQuarry: true };
       beginAction(animal);
     } else {
@@ -624,7 +655,7 @@
       const y = nearestGround(x, z);
 
       if (Math.hypot(x - player.x, z - player.z) < 2.2) continue;
-      if (Math.abs(y - p.y) > 2.4) continue;
+      if (y - p.y > 2.4 || p.y - y > BLOCK * 4) continue;
       if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
       if (worldRef.isPondArea(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
       if (!canStandAt(animal, x, z, y, angle)) continue;
@@ -687,7 +718,7 @@
 
   function targetUnsafeForPlacement(animal, x, z) {
     const p = animal.group.position;
-    if (Math.hypot(x - p.x, z - p.z) < 1.15) return true;
+    if (Math.hypot(x - p.x, z - p.z) < 1.85) return true;
     if (goatRef && goatRef.group) {
       const g = goatRef.group.position;
       if (Math.hypot(x - g.x, z - g.z) < 1.75) return true;
@@ -727,7 +758,7 @@
     }
 
     if (targetUnsafeForPlacement(animal, target.x, target.z)) {
-      if (Math.hypot(target.x - p.x, target.z - p.z) < 1.15) {
+      if (Math.hypot(target.x - p.x, target.z - p.z) < 1.85) {
         const approach = findApproach(animal, target.x, target.z, 2.35, {
           levelY: project.site.groundY,
           maxRise: BLOCK + 0.45
@@ -879,7 +910,7 @@
         canStandAt(animal, c.x, c.z, c.top, s.yaw, true)) {
       startJump(animal, 'climb');
     }
-    const speed = defWalkSpeed(animal) * (s.grounded ? 1.2 : AIR_CONTROL);
+    const speed = travelSpeed(animal);
     s.speed = damp(s.speed, speed, 7, dt);
     const moved = moveAnimal(
       animal,
@@ -888,7 +919,7 @@
       s.yaw
     );
     if (moved) {
-      s.walkPhase += s.speed * dt * 4.3;
+      s.walkPhase += s.speed * dt * M.config.locomotion.runCadence;
       s.stuck = 0;
     } else if (s.grounded) {
       s.stuck += dt;
@@ -902,7 +933,7 @@
     // air control so a two-metre hop reliably carries it over the lip and
     // onto the stair instead of landing back on the block below.
     if (!s.grounded && p.y > c.top + 0.03 && dist > 0.45) {
-      const pull = Math.max(1.7, defWalkSpeed(animal) * 2.0) * dt;
+      const pull = Math.max(1.7, travelSpeed(animal) * 2.0) * dt;
       const amount = Math.min(dist, pull);
       const nx = p.x + (dx / dist) * amount;
       const nz = p.z + (dz / dist) * amount;
@@ -1009,7 +1040,7 @@
 
     const yaw = Math.atan2(dx, dz);
     s.yaw = turnToward(s.yaw, yaw, dt * 4.5);
-    const speed = defWalkSpeed(animal) * (s.grounded ? 1.15 : AIR_CONTROL);
+    const speed = travelSpeed(animal);
     s.speed = damp(s.speed, speed, 5, dt);
     const moved = moveAnimal(
       animal,
@@ -1018,7 +1049,7 @@
       s.yaw
     );
     if (moved) {
-      s.walkPhase += s.speed * dt * 4.2;
+      s.walkPhase += s.speed * dt * M.config.locomotion.runCadence;
       s.stuck = 0;
     } else if (s.grounded) {
       s.stuck += dt;
@@ -1145,6 +1176,7 @@
           s.escape.dug = true;
         }
         s.happy = Math.max(s.happy || 0, 0.45);
+        s.recovery.travelAnchor = null;
         action.result = 'broke';
       } else {
         action.result = 'failed';
@@ -1152,7 +1184,7 @@
     } else if (action.kind === 'place') {
       const target = action.target;
       if (action.towerBuild) {
-        const tower = M.towers && M.towers.placeBuilder(animal, target.bx, target.by, target.bz);
+        const tower = M.towers && (s.salvagedTower ? M.towers.placeSalvaged(animal, target.bx, target.by, target.bz) : M.towers.placeBuilder(animal, target.bx, target.by, target.bz));
         action.result = tower ? 'placed' : 'failed';
         if (tower) { s.towersBuilt++; s.happy = 1; }
         s.towerTimer = tower ? 60 : 10;
@@ -1174,6 +1206,7 @@
         } else {
           action.result = 'placed';
           if (action.build && s.project) commitBuildTarget(s.project, target);
+          s.recovery.travelAnchor = null;
           consumeCarry(animal);
           s.happy = Math.max(s.happy || 0, 0.6);
         }
@@ -1205,7 +1238,7 @@
 
     const levelOk = !action.build ||
       (p.y >= target.top - BLOCK * 2 - 0.4 && p.y <= target.top + 0.4);
-    if ((approach ? distanceToApproach < 0.7 : distanceToTarget < 3.7) && levelOk) {
+    if ((approach ? distanceToApproach < (action.kind === 'place' ? 0.2 : 0.7) : distanceToTarget < 3.7) && levelOk) {
       const desiredYaw = Math.atan2(target.x - p.x, target.z - p.z);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 9);
       s.speed = damp(s.speed, 0, 8, dt);
@@ -1217,7 +1250,7 @@
       const dz = approach.z - p.z;
       const desiredYaw = Math.atan2(dx, dz);
       s.yaw = turnToward(s.yaw, desiredYaw, dt * 4.8);
-      const speed = defWalkSpeed(animal) * (s.grounded ? 1.25 : AIR_CONTROL);
+      const speed = travelSpeed(animal);
       s.speed = damp(s.speed, speed, 5, dt);
       const moved = moveAnimal(
         animal,
@@ -1226,7 +1259,7 @@
         s.yaw
       );
       if (moved) {
-        s.walkPhase += s.speed * dt * 4.2;
+        s.walkPhase += s.speed * dt * M.config.locomotion.runCadence;
         s.stuck = 0;
       } else if (s.grounded) {
         s.stuck += dt;
@@ -1549,6 +1582,7 @@
   function startEscape(animal, preferred) {
     const s = animal.state;
     const p = animal.group.position;
+    s.recovery.travelAnchor = null;
     s.escape = {
       time: 0,
       attempts: 0,
@@ -1569,6 +1603,10 @@
     s.stuck = 0;
     s.wait = 0;
     s.escapeCooldown = 1.2;
+    if (M.goatExcavation) {
+      if (!s.excavation) s.excavation = M.goatExcavation.create(worldRef, bodyOf(animal));
+      s.excavation.begin(p);
+    }
     const status = pitStatus(animal);
     const solid = preferred && recovery.blockedAhead(worldRef, p, bodyOf(animal), preferred.x, preferred.z);
     s.escape.rim = Math.max(status.rim || p.y, p.y + (solid || status.walls >= 5 ? BLOCK : 0));
@@ -1578,6 +1616,7 @@
     const s = animal.state;
     const resumeMode = s.escape && s.escape.resumeMode;
     s.escape = null;
+    if (s.excavation) s.excavation.reset();
     s.pendingClimb = null;
     s.mode = resumeMode === 'walk' || (resumeMode === 'hunt' && s.huntTarget) ? resumeMode : 'idle';
     s.wait = 0.25;
@@ -1595,7 +1634,27 @@
       s.wait = 0.3;
       return;
     }
-    s.escape.time += dt;
+    if (s.excavation && s.excavation.active) {
+      const p = animal.group.position, command = s.excavation.update(dt, p, s);
+      if (command) {
+        if (command.dig) {
+          const b = command.dig;
+          const kind = worldRef.breakBlockAt(b.bx, b.by, b.bz, { drop: false, protectPlaced: true });
+          if (kind) addCarry(animal, kind, 1);
+        }
+        if (command.waypoint) {
+          const target = command.waypoint, dx = target.x - p.x, dz = target.z - p.z;
+          const distance = Math.hypot(dx, dz);
+          if (target.y > p.y + .1 && s.grounded) startJump(animal, 'cave-exit');
+          if (distance > .01) {
+            const step = Math.min(distance, travelSpeed(animal) * dt);
+            s.yaw = Math.atan2(dx, dz); s.speed = step / dt;
+            moveAnimal(animal, dx / distance * step, dz / distance * step, s.yaw);
+          }
+        }
+        return;
+      }
+    }
     if (s.wait > 0) {
       s.wait -= dt;
       return;
@@ -1607,6 +1666,10 @@
   function rescueAnimal(animal) {
     const s = animal.state;
     const p = animal.group.position;
+    // A nearby point on the same pit floor is not a rescue. Prefer the
+    // surrounding terrain level, and never relocate into another water cell.
+    const terrainY = worldRef.terrainHeight ? worldRef.terrainHeight(p.x, p.z) : p.y;
+    const minimumY = p.y < terrainY - .25 ? terrainY : s.swimming ? s.waterLevel : 0;
     let spot = null;
     for (let radius = 3.0; radius <= 12 && !spot; radius += 1.5) {
       for (let i = 0; i < 16; i++) {
@@ -1614,7 +1677,8 @@
         const x = p.x + Math.sin(angle) * radius;
         const z = p.z + Math.cos(angle) * radius;
         const y = worldRef.surfaceHeight(x, z);
-        if (y < 0.1) continue;
+        if (y < Math.max(.1, minimumY - .25)) continue;
+        if (worldRef.waterAt && worldRef.waterAt(x, y + .1, z)) continue;
         if (!canStandAt(animal, x, z, y, s.yaw)) continue;
         if (goatRef && goatRef.group) {
           const g = goatRef.group.position;
@@ -1641,6 +1705,9 @@
       s.action = null;
       s.pendingClimb = null;
       s.escape = null;
+      if (s.excavation) s.excavation.reset();
+      s.swimPath = null; s.swimSearch = 0; s.navigation = null;
+      s.recovery.travelAnchor = null;
       s.descendTarget = null;
       s.descendTime = 0;
       s.gathering = false;
@@ -1663,7 +1730,7 @@
     const parts = animal.parts;
     const def = animal.def;
     const moving = s.speed > 0.08;
-    s.stride = damp(s.stride || 0, moving ? clamp(s.speed / def.walkSpeed, 0, 1.2) : 0, 10, dt);
+    s.stride = damp(s.stride || 0, moving ? clamp(s.speed / M.config.locomotion.runSpeed, 0, 1.2) : 0, 10, dt);
     const stride = s.stride;
     const footBeat = Math.floor(s.walkPhase / Math.PI);
     if (moving && s.grounded && s.footBeat !== undefined && s.footBeat !== footBeat && audioRef && audioRef.actorStep) audioRef.actorStep(animal.species, animal.group.position);
@@ -1771,7 +1838,7 @@
     for (let i = 0; i < parts.legs.length; i++) {
       const leg = parts.legs[i];
       const phase = s.walkPhase + leg.offset;
-      const gait = hoofPose(phase, stride, s.mode === 'hunt' ? 0.6 : 0);
+      const gait = hoofPose(phase, stride, 1);
       const gaitShape = animal.species === 'cow' ? 0.84 : animal.species === 'stag' ? 1.08 : 0.94;
       const wheel = speedLevel >= 3 && moving && s.grounded && tuck < 0.01;
       let hipTarget;
@@ -1931,7 +1998,7 @@
       return;
     }
 
-    const speed = defWalkSpeed(animal) * 1.65 * (s.grounded ? 1 : AIR_CONTROL);
+    const speed = travelSpeed(animal);
     s.speed = damp(s.speed, speed, 6, dt);
     const moved = distance > 0.001 && moveAnimal(
       animal,
@@ -1940,7 +2007,7 @@
       s.yaw
     );
     if (moved) {
-      s.walkPhase += s.speed * dt * 4.6;
+      s.walkPhase += s.speed * dt * M.config.locomotion.runCadence;
       s.stuck = 0;
     } else if (s.grounded) {
       s.stuck += dt;
@@ -1966,13 +2033,14 @@
     if (!direct && s.navigation && s.navigation.path && s.navigation.path.length) target = s.navigation.path[0];
     const dx = target.x - p.x;
     const dz = target.z - p.z;
-    if (Math.hypot(dx, dz) < 0.25) return null;
+    if (Math.hypot(dx, dz) < 0.25 && Math.abs((target.y ?? target.top ?? p.y) - p.y) < .3) return null;
     return { x: dx, z: dz, target: target };
   }
 
   function updateRecovery(animal, dt) {
     const s = animal.state;
     const p = animal.group.position;
+    if (s.escape) return; // A recovery job must not restart its own deadline.
     const motion = recoveryMotion(animal);
     if (motion && s.navigation && s.navigation.invalid && s.navigation.goal &&
         s.navigation.revision === worldRef.revision &&
@@ -1986,6 +2054,11 @@
         s.huntTarget = null; s.mode = 'idle'; s.wait = .2; s.speed = 0;
       }
       recovery.reset(s.recovery);
+      return;
+    }
+    const travelStalled = recovery.trackTravel(s.recovery, p, s.grounded, !!motion, dt);
+    if (travelStalled && motion && s.grounded) {
+      startEscape(animal, motion);
       return;
     }
     if (s.detourTime > 0) {
@@ -2043,27 +2116,33 @@
 
   function updateSwimmingAnimal(animal, dt, t) {
     const s = animal.state, p = animal.group.position;
-    let goal = s.shoreJump > 0 && s.shoreTarget ? s.shoreTarget :
-      s.mode === 'walk' ? s.target : s.mode === 'hunt' && s.huntTarget ? s.huntTarget.position : null;
-    if (!goal || Math.hypot(goal.x - p.x, goal.z - p.z) < .3) {
+    s.waterTime = (s.waterTime || 0) + dt;
+    if (s.waterTime > ESCAPE_TIMEOUT) {
+      rescueAnimal(animal);
+      s.waterTime = ESCAPE_TIMEOUT - 2; // Bound retries if no dry rescue spot exists.
+      updateVisual(animal, dt, t);
+      return;
+    }
+    // Water recovery takes precedence over the job's land target. In
+    // particular, a quarry on an unclimbable bank must not pin a swimmer.
+    let goal = s.shoreJump > 0 ? s.shoreTarget : null;
+    if (!goal) {
       s.swimSearch = (s.swimSearch || 0) - dt;
-      if (!s.swimTarget || s.swimSearch <= 0) {
-        s.swimSearch = 1; s.swimTarget = null;
-        for (let radius = 2; radius <= 14 && !s.swimTarget; radius += 2) for (let i = 0; i < 16; i++) {
-          const x = p.x + Math.sin(s.yaw + i * Math.PI / 8) * radius;
-          const z = p.z + Math.cos(s.yaw + i * Math.PI / 8) * radius;
-          const top = physics.support(worldRef, { x: x, z: z }, s.waterLevel + BLOCK + .01, bodyOf(animal));
-          if (top >= s.waterLevel - .1 && canStandAt(animal, x, z, top) && actorSpotClear(animal, x, z)) {
-            s.swimTarget = { x: x, y: top, z: z }; break;
-          }
-        }
+      if (s.swimRevision !== worldRef.revision || s.swimSearch <= 0) {
+        s.swimPath = physics.shoreRoute(worldRef, p, bodyOf(animal), s.waterLevel, GRAVITY);
+        s.swimRevision = worldRef.revision; s.swimSearch = 2;
       }
-      goal = s.swimTarget || goatRef.group.position;
+      while (s.swimPath && s.swimPath.length > 1 &&
+          Math.hypot(s.swimPath[0].x - p.x, s.swimPath[0].z - p.z) < .25) s.swimPath.shift();
+      goal = s.swimPath && s.swimPath[0];
+      s.waterStall = recovery.update(s.waterRecovery || (s.waterRecovery = recovery.create()), p,
+        'swim', !!goal, dt, goal);
+      if (s.waterStall === 'escape') { s.swimSearch = 0; recovery.reset(s.waterRecovery); }
     }
     if (goal) {
       const dx = goal.x - p.x, dz = goal.z - p.z, distance = Math.hypot(dx, dz);
       s.yaw = turnToward(s.yaw, Math.atan2(dx, dz), dt * 4);
-      s.speed = damp(s.speed, Math.min(3.5, defWalkSpeed(animal)) * .8, 5, dt);
+      s.speed = damp(s.speed, Math.min(3.5, travelSpeed(animal)) * .8, 5, dt);
       const step = Math.min(distance, s.speed * dt);
       if (distance > .02) moveAnimal(animal, dx / distance * step, dz / distance * step, s.yaw);
     } else s.speed = damp(s.speed, 0, 5, dt);
@@ -2083,8 +2162,13 @@
         Math.hypot(b.target.position.x - b.x, b.target.position.z - b.z) < 1;
     });
     if (physics.recover(worldRef, p, bodyOf(animal))) { s.vy = 0; s.grounded = false; }
+    if (s.escape) {
+      s.escape.time += dt;
+      if (s.escape.time > ESCAPE_TIMEOUT) { rescueAnimal(animal); return; }
+    }
     physics.updateSwimming(worldRef, p, bodyOf(animal), s, dt);
     if (s.swimming || s.shoreJump > 0) { updateSwimmingAnimal(animal, dt, t); return; }
+    s.swimPath = null; s.swimSearch = 0; s.waterTime = 0;
     const player = goatRef.group.position;
     const playerDistance = Math.hypot(p.x - player.x, p.z - player.z);
     if (s.mode !== 'hunt') s.strikeTime = -1;
@@ -2102,6 +2186,10 @@
     s.towerTimer = Math.max(0, s.towerTimer - dt * workRate);
     s.coinCooldown = Math.max(0, s.coinCooldown - dt);
     if (trainedBuilder && s.coins < trainedBuilder.cost.coins && M.items && M.items.takeCoins) s.coins += M.items.takeCoins(p);
+    if (animal.role === 'builder' && !s.retired && !s.salvagedTower && M.items && M.items.takeTower) {
+      s.salvagedTower = M.items.takeTower(p);
+      if (s.salvagedTower) s.towerTimer = 0;
+    }
     if (s.coinTarget) {
       s.coinTime -= dt;
       if (s.mode !== 'walk' || s.coinTime <= 0 || !M.items.drops.includes(s.coinTarget)) {
@@ -2146,9 +2234,11 @@
       s.speed = damp(s.speed, 0, 5, dt);
       s.wait -= dt * workRate;
       if (s.wait <= 0) {
-        if (trainedBuilder && s.coins < trainedBuilder.cost.coins && !s.pendingClimb && startCoinRun(animal)) {
+        if (animal.role === 'builder' && !s.retired && !s.pendingClimb && startSalvage(animal)) {
+          // Carry one recovered cannon; its original definition survives redeployment.
+        } else if (trainedBuilder && s.coins < trainedBuilder.cost.coins && !s.pendingClimb && startCoinRun(animal)) {
           // The wall project stays intact while this short collection trip runs.
-        } else if (trainedBuilder && !s.pendingClimb && startTowerJob(animal)) {
+        } else if ((trainedBuilder || s.salvagedTower) && !s.pendingClimb && startTowerJob(animal)) {
           // Quarrying and tower assembly use the same timed actions as walls.
         } else if (s.pendingClimb) {
           startClimb(animal, s.pendingClimb);
@@ -2175,7 +2265,7 @@
               s.wait = rand(1.0, 2.0);
             }
           } else if (s.gathering && s.carryCount < s.batchGoal && !onStructure) {
-            if (!atSite && project.stepCount === 0) {
+            if (!atSite && project.stepCount === 0 && s.carryCount === 0) {
               s.target.set(site.centerX, site.groundY, site.centerZ);
               s.mode = 'walk';
               s.wait = 0;
@@ -2254,11 +2344,11 @@
       } else {
         const yaw = Math.atan2(dx, dz);
         s.yaw = turnToward(s.yaw, yaw, dt * 4.0);
-        const targetSpeed = defWalkSpeed(animal) * (s.grounded ? 1 : AIR_CONTROL);
+        const targetSpeed = travelSpeed(animal);
         s.speed = damp(s.speed, targetSpeed, 4, dt);
         const moved = moveAnimal(animal, dx / distance * s.speed * dt, dz / distance * s.speed * dt, s.yaw);
         if (moved) {
-          s.walkPhase += s.speed * dt * 4.6;
+          s.walkPhase += s.speed * dt * M.config.locomotion.runCadence;
           s.stuck = 0;
         } else if (s.grounded) {
           s.stuck += dt;
@@ -2300,9 +2390,11 @@
     updateVisual(animal, dt, t);
   }
 
-  function defWalkSpeed(animal) {
+  // Every job shares full-speed travel, body-aware moveAnimal routing, and
+  // updateRecovery. Roles choose goals, never their own locomotion rules.
+  function travelSpeed(animal) {
     const terrain = M.enemies && M.enemies.movementScale ? M.enemies.movementScale(animal.group.position) : 1;
-    return animal.def.walkSpeed * (M.upgrades ? M.upgrades.stats(animal).move : 1) * terrain;
+    return M.config.locomotion.runSpeed * (M.upgrades ? M.upgrades.stats(animal).move : 1) * terrain;
   }
 
   function findSpawnNear(cx, cz, minRadius, maxRadius, ignore) {

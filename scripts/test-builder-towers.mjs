@@ -171,3 +171,21 @@ test('packing and redeploying a trained tower preserves its tier without a secon
   assert.equal(M.enemies.getState().coins, wallet); assert.equal(M.items.count('stone'), stock);
   assert.equal(M.items.count('tower_' + id), 0);
 });
+
+test('untrained builders recover and redeploy a dropped tower without charging the player', () => {
+  const { M, animal, THREE } = builders('Mallow', 0);
+  animal.group.position.set(45, 14, 15);
+  Object.assign(animal.state, { buildTimer: 1000, wait: 0 });
+  const wallet = M.enemies.getState().coins, stone = M.items.count('stone');
+  M.items.dropBlock('tower_builder_frost_3', 49, 14.9, 15);
+  until(M, () => M.towers.list.length === 1, 30);
+  assert.equal(M.towers.list[0].id, 'builder_frost_3');
+  assert.equal(animal.state.salvagedTower, null);
+  assert.equal(M.items.drops.filter(d => M.towers.itemDefinition(d.userData.drop.kind)).length, 0);
+  assert.equal(M.enemies.getState().coins, wallet);
+  assert.equal(M.items.count('stone'), stone);
+  assert.equal(M.items.takeTower(new THREE.Vector3(49, 14, 15)), null);
+  animal.state.salvagedTower = 'tower_ballista';
+  assert.equal(M.towers.placeSalvaged(animal, 0, 7, 0), false);
+  assert.equal(animal.state.salvagedTower, 'tower_ballista', 'failed placement retains the recovered tower');
+});

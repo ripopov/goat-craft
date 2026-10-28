@@ -70,6 +70,19 @@
     return recovery.stage;
   }
 
+  // This longer watchdog survives waypoint/job changes and airborne bobbing.
+  // The short monitor above still handles local jumps and detours promptly.
+  function trackTravel(state, position, grounded, intendsMove, dt) {
+    const anchor = state.travelAnchor;
+    if (!anchor || Math.hypot(position.x - anchor.x, position.z - anchor.z) >= 2 ||
+        (grounded && position.y > anchor.y + 1)) {
+      state.travelAnchor = { x: position.x, y: position.y, z: position.z };
+      state.travelTime = 0;
+    }
+    if (intendsMove) state.travelTime += dt;
+    return state.travelTime >= 6;
+  }
+
   function direction(dx, dz) {
     const length = Math.hypot(dx, dz);
     if (length < 0.0001) return { x: 0, z: 1 };
@@ -250,6 +263,7 @@
     create: create,
     reset: reset,
     update: update,
+    trackTravel: trackTravel,
     findLedge: findLedge,
     findDetour: findDetour,
     blockedAhead: blockedAhead,

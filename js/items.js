@@ -394,6 +394,26 @@
     }
     return best;
   }
+  function nearestTower(position, range) {
+    let best = null, distance = range;
+    for (const mesh of drops) {
+      if (!M.towers || !M.towers.itemDefinition(mesh.userData.drop.kind) ||
+          Math.abs(mesh.position.y - position.y - .9) > PICKUP_HEIGHT) continue;
+      const d = Math.hypot(mesh.position.x - position.x, mesh.position.z - position.z);
+      if (d >= distance || !lootPathClear(mesh.position.x, mesh.position.y, mesh.position.z, position.x, position.y + .9, position.z)) continue;
+      best = mesh; distance = d;
+    }
+    return best;
+  }
+  function takeTower(position) {
+    const mesh = nearestTower(position, 1.8);
+    if (!mesh) return null;
+    const drop = mesh.userData.drop;
+    if (--drop.count === 0) { dropGroup.remove(mesh); drops.splice(drops.indexOf(mesh), 1); }
+    if (M.audio && M.audio.pickup) M.audio.pickup();
+    return drop.kind;
+  }
+
   function takeCoins(position) {
     let amount = 0;
     for (let i = drops.length - 1; i >= 0; i--) {
@@ -506,7 +526,7 @@
     update: update,
     dropBlock: dropBlock,
     dropCoins: dropCoins,
-    nearestCoin: nearestCoin, takeCoins: takeCoins,
+    nearestCoin: nearestCoin, takeCoins: takeCoins, nearestTower, takeTower,
     addItem: addItem, canAdd: inventory.canAdd, iconFor: iconFor, hotbarSize: SLOT_COUNT,
     moveStack: function (from, to) {
       if (!inventory.move(from, to)) return false;

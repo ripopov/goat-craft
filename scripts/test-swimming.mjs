@@ -5,9 +5,9 @@ import { game } from './helpers/animal-game.mjs';
 // Reuse one rendered fixture; the small voxel pool isolates actual controller,
 // route and animation behavior without repeatedly generating the whole forest.
 const { M, THREE, scene, input, controls } = game({ seed: 7 });
-let bank = 12, ceiling = Infinity;
+let bank = 12, ceiling = Infinity, westWall = false;
 const wet = (x, z) => x >= 8 && x < 24 && z >= -6 && z < 6;
-const floor = (x, z) => wet(x, z) ? 0 : bank;
+const floor = (x, z) => wet(x, z) ? 0 : westWall && x < 8 ? 18 : bank;
 const water = { top: 0, level: 10, depth: 10 };
 const blocked = (x, z, low, high) => low < floor(x, z) - .00001 || high > ceiling;
 Object.assign(M.world, {
@@ -123,4 +123,27 @@ test('strategic pilot independently swims ashore and resumes guard duty', () => 
   assert.equal(M.goat.group.position.y, bank);
   assert.ok(!wet(M.goat.group.position.x, M.goat.group.position.z));
   M.strategy.active = false;
+});
+
+
+test('every NPC abandons an unclimbable job bank and swims around to a reachable exit', () => {
+  westWall = true;
+  try {
+    for (const animal of M.animals.list) {
+      const s = animal.state, body = M.animals.bodyOf(animal);
+      animal.group.position.set(9, 10 - M.actorPhysics.swimDepth(body), 1);
+      Object.assign(s, { mode: 'walk', swimming: true, shoreJump: 0, grounded: false,
+        vy: 0, speed: 0, swimSearch: 0, wait: 1000, escape: null });
+      const rescues = s.recovery.rescues;
+      s.target.set(5, 18, 1); // Valid job destination, impossible direct shore jump.
+      let exited = false;
+      for (let i = 0; i < 400; i++) {
+        M.animals.update(.05, i * .05);
+        if (!s.swimming && s.grounded && animal.group.position.y >= 12) { exited = true; break; }
+      }
+      assert.ok(exited, animal.name + ' takes another bank');
+      assert.equal(s.recovery.rescues, rescues, 'exit uses swimming and jumping');
+      animal.group.position.set(-20, bank, -15); s.mode = 'idle'; s.wait = 1000;
+    }
+  } finally { westWall = false; }
 });

@@ -126,27 +126,11 @@
     function escapeWater(p, state, dt) {
       shoreTimer -= dt;
       if (shoreTimer <= 0) {
-        shoreTimer = 1; shore = null;
-        let best = Infinity;
-        // Only scan continuous, clear water corridors. The existing shore
-        // jump owns the final climb; the pilot never snaps onto the bank.
-        for (let i = 0; i < 24; i++) {
-          const dx = Math.sin(i * Math.PI / 12), dz = Math.cos(i * Math.PI / 12);
-          for (let d = 1; d <= 24; d++) {
-            const x = p.x + dx * d, z = p.z + dz * d;
-            const y = physics.support(world, { x, z }, state.waterLevel + size + .01, body);
-            if (y >= state.waterLevel - .1 && !physics.waterInfo(world, { x, y: state.waterLevel - .2, z }) &&
-                physics.clear(world, x, y, z, body)) {
-              const cost = d + distance({ x, z }, home) * .1;
-              if (cost < best) { best = cost; shore = { x, y, z }; }
-              break;
-            }
-            if (!physics.clear(world, x, state.waterLevel - 1.3, z, body) ||
-                !physics.waterInfo(world, { x, y: state.waterLevel - 1.3, z })) break;
-          }
-        }
+        shoreTimer = 2;
+        shore = physics.shoreRoute(world, p, body, state.waterLevel, 26);
       }
-      return { mode: 'return', waypoint: shore, enemy: null };
+      while (shore && shore.length > 1 && distance(p, shore[0]) < .25) shore.shift();
+      return { mode: 'return', waypoint: shore && shore[0], enemy: null };
     }
     function clearRoute() { target = null; path = []; timer = 0; last = null; stuck = 0; failures.clear(); shore = null; shoreTimer = 0; }
     function reset() {

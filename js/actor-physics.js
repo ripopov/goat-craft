@@ -154,6 +154,38 @@
     return null;
   }
 
+  // Bounded water search shared by autonomous actors. Each edge is swept at
+  // the body's floating height; the final jump uses the real shore validator.
+  function shoreRoute(world, position, body, waterLevel, gravity) {
+    const size = world.blockSize || 2, y = waterLevel - swimDepth(body);
+    const start = { x: position.x, y, z: position.z, parent: null };
+    const queue = [start], seen = new Set(['0,0']);
+    const directions = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let index = 0; index < queue.length && index < 160; index++) {
+      const a = queue[index];
+      for (const [dx, dz] of directions) {
+        const exit = shoreExit(world, a, body, dx, dz, waterLevel, gravity);
+        if (exit) {
+          const path = [exit];
+          for (let node = a; node.parent; node = node.parent) path.unshift({ x: node.x, y, z: node.z });
+          return path;
+        }
+        const b = { x: a.x + dx * size, y, z: a.z + dz * size, parent: a };
+        if (Math.hypot(b.x - start.x, b.z - start.z) > 24) continue;
+        const key = Math.round((b.x - start.x) / size) + ',' + Math.round((b.z - start.z) / size);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        let open = true;
+        for (let d = .25; d <= size; d += .25) {
+          const x = a.x + dx * d, z = a.z + dz * d;
+          if (!clear(world, x, y, z, body) || !waterInfo(world, { x, y, z })) { open = false; break; }
+        }
+        if (open) queue.push(b);
+      }
+    }
+    return null;
+  }
+
   function launchShore(state, exit) {
     if (!exit) return false;
     state.shoreJump = exit.duration; state.shoreTarget = exit;
@@ -170,5 +202,5 @@
   M.actorPhysics = { clear: clear, support: support, moveVertical: moveVertical,
     moveHorizontal: moveHorizontal, recover: recover, intersectsBlock: intersectsBlock,
     swimDepth: swimDepth, waterInfo: waterInfo, updateSwimming: updateSwimming, float: float,
-    shoreExit: shoreExit, launchShore: launchShore };
+    shoreExit: shoreExit, shoreRoute: shoreRoute, launchShore: launchShore };
 })(window.Meadow = window.Meadow || {});

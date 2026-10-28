@@ -55,6 +55,8 @@
     coarsePointer: coarsePointer,
     reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     renderRadius: coarsePointer ? 4 : 5,
+    // Shared goat/herd locomotion tuning; upgrades and terrain scale speed once.
+    locomotion: { walkSpeed: 4.8, runSpeed: 9.6, walkCadence: 4.6, runCadence: 2.4 },
     // World units from the center on either horizontal axis (square extent).
     ocean: { boundary: 360, dangerBoundary: 390, shoreWidth: 36 },
     // Center and spawn use world units; radius and height use terrain blocks

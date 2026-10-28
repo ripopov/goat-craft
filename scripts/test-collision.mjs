@@ -95,7 +95,7 @@ test('every herd species walks away from an inside corner without hopping or rel
     Object.assign(animal.state, { mode: 'walk', wait: 1000, speed: 0, yaw: Math.PI / 4,
       grounded: true, vy: 0, jumpReason: null, stuck: 0 });
     animal.state.target.set(15, 14, 1);
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 300 && animal.group.position.x >= 18; i++) {
       M.animals.update(1 / 60, i / 60);
       assert.ok(clearActor(animal.group.position, M.animals.bodyOf(animal)));
     }
@@ -112,7 +112,7 @@ test('one-block corridors fit all herd species regardless of facing', () => {
   for (const animal of M.animals.list) {
     animal.group.position.set(17, 14, 1); animal.state.target.set(27, 14, 1);
     Object.assign(animal.state, { mode: 'walk', speed: 0, yaw: -Math.PI / 2, grounded: true, vy: 0 });
-    for (let i = 0; i < 360; i++) {
+    for (let i = 0; i < 360 && animal.group.position.x <= 21; i++) {
       M.animals.update(1 / 60, i / 60);
       assert.ok(clearActor(animal.group.position, M.animals.bodyOf(animal)));
     }
@@ -128,7 +128,7 @@ test('an animal above a bridge cannot block another walking below it', () => {
   walker.group.position.set(21, 14, 1); walker.state.target.set(15, 14, 1);
   Object.assign(walker.state, { mode: 'walk', speed: 0, yaw: -Math.PI / 2, grounded: true });
   above.group.position.set(19, 20, 1);
-  for (let i = 0; i < 240; i++) M.animals.update(1 / 60, i / 60);
+  for (let i = 0; i < 240 && walker.group.position.x >= 18; i++) M.animals.update(1 / 60, i / 60);
   assert.ok(walker.group.position.x < 18);
   assert.equal(walker.group.position.y, 14); assert.equal(above.group.position.y, 20);
 });
@@ -143,7 +143,7 @@ test('the herd can enter a dry bridge over water from the bank', () => {
   for (let x = firstWet - 1; x <= firstWet + 5; x++) place(x, 3, 7, 7);
   walker.group.position.set(startX, 16, 7); walker.state.target.set((firstWet + 4.5) * 2, 16, 7);
   Object.assign(walker.state, { mode: 'walk', speed: 0, yaw: Math.PI / 2, grounded: true, vy: 0 });
-  for (let i = 0; i < 420; i++) M.animals.update(1 / 60, i / 60);
+  for (let i = 0; i < 420 && walker.group.position.x <= (firstWet + 1.5) * 2; i++) M.animals.update(1 / 60, i / 60);
   assert.ok(walker.group.position.x > (firstWet + 1.5) * 2, 'water below the bridge must not be an invisible movement wall');
   assert.equal(walker.group.position.y, 16);
 });

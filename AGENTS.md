@@ -1,13 +1,19 @@
 # Project vision
 
-Our long-term goal is to create a tower defense game set in a Minecraft-style voxel world, with AAA-quality gameplay, visuals, audio, performance, and overall polish.
+Meadow Goat is evolving into a tower defense game in a Minecraft-style voxel world. Aim for AAA-quality gameplay, visuals, audio, performance, and polish. Preserve coherent combat, terrain interaction, and player feedback as features grow.
 
-Use this vision to guide design and implementation decisions as the current prototype evolves toward that goal.
+# Runtime and architecture
 
-The game must remain a static web page. It must be playable locally without a server and deployable to GitHub Pages.
+- The game must remain a static web page: open `index.html` directly via `file://`, without a server, build step, or package install, and deploy to GitHub Pages.
+- Use classic scripts sharing `window.Meadow`; `index.html` defines dependency order and `js/main.js` owns initialization and the frame loop. Avoid runtime imports, fetches, and remote dependencies.
+- Bundle assets locally and use relative paths compatible with the GitHub Pages repository subpath.
+- Read `docs/architecture.md` for module ownership and extension guidance; consult `README.md` for gameplay and controls. Reuse shared physics, navigation, inventory, and combat rules.
+- Keep simulation work, effects, caches, and audio voices bounded. Respect reduced-motion settings and keyboard/touch controls. Update relevant documentation when behavior changes.
 
-# Test suite time budget
+# Validation
 
-The full test suite (`node --test scripts/test-*.mjs`) must complete within 30 seconds. Maintain this limit as tests are added or changed.
-
-If the suite exceeds 30 seconds, refactor it before considering the work complete: exclude less relevant tests from the default suite, shorten test scenarios, or reduce redundant coverage while preserving essential regression checks. Keep longer or specialized checks separately runnable when useful. Do not raise the 30-second limit.
+- Run relevant regression tests and syntax-check changed JavaScript with `node --check`.
+- The full suite, `node --test scripts/test-*.mjs`, must finish within **30 seconds**. Never raise this limit. If exceeded, shorten scenarios, remove redundant coverage, or move less relevant checks outside the default suite while preserving essential regressions.
+- Longer defense simulations remain separately runnable: `node --test scripts/check-enemy-balance-tests.mjs`.
+- After script or asset changes, run `node scripts/build-site.mjs` and `node scripts/check-site.mjs _site`. Treat `_site/` as generated output.
+- Check the actual page from disk after initialization or shader changes; verify affected gameplay, visuals, and input in-browser.

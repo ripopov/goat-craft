@@ -25,6 +25,14 @@ test('sea raids unlock at four, reserve complete crews and override delivery onl
   assert.deepEqual([15, 35, 75].map(rules.waveSize), [64, 144, 200]);
   assert.match(rules.introduction(4), /Sea Raiders/);
   for (const wave of [15, 35, 75]) assert.match(rules.introduction(wave), /Sea invasion/);
+  const endlessCounts = { ground: 0, boat: 0, parachute: 0 };
+  for (let slot = 0; slot < 1200; slot++) {
+    const type = rules.typeForWave(100, slot);
+    const delivery = rules.deliveryForWave(100, slot, type);
+    assert.equal(delivery, slot % 12 < 4 ? 'ground' : slot % 12 < 8 ? 'boat' : 'parachute');
+    endlessCounts[delivery]++;
+  }
+  assert.deepEqual(endlessCounts, { ground: 400, boat: 400, parachute: 400 });
 });
 
 test('real ocean crews sail, remain vulnerable, jump ashore, march to the Hearth and release their boats', async t => {
@@ -105,6 +113,46 @@ test('real ocean crews sail, remain vulnerable, jump ashore, march to the Hearth
     assert.equal(e.zombies.length, 200); assert.equal(e.getState().pending, 60); assert.equal(e.boats[0].crew.length, 4);
     for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.hp);
     // Replace the pending sea invasion before exercising an isolated landing.
+    e.startWave(1); step(M, 1);
+    for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.hp);
+  });
+  await t.test('endless arrivals continue launching full crews beyond 200 slots', () => {
+    e.startWave(100);
+    let arrivals = 0, laterBoats = 0, laterDrops = 0, bossOnBoat = false, droppedWorm = false;
+    for (let i = 0; i < 4000 && arrivals < 260; i++) {
+      e.update(.05);
+      const spawned = e.zombies.slice();
+      if (arrivals >= 200 && spawned.some(enemy => enemy.boat)) laterBoats++;
+      if (arrivals >= 200 && spawned.some(enemy => enemy.airborne)) laterDrops++;
+      if (spawned.some(enemy => enemy.boat && enemy.type === 'boss')) bossOnBoat = true;
+      if (spawned.some(enemy => enemy.airborne && enemy.type === 'worm' && !enemy.burrowed)) droppedWorm = true;
+      arrivals += spawned.length;
+      for (const enemy of spawned) e.damageEnemy(enemy, enemy.hp);
+    }
+    assert.ok(arrivals >= 260);
+    assert.ok(laterBoats > 0, 'boats continue after the finite wave size');
+    assert.ok(laterDrops > 0, 'parachutes continue after the finite wave size');
+    assert.ok(bossOnBoat, 'the endless roster can include a Boss in a crew');
+    assert.ok(droppedWorm, 'air-dropped Worms stay on the surface');
+    e.startWave(1); step(M, 1);
+    for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.hp);
+  });
+  await t.test('endless sea crews reserve four slots even when the cap is almost full', () => {
+    e.startWave(100);
+    let arrivals = 0;
+    while (arrivals < 4) {
+      e.update(.05);
+      for (const enemy of e.zombies.slice()) { arrivals++; e.damageEnemy(enemy, enemy.hp); }
+    }
+    for (let i = 0; i < 197; i++) e.spawnAt({ x: 23, y: 14, z: 23 }, 'zombie');
+    step(M, .6);
+    assert.equal(e.zombies.length, 197);
+    assert.equal(e.boats.length, 0);
+    e.damageEnemy(e.zombies[0], e.zombies[0].hp);
+    step(M, .6);
+    assert.equal(e.zombies.length, 200);
+    assert.equal(e.boats[0].crew.length, 4);
+    for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.hp);
     e.startWave(1); step(M, 1);
     for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.hp);
   });

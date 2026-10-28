@@ -4,7 +4,7 @@
   // The console is a development shortcut, not a normal gameplay menu. It
   // stays out of the way until "/" is pressed and grants resources or starts
   // waves without touching the simulation directly.
-  const AMOUNT = 1000;
+  const AMOUNT = 10000;
   const FALLBACK_RESOURCES = ['log', 'stone', 'dirt', 'coal', 'copper', 'iron'];
   const RESOURCE_NAMES = { log: 'wood', stone: 'stone', dirt: 'soil', coal: 'coal', copper: 'copper', iron: 'iron' };
   const HISTORY_LIMIT = 40;

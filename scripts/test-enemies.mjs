@@ -118,7 +118,7 @@ test('enemies arrive gradually and share the configured living cap', () => {
 });
 
 test('wave 100 continuously replenishes every species without advancing', () => {
-  const { M, scene, world, tree } = fixture();
+  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree;
   tree.damage = () => {};
   M.enemies.init({ scene, world, tree });
   const e = M.enemies;
@@ -128,7 +128,7 @@ test('wave 100 continuously replenishes every species without advancing', () => 
   assert.deepEqual([...roster].sort(), Object.keys(e.types).sort());
   assert.equal(e.startNextWave(), false);
   assert.equal(e.startWave(101), false);
-  const node = e.navigation.nodeAt(45, 0, 1);
+  const node = e.navigation.nodes.find(n => !n.swim && Number.isFinite(n.distance));
   for (let i = 0; i < 200; i++) e.spawnAt(node);
   advance(M, .1);
   assert.equal(e.zombies.length, 200);
@@ -137,7 +137,7 @@ test('wave 100 continuously replenishes every species without advancing', () => 
   assert.ok(e.zombies.length > 195 && e.zombies.length <= 200, 'fallen enemies are replenished within the cap');
   assert.equal(e.getState().wave, 100);
   for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.maxHp);
-  advance(M, .1);
+  advance(M, .6);
   assert.equal(e.getState().wave, 100);
   assert.equal(e.getState().phase, 'endless');
   assert.ok(e.zombies.length > 0, 'spawning resumes even after a complete wipe');

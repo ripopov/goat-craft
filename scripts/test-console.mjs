@@ -142,15 +142,15 @@ test('/ opens the console, captures keyboard input and closes with / or Esc', ()
   assert.equal(M.devConsole.isOpen, false);
 });
 
-test('money grants 1000 coins and 1000 of every tower resource', () => {
+test('money grants 10000 coins and 10000 of every tower resource', () => {
   const { M, elements, added, coins, press, type } = consoleGame();
   press('/', 'Slash');
   type('money');
-  assert.equal(coins.value, 1000);
+  assert.equal(coins.value, 10000);
   assert.deepEqual(added.map(([kind]) => kind).sort(), ['coal', 'copper', 'dirt', 'iron', 'log', 'stone']);
-  added.forEach(([kind, count]) => assert.equal(count, 1000, kind + ' receives 1000'));
+  added.forEach(([kind, count]) => assert.equal(count, 10000, kind + ' receives 10000'));
   const log = elements.get('dev-console-log').children.map(child => child.textContent).join('\n');
-  assert.match(log, /Granted 1000 coins/);
+  assert.match(log, /Granted 10000 coins/);
   assert.match(log, /wood/);
   assert.equal(M.devConsole.isOpen, true);
 });

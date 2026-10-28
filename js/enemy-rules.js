@@ -31,8 +31,11 @@
     return specialWaves[level]?.delivery === 'boat' ? Math.ceil(size / 4) * 4 : size;
   }
   function seaSlot(level, slot) {
-    // Four consecutive slots, with no half-full boat at the roster's end.
-    return level >= 4 && slot % 24 >= 4 && slot % 24 < 8 && slot - slot % 24 + 8 <= waveSize(level);
+    // The endless assault repeats four ground, four sea and four air slots.
+    if (level === 100) return slot % 12 >= 4 && slot % 12 < 8;
+    // Finite waves must not reserve a partial crew at the roster's end.
+    return level >= 4 && slot % 24 >= 4 && slot % 24 < 8 &&
+      slot - slot % 24 + 8 <= waveSize(level);
   }
   // Pressure comes from coordinated arrivals before it comes from stat growth.
   // Short squad gaps leave recovery time without feeding hunters single targets.
@@ -72,10 +75,9 @@
     return 'zombie';
   }
   function deliveryForWave(level, slot, type) {
-    // Endless reinforcements must fit any number of available cap slots.
-    if (level === 100) return 'ground';
     if (specialWaves[level] && specialWaves[level].delivery) return specialWaves[level].delivery;
     if (!specialWaves[level] && seaSlot(level, slot)) return 'boat';
+    if (level === 100) return slot % 12 >= 8 ? 'parachute' : 'ground';
     return level >= 5 && (type === 'zombie' || type === 'skeleton') &&
       (level === 5 ? slot === 3 : slot % 10 === 3) ? 'parachute' : 'ground';
   }

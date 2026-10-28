@@ -58,6 +58,7 @@
   // Deterministic slots introduce a readable mix and bound the durable units.
   // Every 7th wave leads with one Boss marching alongside its regular horde.
   function typeForWave(level, slot) {
+    if (level === 100 && slot % 100 === 0) return 'boss';
     if (specialWaves[level] && specialWaves[level].type) return specialWaves[level].type;
     if (level % 7 === 0 && slot === 0) return 'boss';
     if (level >= 10 && slot % 12 === 9) return 'worm';
@@ -71,6 +72,8 @@
     return 'zombie';
   }
   function deliveryForWave(level, slot, type) {
+    // Endless reinforcements must fit any number of available cap slots.
+    if (level === 100) return 'ground';
     if (specialWaves[level] && specialWaves[level].delivery) return specialWaves[level].delivery;
     if (!specialWaves[level] && seaSlot(level, slot)) return 'boat';
     return level >= 5 && (type === 'zombie' || type === 'skeleton') &&
@@ -81,6 +84,7 @@
       7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
       10: 'Burrow Worms — watch for dig-outs 19–36 units from the Hearth.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };
+    if (wave === 100) return 'Endless assault! Seal all eight gates to stop the invasion.';
     if (specialWaves[wave]) return specialWaves[wave].intro;
     let intro = introductions[wave] || 'protect the Hearth!';
     if (wave % 7 === 0) intro = 'A hulking Boss with burning red eyes leads this wave — it carries twenty times the health of a regular enemy. ' +

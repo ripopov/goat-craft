@@ -34,7 +34,7 @@ test('specialist wave slots stay rare, unlock gradually and preserve early wave 
   }
   assert.equal(e.emergenceRadius, 36, 'dig-outs occur at twice the previous distance');
   assert.deepEqual([1, 2, 3].map(wave => e.waveSize(wave)), [6, 10, 14]);
-  for (const wave of [30, 70, 130]) {
+  for (const wave of [30, 70]) {
     for (let slot = 0; slot < e.waveSize(wave); slot++) {
       assert.equal(e.typeForWave(wave, slot), 'worm', 'the entire special roster, including the usual wave-70 Boss');
       assert.equal(e.deliveryForWave(wave, slot, 'worm'), 'ground');

@@ -7,7 +7,7 @@ const step = (M, seconds) => { for (let i = 0; i < Math.ceil(seconds / .05); i++
 test('sea raids unlock at four, reserve complete crews and override delivery only on 15, 35 and 75', () => {
   const { M, load } = classicModules(); load('js/enemy-rules.js');
   const rules = M.enemyRules;
-  for (let wave = 1; wave <= 150; wave++) {
+  for (let wave = 1; wave < 100; wave++) {
     const size = rules.waveSize(wave), sea = [];
     for (let slot = 0; slot < size; slot++) {
       const type = rules.typeForWave(wave, slot), delivery = rules.deliveryForWave(wave, slot, type);

@@ -117,6 +117,32 @@ test('enemies arrive gradually and share the configured living cap', () => {
   assert.equal(M.enemies.getState().wave, 1, 'a crowded wave cannot silently queue another wave');
 });
 
+test('wave 100 continuously replenishes every species without advancing', () => {
+  const { M, scene, world, tree } = fixture();
+  tree.damage = () => {};
+  M.enemies.init({ scene, world, tree });
+  const e = M.enemies;
+  assert.equal(e.startWave(100), true);
+  assert.equal(e.getState().phase, 'endless');
+  const roster = new Set(Array.from({ length: 200 }, (_, i) => e.typeForWave(100, i)));
+  assert.deepEqual([...roster].sort(), Object.keys(e.types).sort());
+  assert.equal(e.startNextWave(), false);
+  assert.equal(e.startWave(101), false);
+  const node = e.navigation.nodeAt(45, 0, 1);
+  for (let i = 0; i < 200; i++) e.spawnAt(node);
+  advance(M, .1);
+  assert.equal(e.zombies.length, 200);
+  for (const enemy of e.zombies.slice(0, 5)) e.damageEnemy(enemy, enemy.maxHp);
+  advance(M, 3);
+  assert.ok(e.zombies.length > 195 && e.zombies.length <= 200, 'fallen enemies are replenished within the cap');
+  assert.equal(e.getState().wave, 100);
+  for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.maxHp);
+  advance(M, .1);
+  assert.equal(e.getState().wave, 100);
+  assert.equal(e.getState().phase, 'endless');
+  assert.ok(e.zombies.length > 0, 'spawning resumes even after a complete wipe');
+});
+
 test('opening enemies spawn at a distant forest gate', () => {
   const { M, scene, world, tree } = fixture();
   M.enemies.init({ scene, world, tree });
@@ -224,7 +250,7 @@ test('every species has exactly four times its previous health and wave gains, i
   // when later waves start, and parachuting and surface Worms use the same HP.
   const initial = M.enemies.spawnAt({ x: 15, y: 0, z: 1 });
   assert.equal(initial.hp, 8); assert.equal(initial.maxHp, 8);
-  for (const wave of [20, 30, 70, 130]) {
+  for (const wave of [20, 30, 70, 100]) {
     M.enemies.startWave(wave);
     for (const type of Object.keys(previousBase)) {
       const enemy = M.enemies.spawnAt({ x: 15, y: 30, z: 1 }, type, { airborne: true });

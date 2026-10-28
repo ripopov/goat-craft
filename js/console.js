@@ -76,8 +76,8 @@
         return false;
       }
       level = Number(argument);
-      if (!Number.isSafeInteger(level) || level < 1) {
-        line('Wave level must be 1 or greater.', 'warn');
+      if (!Number.isSafeInteger(level) || level < 1 || level > 100) {
+        line('Wave level must be between 1 and 100.', 'warn');
         return false;
       }
       if (typeof M.enemies.startWave !== 'function') {
@@ -87,7 +87,7 @@
     }
     const started = hasLevel ? M.enemies.startWave(level) : M.enemies.startNextWave();
     if (!started) {
-      line('Cannot start a wave while the Hearth has fallen.', 'warn');
+      line('Cannot start that wave right now.', 'warn');
       return false;
     }
     const state = M.enemies.getState();

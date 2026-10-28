@@ -457,7 +457,7 @@
     const lanes = rules.specialWaves[laneLevel]?.delivery === 'boat' ? seaLanes : spawnLanes.concat(seaLanes);
     return { health: tree ? tree.health : 100, maxHealth: 100, coins: coins, count: zombies.length,
       wave: wave, pending: pending, victorious: victorious, gatesDestroyed: M.hellGates.destroyed,
-      phase: victorious ? 'victory' : nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
+      phase: victorious ? 'victory' : wave === 100 ? 'endless' : nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
       maxEnemies: MAX_ENEMIES, approaches: lanes.map(function (lane) { return lane.label; }).join(' / '),
       spawnLanes: lanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
       nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
@@ -503,14 +503,14 @@
     updateHud();
   }
   function startNextWave() {
-    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won) return false;
+    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won || wave >= 100) return false;
     beginWave();
     return true;
   }
   // Developer shortcut: jump to an exact wave level, forwards or backwards.
   // Living enemies stay in the world; only queued spawns are replaced.
   function startWave(level) {
-    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won || !Number.isSafeInteger(level) || level < 1) return false;
+    if (!mesh || !tree || tree.health <= 0 || victorious || M.hellGates.won || !Number.isSafeInteger(level) || level < 1 || level > 100) return false;
     beginWave(level);
     return true;
   }
@@ -893,13 +893,14 @@
       });
     }
     if (elapsed >= nextWave) beginWave();
+    if (wave === 100) pending = MAX_ENEMIES - zombies.length;
     spawnTimer -= dt;
     if (pending > 0 && spawnTimer <= 0 && zombies.length < MAX_ENEMIES) {
       const spawned = spawn();
       if (spawned) {
         const count = spawned === true ? 1 : spawned;
         pending -= count; waveSpawned += count;
-        spawnTimer = count === 4 || waveSpawned % plan.squadSize === 0 ? plan.squadInterval : plan.memberInterval;
+        spawnTimer = wave === 100 ? 0.05 : count === 4 || waveSpawned % plan.squadSize === 0 ? plan.squadInterval : plan.memberInterval;
       } else spawnTimer = 0.5; // Retry without consuming a member or skipping a flank.
     }
     fleet.update(dt);
@@ -956,7 +957,7 @@
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
     });
-    if (wave > 0 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
+    if (wave > 0 && wave < 100 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
       const bonus = rules.clearBonus(wave);
       const rest = rules.restAfter(wave);
       coins += bonus; nextWave = elapsed + rest;

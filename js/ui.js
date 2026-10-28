@@ -109,8 +109,9 @@
     text('defense-enemies', state.count + ' / ' + state.maxEnemies);
     text('defense-gates', (state.gatesDestroyed || 0) + ' / 8');
     const approaches = state.approaches ? ' · ' + state.approaches : '';
-    text('defense-wave', state.wave ? 'Wave ' + state.wave + (state.phase === 'combat' ? approaches : '') : 'Prepare your defenses');
+    text('defense-wave', state.wave ? 'Wave ' + state.wave + (state.phase === 'combat' || state.phase === 'endless' ? approaches : '') : 'Prepare your defenses');
     text('defense-status', state.victorious ? 'All eight gates sealed · Victory!' : state.defeated ? 'The Hearth has fallen' :
+      state.phase === 'endless' ? 'Endless assault · Seal all eight gates' :
       state.phase === 'combat' ? (state.pending ? state.pending + ' incoming' + (state.nextSquad ? ' · squad in ' + state.nextSquad + 's' : '') : 'Clear the remaining enemies') :
       state.wave ? 'Next wave in ' + state.nextWave + 's' + approaches + ' · Q to train' : 'First wave in ' + state.nextWave + 's' + approaches);
     const bar = defenseEls['tree-health'];

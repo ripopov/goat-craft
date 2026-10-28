@@ -105,8 +105,11 @@ test('mining any tower cell produces one persistent pickup; collection and redep
   for (let i = 0; i < 40; i++) M.items.update(.05, i * .05, collector);
   assert.equal(M.items.count('tower_sniper'), 1); assert.equal(M.items.drops.length, 0);
   const balance = M.enemies.getState().coins, wood = M.items.count('log');
-  const moved = M.towers.place('sniper', 10, 7, 8, true);
-  assert.ok(moved); assert.equal(M.items.count('tower_sniper'), 0);
+  M.items.selectSlot(M.items.slots.findIndex(item => item?.kind === 'tower_sniper'));
+  const hit = { bx: 10, by: 6, bz: 8, normal: { x: 0, y: 1, z: 0 } };
+  assert.equal(M.items.placementTarget(hit).valid, true);
+  assert.equal(M.items.placeSelectedBlock(hit), true, 'map hit redeploys the selected packed tower without goat reach');
+  assert.ok(M.towers.atCell(10, 7, 8)); assert.equal(M.items.count('tower_sniper'), 0);
   assert.equal(M.enemies.getState().coins, balance); assert.equal(M.items.count('log'), wood);
   assert.equal(M.towers.place('sniper', 12, 7, 8, true), false, 'inventory-only cannot buy a fresh tower');
 });

@@ -80,3 +80,10 @@ or rule checks. Longer complete-defense runs remain separately runnable with
 Run `node scripts/build-site.mjs` and
 `node scripts/check-site.mjs _site` after changing scripts or local assets.
 Check the actual page from disk after changing initialization or shader code.
+
+Strategic inventory actions reuse the existing `items.js` hotbar DOM and selected
+stack. `strategy.js` owns map-pointer raycasts and command-distance previews; it
+passes the traced hit to `items.placementTarget(hit)` and
+`items.placeSelectedBlock(hit)`. Omitting the hit retains normal goat reach and
+camera targeting. Inventory consumption, tower deployment and voxel collision
+remain owned by their existing modules.

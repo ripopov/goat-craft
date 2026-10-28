@@ -79,19 +79,23 @@
 
   // Use the camera hit face for both the contour and the actual placement.
   // Occupied cells are rejected before consuming the carried block.
-  function placementTarget() {
+  function placementTarget(hitOverride) {
     const kind = selectedBlockKind();
     if (!kind || !M.world || !M.goat || !M.goat.group) return null;
-    if (M.towers && M.towers.itemDefinition(kind)) return M.towers.localTarget(kind);
+    if (M.towers && M.towers.itemDefinition(kind)) {
+      if (!hitOverride) return M.towers.localTarget(kind);
+      const def = M.towers.itemDefinition(kind), bx = hitOverride.bx, by = hitOverride.by + 1, bz = hitOverride.bz;
+      return { kind, bx, by, bz, valid: M.towers.site(def.id, bx, by, bz).valid };
+    }
     const size = M.world.blockSize || 2;
-    const hit = M.targeting && M.goat.aimCamera ? M.targeting.aim(M.goat.aimCamera, M.goat.group.position) : null;
+    const hit = hitOverride || (M.targeting && M.goat.aimCamera ? M.targeting.aim(M.goat.aimCamera, M.goat.group.position) : null);
     if (!hit) return null;
     const bx = hit.bx + hit.normal.x, by = hit.by + hit.normal.y, bz = hit.bz + hit.normal.z;
     return { kind: kind, bx: bx, by: by, bz: bz, x: (bx + .5) * size, y: (by + .5) * size, z: (bz + .5) * size,
       valid: M.world.canPlaceBlock(bx, by, bz) };
   }
-  function placeSelectedBlock() {
-    const target = placementTarget();
+  function placeSelectedBlock(hitOverride) {
+    const target = placementTarget(hitOverride);
     if (target && M.towers && M.towers.itemDefinition(target.kind)) {
       return target.valid && !!M.towers.place(M.towers.itemDefinition(target.kind).id, target.bx, target.by, target.bz, true);
     }
@@ -277,6 +281,7 @@
     if (index !== selectedSlot && M.audio && M.audio.select) M.audio.select();
     selectedSlot = index;
     renderSelection();
+    if (M.strategy && M.strategy.active && M.strategy.useInventory) M.strategy.useInventory();
   }
 
   function addItem(kind, count) {

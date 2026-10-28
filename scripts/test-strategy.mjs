@@ -17,9 +17,12 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   }
   function element(id) {
     if (elements.has(id)) return elements.get(id);
-    const node = { id, hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, dataset: {}, children: [],
+    const node = { id, hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, dataset: {}, style: {}, children: [],
       classList: { add() {}, remove() {}, toggle() {} },
-      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, appendChild(child) { this.children.push(child); },
+      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, appendChild(child) {
+        if (child.parentNode) child.parentNode.children = child.parentNode.children.filter(node => node !== child);
+        this.children.push(child); child.parentNode = this;
+      },
       querySelector: selector => element(id + selector),
       replaceChildren() { this.children = []; },
       focus() { document.activeElement = this; },
@@ -27,7 +30,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
       close() { this.open = false; lockEvents.push(() => dispatch(id, 'close')); },
       addEventListener: (type, fn, options) => listen(id, type, fn, options),
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 1280, height: 720 }),
-      getContext: () => drawing,
+      getContext: () => drawing, toDataURL: () => 'data:image/png;base64,fixture',
       setPointerCapture() {}, blur() {}
     };
     elements.set(id, node); return node;
@@ -35,6 +38,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
   const document = { getElementById: element, createElement: () => element('created-' + elements.size),
     hasFocus: () => focused, hidden: false,
     addEventListener: (type, fn, options) => listen('document', type, fn, options), body: element('body') };
+  document.body.appendChild(element('inventory'));
   const window = { matchMedia: query => ({ matches: coarsePointer && query.includes('pointer') }), addEventListener: (type, fn, options) => listen('window', type, fn, options) };
   function dispatch(target, type, values = {}) {
     const event = { type, key: '', code: '', ctrlKey: false, repeat: false,
@@ -362,11 +366,11 @@ test('asynchronous lock changes handle fast menu transitions and cancelled pendi
   assert.equal(document.pointerLockElement, null, 'Esc cancels an in-flight capture');
 });
 
-test('RTS keys select towers instead of inventory/actions, Tab remains accessible, Esc cancels before leaving', () => {
+test('RTS tower shortcuts avoid goat actions, Tab remains accessible, Esc cancels before leaving', () => {
   const { M, press, dispatch } = commandGame();
   let slots = 0, attacks = 0, jumps = 0;
   M.controls.onSelectSlot = () => slots++; M.controls.onHeadbutt = () => attacks++; M.controls.onJump = () => jumps++;
-  press('t', 'KeyT'); press('0', 'Digit0'); assert.equal(M.strategy.selected, 'sun');
+  press('t', 'KeyT'); dispatch('window', 'keydown', { key: ')', code: 'Digit0', shiftKey: true }); assert.equal(M.strategy.selected, 'sun');
   press('e', 'KeyE'); press(' ', 'Space'); assert.equal(slots + attacks + jumps, 0);
   dispatch('window', 'keydown', { key: ' ', code: 'Space', ctrlKey: true });
   assert.equal(jumps, 0, 'Ctrl+Space cannot jump the goat from the command camera');
@@ -375,7 +379,7 @@ test('RTS keys select towers instead of inventory/actions, Tab remains accessibl
   press('Escape', 'Escape'); assert.equal(M.strategy.active, false);
   assert.equal(dispatch('window', 'keydown', { key: 't', code: 'KeyT', repeat: true }).prevented, true);
   assert.equal(M.strategy.active, false, 'key repeat does not switch views');
-  press('t', 'KeyT'); press('0', 'Digit0');
+  press('t', 'KeyT'); dispatch('window', 'keydown', { key: ')', code: 'Digit0', shiftKey: true });
   dispatch('rts-close', 'click');
   assert.equal(M.strategy.active, false, 'the T-labeled close button exits strategic view even with a tower selected');
   assert.equal(M.strategy.selected, null);
@@ -398,7 +402,7 @@ test('placement and inspection show the same elevation-adjusted range as combat'
   let by = 7;
   M.targeting.trace = () => ({ bx: 8, by, bz: 8 });
   M.towers.site = () => ({ valid: true, reason: 'Ready' }); M.towers.available = () => true;
-  press('t', 'KeyT'); press('1', 'Digit1');
+  press('t', 'KeyT'); dispatch('window', 'keydown', { key: '!', code: 'Digit1', shiftKey: true });
   dispatch('scene', 'pointermove', { clientX: 400, clientY: 300 }); advance(.2);
   const ring = scene.children.find(node => node.geometry?.type === 'RingGeometry');
   assert.ok(Math.abs(ring.scale.x - 22.8) < 1e-9);
@@ -441,4 +445,78 @@ test('inventory, upgrades and strategy switch directly without losing strategic 
   press('t', 'KeyT'); assert.equal(M.strategy.active, false);
   press('i', 'KeyI'); assert.equal(M.inventoryMenu.isOpen, true);
   press('t', 'KeyT'); assert.equal(M.inventoryMenu.isOpen, false); assert.equal(M.strategy.active, true);
+});
+
+
+test('strategic hotbar uses real stacks, clicked faces, occupancy rules and tool mining independently of the goat', () => {
+  const { M, load, scene, press, dispatch, element } = commandGame();
+  load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
+  M.items.addItem('log', 3);
+  let allowed = true, placed = [], mined = [];
+  M.world.canPlaceBlock = () => allowed;
+  M.world.placeBlock = (kind, bx, by, bz) => { if (!allowed) return false; placed.push([kind, bx, by, bz]); return true; };
+  M.world.breakBlockAt = (bx, by, bz) => { mined.push([bx, by, bz]); return 'stone'; };
+  M.targeting.trace = () => ({ bx: 40, by: 6, bz: 42, normal: { x: 1, y: 0, z: 0 } });
+  M.targeting.aim = () => { throw new Error('Strategic placement must use the map pointer'); };
+  const clickMap = shiftKey => {
+    dispatch('scene', 'pointerdown', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+    dispatch('scene', 'pointerup', { pointerId: 1, button: 0, clientX: 400, clientY: 300, shiftKey });
+  };
+  press('t', 'KeyT'); press('2', 'Digit2');
+  assert.equal(element('inventory').parentNode, element('rts-item-bar'), 'the live hotbar mounts in the command dock');
+  assert.equal(M.items.selectedSlot, 1);
+  allowed = false; clickMap(false);
+  assert.equal(M.items.count('log'), 3, 'blocked placement never spends inventory');
+  allowed = true; clickMap(false); clickMap(false);
+  assert.deepEqual(placed, [['log', 41, 6, 42], ['log', 41, 6, 42]], 'places against the clicked face at command distance');
+  assert.equal(M.items.count('log'), 1);
+  clickMap(false); clickMap(false);
+  assert.equal(placed.length, 3, 'ordinary clicks keep placing until the stack is empty');
+  assert.equal(M.items.count('log'), 0);
+  press('2', 'Digit2'); clickMap(false);
+  assert.equal(placed.length, 3, 'empty stacks cannot place');
+  press('1', 'Digit1'); clickMap(false);
+  assert.deepEqual(mined, [[40, 6, 42]], 'the permanent tool mines the clicked voxel');
+  const packedSlot = M.items.addItem('tower_ballista', 2);
+  M.towers.site = () => ({ valid: true });
+  let deployments = 0;
+  M.towers.place = (id, bx, by, bz, inventoryOnly) => {
+    assert.equal(id, 'ballista'); assert.equal(inventoryOnly, true);
+    deployments++; return M.items.spend({ tower_ballista: 1 });
+  };
+  M.items.selectSlot(packedSlot);
+  clickMap(false); clickMap(false); clickMap(false);
+  assert.equal(deployments, 2, 'packed towers stay selected until their stack runs out');
+  assert.equal(M.items.count('tower_ballista'), 0);
+  dispatch('window', 'keydown', { code: 'Digit0', key: ')', shiftKey: true });
+  assert.equal(M.strategy.selected, 'sun');
+  M.items.selectSlot(0);
+  assert.equal(M.strategy.selected, null, 'clicking an inventory slot clears tower selection');
+  press('Escape', 'Escape'); assert.equal(M.strategy.active, true);
+  press('Escape', 'Escape'); assert.equal(M.strategy.active, false);
+  assert.equal(element('inventory').parentNode, element('body'), 'leaving restores the original hotbar');
+});
+
+
+test('tower blueprints stay selected across ordinary placements and insufficient resources until canceled', () => {
+  const { M, press, dispatch } = commandGame();
+  let placements = 0, affordable = true;
+  M.targeting.trace = () => ({ bx: 8 + placements * 2, by: 6, bz: 8 });
+  M.towers.site = () => ({ valid: true, reason: 'Ready' });
+  M.towers.available = () => affordable;
+  M.towers.place = () => { placements++; return true; };
+  const clickMap = () => {
+    dispatch('scene', 'pointerdown', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+    dispatch('scene', 'pointerup', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
+  };
+  press('t', 'KeyT'); M.strategy.select('ballista');
+  clickMap(); clickMap(); clickMap();
+  assert.equal(placements, 3, 'plain clicks deploy multiple towers without reselection');
+  assert.equal(M.strategy.selected, 'ballista');
+  affordable = false; clickMap();
+  assert.equal(placements, 3, 'unaffordable towers cannot deploy');
+  assert.equal(M.strategy.selected, 'ballista', 'the blueprint stays ready for more resources');
+  affordable = true; clickMap(); assert.equal(placements, 4);
+  dispatch('rts-inspect', 'click');
+  assert.equal(M.strategy.selected, null, 'explicit cancel still returns to inspection');
 });

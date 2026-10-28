@@ -507,7 +507,7 @@
   @media (max-width: 760px) { #player-coordinates { max-width: calc(100vw - 180px); gap: 4px 8px; } }
   @media (max-height: 500px) and (min-width: 761px) { #minimap-hud { --minimap-size: 120px; } }
 
-  /* Strategic controls leave the map open: one toolbar, one tower strip. */
+  /* Strategic controls leave the map open above the tower and inventory rows. */
   #strategy-toggle { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: calc(var(--bar-bottom) + 112px); z-index: 7; display: flex; align-items: center; gap: 9px; padding: 11px 16px; border: 1px solid #e2c481; border-radius: 10px; background: #203a31ed; box-shadow: 0 6px 20px #14211940; color: #fff0c1; font: 600 12px system-ui, sans-serif; cursor: pointer; }
   #strategy-toggle i { font-style: normal; font-size: 20px; color: #e9ca81; }
   #strategy-toggle:hover { background: #3a5546; }
@@ -565,11 +565,11 @@
   .rts-footer b { color: #c4d0bd; font-weight: 500; margin-right: 3px; }
   #rts-message { min-width: 0; margin: 0; color: #d4cfae; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rts-footer > span { flex: none; }
-  body.rts-active #inventory, body.rts-active #hi, body.rts-active #look, body.rts-active #upgrade-open, body.rts-active #aim-reticle, body.rts-active #bubble, body.rts-active #controls-help { display: none; }
+  body.rts-active #hi, body.rts-active #look, body.rts-active #upgrade-open, body.rts-active #aim-reticle, body.rts-active #bubble, body.rts-active #controls-help { display: none; }
   body.rts-active #scene { cursor: crosshair; }
   body.rts-active .defense-stats, body.rts-active #water-status { display: none; }
   body.rts-active #strategy-toggle { top: 20px; bottom: auto; right: 235px; padding: 7px 12px; }
-  body.rts-active #minimap-hud { --minimap-size: 112px; bottom: 236px; }
+  body.rts-active #minimap-hud { --minimap-size: 112px; bottom: 320px; }
   @media (max-width: 1000px) {
     .rts-live { display: none; }
     .rts-banner { top: 130px; }
@@ -714,3 +714,25 @@ body.rts-active #bag-open { display: none; }
 @media (max-width: 700px) { .rts-menu-actions button { padding: 5px 7px; font-size: 10px; } }
 
 .console-menu-switch { margin: 0; padding: 7px 14px; border-bottom: 1px solid #d9c2822e; }
+
+  /* Both command rows remain available while using an inventory item. */
+  .rts-inventory-row { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 7px 10px; border-top: 1px solid #98ac8d22; }
+  .rts-inventory-row > span { color: #a9beae; font-size: 9px; letter-spacing: .08em; }
+  #rts-item-bar #inventory { position: static; transform: none; gap: 3px; }
+  #rts-item-bar #hotbar { padding: 4px; border-radius: 7px; background: #10251f; }
+  #rts-item-bar #item-name { padding: 0; border: 0; background: none; box-shadow: none; color: #c9d8c7; font-size: 10px; }
+  #rts-item-bar .slot { width: clamp(25px, 4.8vw, 42px); }
+  body.rts-active:not(.rts-inventory-mode) #hotbar .slot.selected { transform: none; border-color: #ffffff33; background: #141d107a; box-shadow: none; }
+  #rts-inspect { border: 1px solid #a2b5a24d; border-radius: 5px; background: #162b24; color: #dfdfcb; padding: 7px; font-size: 10px; }
+  @media (max-width: 760px) {
+    .rts-inventory-row { flex-wrap: wrap; gap: 4px 8px; padding: 4px; }
+    .rts-inventory-row > span { display: none; }
+    #rts-item-bar { flex: 1 1 100%; }
+    #rts-item-bar #hotbar { gap: 2px; }
+    #rts-item-bar #item-name { max-width: 85vw; }
+    #rts-inspect { padding: 4px 10px; }
+  }
+
+  @media (max-height: 500px) {
+    .rts-dock { max-height: 55vh; overflow-y: auto; }
+  }

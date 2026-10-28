@@ -1,6 +1,7 @@
 (function (M) {
   'use strict';
   let active = false, camera, canvas, scene, panel, toggleButton;
+  let inventoryMode = false, inventoryHome;
   let selected = null, inspected = null, ghost, range, grid, target = null, pointer = null, drag = null;
   let zoom = 52, hudTime = 0, messageTime = 0, lastHud = '';
   let yaw = 0, yawTarget = 0, turnStart = 0, turnTime = .2;
@@ -16,10 +17,18 @@
   }
   function disposeGhost() {
     if (!ghost) return;
-    scene.remove(ghost); ghost.traverse(node => { if (node.isMesh) node.material.dispose(); }); ghost = null;
+    scene.remove(ghost);
+    ghost.traverse(node => {
+      if (!node.isMesh) return;
+      node.material.dispose();
+      if (node.userData.inventoryPreview) node.geometry.dispose();
+    });
+    ghost = null;
   }
   function select(id) {
     if (!M.towers.byId[id]) return;
+    inventoryMode = false;
+    document.body.classList.remove('rts-inventory-mode');
     selected = id; inspected = null; disposeGhost();
     ghost = M.towers.model(id);
     ghost.traverse(node => {
@@ -32,10 +41,20 @@
     refresh(true);
   }
   function cancel() {
+    inventoryMode = false;
+    document.body.classList.remove('rts-inventory-mode');
     selected = null; inspected = null; target = null;
     disposeGhost(); range.visible = false;
     document.getElementById('rts-pack').hidden = true;
     refresh(true);
+  }
+  function useInventory() {
+    cancel(); inventoryMode = true;
+    document.body.classList.add('rts-inventory-mode');
+    ghost = new THREE.Mesh(new THREE.BoxGeometry(2.02, 2.02, 2.02), new THREE.MeshBasicMaterial({ color: 0x8ee6c1, transparent: true, opacity: .35, depthWrite: false }));
+    ghost.userData.inventoryPreview = true; ghost.visible = false; scene.add(ghost);
+    const item = M.items.slots[M.items.selectedSlot];
+    announce(item ? item.name + (item.kind === 'tool' ? ' · Click a block to mine or pack a tower' : ' · Click to place repeatedly · Right-click to cancel') : 'Empty slot · Open inventory (I) to equip items');
   }
   function suspendInput() {
     keys.clear(); pointer = drag = null;
@@ -48,6 +67,9 @@
     if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
     keys.clear(); pointer = drag = null; M.controls.stopSteering();
     document.body.classList.toggle('rts-active', active);
+    const inventory = document.getElementById('inventory');
+    if (active) { inventoryHome = inventory.parentNode; document.getElementById('rts-item-bar').appendChild(inventory); }
+    else if (inventoryHome) inventoryHome.appendChild(inventory);
     panel.hidden = !active; toggleButton.setAttribute('aria-pressed', String(active));
     toggleButton.querySelector('span').textContent = active ? 'Return to goat' : 'Strategic view';
     if (active) {
@@ -109,6 +131,22 @@
     return M.targeting.trace(raycaster.ray.origin, raycaster.ray.direction, 220);
   }
   function updateTarget() {
+    if (inventoryMode && pointer) {
+      const hit = pick(pointer.x, pointer.y), item = M.items.slots[M.items.selectedSlot];
+      target = null; range.visible = false; ghost.visible = false;
+      if (!hit || !item) return;
+      if (item.kind === 'tool') {
+        target = { bx: hit.bx, by: hit.by, bz: hit.bz, valid: true, hit };
+      } else {
+        const placement = M.items.placementTarget(hit);
+        if (!placement) return;
+        target = Object.assign({}, placement, { hit });
+      }
+      ghost.visible = true;
+      ghost.position.set((target.bx + .5) * 2, (target.by + .5) * 2, (target.bz + .5) * 2);
+      ghost.material.color.setHex(item.kind === 'tool' ? 0xf2cf7a : target.valid ? 0x8ee6c1 : 0xef8873);
+      return;
+    }
     if (!selected || !pointer) { if (ghost) ghost.visible = false; if (!inspected) range.visible = false; target = null; return; }
     const hit = pick(pointer.x, pointer.y);
     if (!hit) { ghost.visible = false; range.visible = false; target = null; return; }
@@ -126,12 +164,23 @@
     range.material.color.setHex(valid ? 0x9bd7bc : 0xef8873);
   }
   function click(e) {
+    if (inventoryMode) {
+      pointer = { x: e.clientX, y: e.clientY }; updateTarget();
+      const item = M.items.slots[M.items.selectedSlot];
+      if (!target || !item) { announce('Aim at terrain to use this slot.'); return; }
+      const success = item.kind === 'tool' ? M.world.breakBlockAt(target.bx, target.by, target.bz) : M.items.placeSelectedBlock(target.hit);
+      if (!success) { announce('Cannot use this item here. Check the ground and occupied cells.'); return; }
+      announce(item.name + (item.kind === 'tool' ? ' · Block mined or tower packed' : ' placed'));
+      if (item.kind !== 'tool' && !M.items.slots[M.items.selectedSlot]) cancel();
+      else { updateTarget(); refresh(true); }
+      return;
+    }
     if (selected) {
       pointer = { x: e.clientX, y: e.clientY }; updateTarget();
       if (!target || !target.valid) { announce('Cannot deploy here. Check the ground and resource cost.'); return; }
       if (M.towers.place(selected, target.bx, target.by, target.bz)) {
         announce(M.towers.byId[selected].name + ' deployed');
-        if (!e.shiftKey) cancel(); else refresh(true);
+        updateTarget(); refresh(true);
       }
       return;
     }
@@ -180,10 +229,11 @@
     const roster = document.getElementById('rts-roster');
     M.towers.definitions.forEach((def, i) => {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'tower-card';
-      button.innerHTML = '<span class="tower-art"><img src="assets/towers/' + def.id + '.png" alt="" draggable="false"><kbd>' + ((i + 1) % 10) + '</kbd></span><strong>' + def.name + '</strong><span class="tower-price">' + costText(def.cost) + '</span><span class="tower-owned"></span>';
+      button.innerHTML = '<span class="tower-art"><img src="assets/towers/' + def.id + '.png" alt="" draggable="false"><kbd>⇧' + ((i + 1) % 10) + '</kbd></span><strong>' + def.name + '</strong><span class="tower-price">' + costText(def.cost) + '</span><span class="tower-owned"></span>';
       button.addEventListener('click', () => select(def.id)); roster.appendChild(button);
       cards.push({ button, def, ownedEl: button.querySelector('.tower-owned') });
     });
+    document.getElementById('rts-inspect').addEventListener('click', cancel);
     toggleButton.addEventListener('click', () => setActive(!active));
     document.getElementById('rts-close').addEventListener('click', () => setActive(false));
     document.getElementById('rts-inventory').addEventListener('click', () => M.inventoryMenu.open());
@@ -215,7 +265,7 @@
       const key = e.key.toLowerCase();
       // Let focused controls receive Space as their native activation key.
       if ((e.code === 'Space' || key === ' ') && e.target && e.target.closest && e.target.closest('button')) return;
-      if (key === 'escape') { e.preventDefault(); e.stopImmediatePropagation(); if (selected || inspected) cancel(); else setActive(false); return; }
+      if (key === 'escape') { e.preventDefault(); e.stopImmediatePropagation(); if (selected || inspected || inventoryMode) cancel(); else setActive(false); return; }
       const leftTurn = e.code === 'KeyZ' || key === 'z', rightTurn = e.code === 'KeyX' || key === 'x';
       if (leftTurn || rightTurn) {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -224,7 +274,11 @@
       }
       if ('wasd'.includes(key) || key.startsWith('arrow') || key === 'shift') keys.add(key);
       const digit = /^(?:Digit|Numpad)([0-9])$/.exec(e.code || '');
-      if (digit && !e.repeat) select(M.towers.definitions[digit[1] === '0' ? 9 : +digit[1] - 1].id);
+      if (digit && !e.repeat) {
+        const index = digit[1] === '0' ? 9 : +digit[1] - 1;
+        if (e.shiftKey) select(M.towers.definitions[index].id);
+        else M.items.selectSlot(index);
+      }
       if (key === ' ' && !e.repeat) recenter(false);
       if (['w', 'a', 's', 'd', 'shift', ' ', 'p', 'e', 'f'].includes(key) || key.startsWith('arrow') || digit) {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -297,5 +351,5 @@
     updateTarget();
     hudTime -= dt; if (hudTime <= 0) { hudTime = .15; refresh(false); }
   }
-  M.strategy = { init, update, select, setActive, suspendInput, get active() { return active; }, get selected() { return selected; }, get focus() { return focus; } };
+  M.strategy = { useInventory, init, update, select, setActive, suspendInput, get active() { return active; }, get selected() { return selected; }, get focus() { return focus; } };
 })(window.Meadow = window.Meadow || {});

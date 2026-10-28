@@ -207,7 +207,7 @@ Press **Q** near an animal to train it, or away from the herd to train yourself.
 
 Every track has three tiers. Bonuses add within each track: movement and attack speed cap at +100% (2×), strike damage caps at 3× the base value (and every base range is tripled). For builders, Vector Striders also speeds up quarrying, placement and job preparation by +33% per tier, reaching **2× gathering and building speed at tier 3**. Builders still gather and carry real blocks, consuming one per placement. Forge Harness adds its own multiplier, up to 1.75×; training both tracks fully gives 3.5× work speed. Nova Core increases strike damage at every tier; the tougher zombies and brutes still need repeated hits. The Arc Antlers tiers each change the strike itself on the player **and on hunters**: an electric bolt, then a chaining arc, then a fireball. Because attacks are automatic, the goat repeatedly clears everything in reach while you dig tunnels, haul resources and build towers — and a trained hunter turns into a second, mobile artillery piece. Holding a selected block (about to place) keeps the goat out of combat.
 
-Each upgrade has a dedicated body region, icon and accent color. Upgrading a branch rebuilds only that branch's equipment; a complete cyborg emerges by combining the four combat systems.
+Each upgrade has a dedicated body region and icon. The goat uses the system accent colors below; NPC equipment uses its character palette across all purchased modules. Upgrading a branch rebuilds only that branch's equipment; a complete cyborg emerges by combining the four combat systems.
 
 | System | Region and color | Tier 1 → 2 → 3 | Animation and effects |
 | --- | --- | --- | --- |
@@ -217,7 +217,18 @@ Each upgrade has a dedicated body region, icon and accent color. Upgrading a bra
 | Nova Core | Torso and shoulders, orange | Ignition cell → reactor mantle → nova carapace | Reactor pulses, armor recoil and orange discharge rings; stronger projectile cores |
 | Forge Harness | Builder back and tools, emerald | Tool cradle → twin manipulators → mobile forge | Articulated work strokes, illuminated forge shell and stronger Frost Spires |
 
-Tier 3 Striders leave the head and body natural; tier 3 Antlers leave legs and torso untouched. Training all four combat branches covers the player or hunter with a complete modular exoskeleton. Builders combine cyan Striders with the emerald Forge Harness. Equipment uses existing joints, preserving collision and combat timing. Static panels are batched by finish; effects reuse fixed meshes and reduced motion suppresses jets, discharge rings and secondary movement. Icons are generated locally bundled assets; prompts and generation provenance live in `assets/upgrades/prompts.json`.
+Tier 3 Striders leave the head and body natural; tier 3 Antlers leave legs and torso untouched. Training all four combat branches covers the player or hunter with a complete modular exoskeleton. Builders combine Striders with the Forge Harness. Equipment uses existing joints, preserving collision and combat timing. Static panels are batched by finish; effects reuse fixed meshes and reduced motion suppresses jets, discharge rings and secondary movement. Icons are generated locally bundled assets; prompts and generation provenance live in `assets/upgrades/prompts.json`.
+
+Each herd member has a persistent equipment identity, visible from tier 1 onward:
+
+| NPC | Armor palette | Equipment silhouette |
+| --- | --- | --- |
+| Mallow | Ivory, turquoise and copper; mint lights | Chamfered workshop plates, rounded knee guards, spool packs and gripping tools |
+| Clover | Safety orange, graphite and steel; amber lights | Broad industrial boots, heavy shoulder guards, exhaust stacks and drill manipulators |
+| Bramble | Forest emerald and brass; lime lights | Tapered ranger plates, raised shoulder fins, slim greaves and tall branching antlers |
+| Poppy | Crimson and charcoal; rose lights | Swept blade horns, angular helmet crest, layered shoulder blades and heel fins |
+
+Character finishes also cover neck fittings, armor cores, jets and discharge rings. Buying another module preserves the existing equipment's identity and attachments.
 
 | Enemy | First wave | HP | Move speed | Hearth damage | Wall break time | Dropped coins |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -248,7 +259,7 @@ Below the meadow, deterministic winding caves cross chunk boundaries and open in
 
 The meadow runs a complete **3-minute day/night cycle**: warm sunrise, blue midday, golden sunset, then a moonlit night with stars. The sun follows a physically based solar path for 50°N on the equinox, so its orbit is tilted, it casts moving shadows, and day and night are each a minute and a half long. An **oversized stylized sun** with a layered corona floats in the sky, kept subtly alive by a slow breathing pulse; the night brings an equally huge **cratered moon** with dark maria, rim-lit craters and a silver-blue halo.
 
-A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). Bramble and Poppy are hunters: they chase nearby zombies and headbutt them, casting the same elemental spells and wearing the same fitted greaves, neck guards and elemental crowns as the goat once trained. Mallow and Clover are builders, who anchor the defense economy by quarrying and stacking walls.
+A small herd lives in the meadow: two sheep (Mallow and Poppy), a cow (Clover) and a stag (Bramble). Bramble and Poppy are hunters: they chase nearby zombies and headbutt them, casting the same elemental spells and wearing their own distinct cybernetic armor, neck guards and elemental crowns once trained. Mallow and Clover are builders, who anchor the defense economy by quarrying and stacking walls.
 
 The builders choose flat sites with nearby natural quarry material, walk outside the clearing to gather it one block at a time, and carry the load between their horns. Each project is a straight, two-block-high wall section ten blocks long, with every block at least twelve blocks (24 world units) from the Hearth Tree, near the outer edge of the starting meadow. Sections run across the dominant incoming wave direction, using the closest voxel axis; between waves they face the radial approach to the Hearth. All herd NPCs gallop at the goat’s Shift speed, with Vector Striders and terrain effects applying once. Hunters and builders share movement, route planning, cave excavation and recovery. Every block is real and collides with the player and zombies. Builders revisit their completed sections and replace missing blocks before starting new ones, so walls damaged by zombies are repaired automatically. Builders quarry only on the side of their wall facing away from the Hearth, at least three block rows beyond the wall line. Both wall materials and tower stone follow this rule. Active and completed walls retain their foundations and two approach rows; a newly built player wall also invalidates a pending quarry hit beneath it.
 

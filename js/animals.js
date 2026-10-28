@@ -2500,6 +2500,7 @@
       def: def,
       name: options && options.name,
       role: options && options.role,
+      equipmentStyle: options && options.equipmentStyle,
       parts: parts,
       group: parts.group,
       seed: rand(0, Math.PI * 2),
@@ -2516,7 +2517,7 @@
     const styleScale = STYLE_SCALES[animal.species] || { leg: 0.9, horn: 0.6 };
     animal.speedCtx = { legs: parts.legs, tailPivot: parts.tailPivot, scale: styleScale.leg };
     animal.hornCtx = { horns: parts.horns, defaultMat: parts.mats.horn, scale: styleScale.horn };
-    animal.neckCtx = { neck: parts.neck, headPivot: parts.headPivot };
+    animal.neckCtx = { neck: parts.neck, headPivot: parts.headPivot, species: animal.species, equipmentStyle: animal.equipmentStyle };
     if (animal.role === 'hunter') {
       parts.beard = new THREE.Group();
       parts.beard.position.set(0, -0.2, 0.3);
@@ -2527,7 +2528,7 @@
 
     animal.refreshLoadout = function () {
       animal.loadoutFx.apply({ move: animal.speedFx.level, reach: animal.hornFx.level, cadence: animal.neckFx.level, power: animal.powerFx.level, craft: animal.craftFx.level },
-        { rig: parts.rig, torso: parts.torso, head: parts.headPivot, neck: parts.neck, legs: parts.legs, horns: parts.horns, tail: parts.tailPivot, ears: parts.ears, beard: parts.beard, species: animal.species });
+        { rig: parts.rig, torso: parts.torso, head: parts.headPivot, neck: parts.neck, legs: parts.legs, horns: parts.horns, tail: parts.tailPivot, ears: parts.ears, beard: parts.beard, species: animal.species, equipmentStyle: animal.equipmentStyle });
     };
     animal.state = {
       mode: 'idle',
@@ -2614,12 +2615,13 @@
     const gz = goatRef.group.position.z;
 
     const roster = [
-      { species: 'sheep', name: 'Mallow', role: 'builder', dx: -3.0, dz: 2.0, actionTimer: 0.8 },
-      { species: 'cow', name: 'Clover', role: 'builder', dx: 2.6, dz: -3.0, actionTimer: 3.0 },
-      { species: 'stag', name: 'Bramble', role: 'hunter', dx: -3.8, dz: -1.2, actionTimer: 5.5 },
+      { species: 'sheep', name: 'Mallow', equipmentStyle: 'mallow', role: 'builder', dx: -3.0, dz: 2.0, actionTimer: 0.8 },
+      { species: 'cow', name: 'Clover', equipmentStyle: 'clover', role: 'builder', dx: 2.6, dz: -3.0, actionTimer: 3.0 },
+      { species: 'stag', name: 'Bramble', equipmentStyle: 'bramble', role: 'hunter', dx: -3.8, dz: -1.2, actionTimer: 5.5 },
       {
         species: 'sheep',
         name: 'Poppy',
+        equipmentStyle: 'poppy',
         role: 'hunter',
         dx: 1.6,
         dz: -5.6,

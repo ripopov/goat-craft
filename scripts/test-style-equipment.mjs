@@ -60,3 +60,40 @@ test('module materials and geometries are released on replacement', () => {
   });
   fx.apply(3, ctx); assert.equal(disposed, owned); assert.ok(owned > 0);
 });
+
+
+test('NPC identities keep distinct geometry and finishes through upgrades without leaking into another animal', () => {
+  // Use the same sheep rig to prove equipment differs independently of body size.
+  const variants = ['mallow', 'clover', 'bramble', 'poppy'].map(equipmentStyle => {
+    const fixture = model('sheep'); fixture.ctx.equipmentStyle = equipmentStyle;
+    return { ...fixture, fx: fixture.M.styleFx.makeLoadout(fixture.THREE) };
+  });
+  function signature(p) {
+    const colors = new Set(), geometry = [];
+    for (const root of modules(p.group)) root.traverse(n => {
+      if (!n.isMesh) return;
+      colors.add(n.material.color.getHex());
+      n.geometry.computeBoundingBox();
+      const b = n.geometry.boundingBox;
+      geometry.push([n.geometry.attributes.position.count, ...b.min.toArray(), ...b.max.toArray()]);
+    });
+    return { colors: [...colors].sort().join(','), geometry: JSON.stringify(geometry) };
+  }
+  for (const tier of [1, 2, 3]) {
+    for (const v of variants) v.fx.apply({ move: tier, cadence: tier, reach: tier, power: tier }, v.ctx);
+    const looks = variants.map(v => signature(v.p));
+    assert.equal(new Set(looks.map(v => v.colors)).size, 4, 'each NPC has its own palette at every tier');
+    assert.equal(new Set(looks.map(v => v.geometry)).size, 4, 'silhouettes differ even on identical base rigs');
+    const unchanged = signature(variants[1].p);
+    variants[0].fx.apply({ move: tier, craft: tier }, variants[0].ctx);
+    assert.deepEqual(signature(variants[1].p), unchanged, 'training another NPC cannot recolor or reshape this one');
+    for (const v of variants) {
+      const roots = modules(v.p.group);
+      v.fx.animate(1, 1, .8, true);
+      v.p.group.updateMatrixWorld(true);
+      v.p.group.traverse(n => assert.ok(Array.from(n.matrixWorld.elements).every(Number.isFinite)));
+      assert.ok(roots.every(n => n.userData.equipmentStyle === v.ctx.equipmentStyle));
+    }
+  }
+  variants.forEach(v => v.fx.dispose());
+});

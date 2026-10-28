@@ -46,6 +46,8 @@ test('insufficient coins or blocks never partially debit, and invalid or maxed p
 test('NPC training is individual, role appropriate, and leaves shared species definitions intact', () => {
   const { M } = training(), u = M.upgrades; supplies(M);
   const [builder, cow, stag, sheep] = M.animals.list;
+  assert.deepEqual(Array.from(M.animals.list, a => a.equipmentStyle), ['mallow', 'clover', 'bramble', 'poppy']);
+  for (const animal of M.animals.list) assert.equal(animal.neckCtx.equipmentStyle, animal.equipmentStyle);
   const base = sheep.def;
   train(M, stag, 'power', 2); train(M, builder, 'craft'); train(M, builder, 'move');
   assert.ok(Math.abs(u.stats(stag).damage - 4 / 3) < 1e-9); assert.equal(u.stats(sheep).damage, 0); assert.equal(u.stats().damage, 0);

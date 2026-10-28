@@ -35,7 +35,18 @@
     mesh.position.set(x, y, z); mesh.castShadow = !glow;
     parent.add(mesh); return mesh;
   }
-  const METAL = [0, 0x353eaa, 0xd9f5ff, 0x353eaa];
+  // Persistent character identities; branch ownership and gameplay tiers stay shared.
+  const EQUIPMENT = {
+    goat: { shell: 0x353eaa, dark: 0x101b35, white: 0xd9f5ff, trim: 0xffcb37, bevel: .18, taper: 0, width: 1 },
+    mallow: { shell: 0xf4e6bd, dark: 0x184d55, white: 0x43b7ad, trim: 0xe6a44e, glow: 0x64ffe0, bevel: .3, taper: 0, width: 1.08 },
+    clover: { shell: 0xf27a20, dark: 0x252c35, white: 0x667785, trim: 0xffd34d, glow: 0xffd34d, bevel: .06, taper: 0, width: 1.24 },
+    bramble: { shell: 0x146b51, dark: 0x102c2b, white: 0x8fb88b, trim: 0xe8bd60, glow: 0xaaff48, bevel: .24, taper: .22, width: .88 },
+    poppy: { shell: 0xbf193e, dark: 0x21192c, white: 0x56334e, trim: 0xf5b7c8, glow: 0xff537e, bevel: .2, taper: .3, width: .94 }
+  };
+  function equipmentKey(ctx) {
+    if (ctx.equipmentStyle && EQUIPMENT[ctx.equipmentStyle]) return ctx.equipmentStyle;
+    return { sheep: 'mallow', cow: 'clover', stag: 'bramble' }[ctx.species] || 'goat';
+  }
   function makeSpeedStyle() { return makeTierHandle(); }
   function makeHornStyle() {
     const handle = makeTierHandle(); handle.pulse = function () {}; return handle;
@@ -88,15 +99,15 @@
         state.level = level;
         fit(0);
         if (!level) return 0;
-        const style = NECK_STYLE[level], p = ctx.neck.geometry.parameters;
+        const finish = EQUIPMENT[equipmentKey(ctx)], p = ctx.neck.geometry.parameters;
         const height = p.height, radius = Math.max(p.radiusTop, p.radiusBottom);
         const fittings = new THREE.Group();
         fittings.name = 'quick-strikes-' + level;
         ctx.neck.add(fittings);
         state.nodes.push(fittings);
         function mount(geometry, x, y, z, glow) {
-          const mat = glow ? glowMaterial(THREE, style.color) : new THREE.MeshStandardMaterial({
-            color: 0x675446, roughness: 0.48, metalness: 0.45, flatShading: true
+          const mat = glow ? glowMaterial(THREE, finish.glow || NECK_STYLE[level].color) : new THREE.MeshStandardMaterial({
+            color: finish.dark, roughness: 0.48, metalness: 0.45, flatShading: true
           });
           const mesh = new THREE.Mesh(geometry, mat);
           mesh.position.set(x, y, z);
@@ -110,7 +121,7 @@
           for (const side of [-1, 1]) {
             const plate = mount(new THREE.BoxGeometry(.055, height * .24, radius * 1.25), side * (r + .018), y, 0, false);
             plate.rotation.z = side * .13;
-            plate.material.color.setHex(METAL[level]);
+            plate.material.color.setHex(level === 2 ? finish.white : finish.shell);
           }
         }
         const clasp = mount(new THREE.OctahedronGeometry(radius * .3), 0, -height * .18, radius + .035, true);
@@ -170,9 +181,9 @@
   // Purchasing another branch never rebuilds or changes this module.
   function makeModuleStyle(THREE, branch) {
     const state = { level: 0, nodes: [], hidden: [], engines: [], lights: [], recoil: null, waves: [] };
-    const accent = { move: 0x18f5ff, cadence: 0xff28bd, reach: 0xa45bff, power: 0xff8a20, craft: 0x26f0a0 }[branch];
-    const colors = { shell: 0x353eaa, dark: 0x101b35, white: 0xd9f5ff,
-      cyan: accent, pink: accent, gold: 0xffcb37 };
+    const branchAccent = { move: 0x18f5ff, cadence: 0xff28bd, reach: 0xa45bff, power: 0xff8a20, craft: 0x26f0a0 }[branch];
+    let identity = 'goat', finish = EQUIPMENT.goat, accent = branchAccent;
+    const colors = {};
     function clear() {
       state.hidden.forEach(function (entry) { entry.node.visible = entry.visible; });
       state.hidden = []; state.engines = []; state.lights = []; state.recoil = null; state.waves = [];
@@ -184,17 +195,18 @@
     }
     function mount(parent, name) {
       const group = new THREE.Group(); group.name = name;
-      group.userData.upgrade = branch;
+      group.userData.upgrade = branch; group.userData.equipmentStyle = identity;
       parent.add(group); state.nodes.push(group); return group;
     }
     // Chamfered voxel panels: broad colored faces, crisp highlights at edges.
     function panel(parent, w, h, d, color, x, y, z, glow) {
-      const b = Math.min(w, h, d) * .18;
+      const b = Math.min(w, h, d) * finish.bevel;
+      const top = w * (.5 - finish.taper);
       const shape = new THREE.Shape();
       shape.moveTo(-w / 2 + b, -h / 2); shape.lineTo(w / 2 - b, -h / 2);
-      shape.lineTo(w / 2, -h / 2 + b); shape.lineTo(w / 2, h / 2 - b);
-      shape.lineTo(w / 2 - b, h / 2); shape.lineTo(-w / 2 + b, h / 2);
-      shape.lineTo(-w / 2, h / 2 - b); shape.lineTo(-w / 2, -h / 2 + b); shape.closePath();
+      shape.lineTo(w / 2, -h / 2 + b); shape.lineTo(top, h / 2 - b);
+      shape.lineTo(top - b, h / 2); shape.lineTo(-top + b, h / 2);
+      shape.lineTo(-top, h / 2 - b); shape.lineTo(-w / 2, -h / 2 + b); shape.closePath();
       const geo = new THREE.ExtrudeGeometry(shape, { depth: d - b * 2, bevelEnabled: true, bevelSize: b, bevelThickness: b, bevelSegments: 1, steps: 1, curveSegments: 1 });
       geo.translate(0, 0, -d / 2 + b);
       return fitting(THREE, parent, geo, color, x, y, z, glow);
@@ -243,6 +255,9 @@
         if (level === state.level) return level;
         clear(); state.level = level;
         if (!level) return 0;
+        identity = equipmentKey(ctx); finish = EQUIPMENT[identity]; accent = finish.glow || branchAccent;
+        Object.assign(colors, { shell: finish.shell, dark: finish.dark, white: finish.white,
+          cyan: accent, pink: accent, gold: finish.trim });
         const full = level === 3;
         const k = ctx.torso.scale.x / .4;
         // Capture only natural surfaces before mounting this style. Child joints
@@ -275,7 +290,7 @@
           const core = fitting(THREE, body, new THREE.OctahedronGeometry(.12), colors.cyan, 0, -.1, .8, true);
           core.scale.set(1, 1.2, .35); core.userData.cyberAnimated = true; state.lights.push(core);
         for (const side of [-1, 1]) {
-          const shoulder = panel(body, .31 + level * .035, .3 + level * .035, .46, colors.shell, side * .43, .19, .39);
+          const shoulder = panel(body, (.31 + level * .035) * finish.width, .3 + level * .035, .46, colors.shell, side * .43, .19, .39);
           shoulder.rotation.z = -side * .2;
           panel(body, .025, .19, .36, colors.cyan, side * (.61 + level * .012), .19, .39, true);
           panel(body, .26, .07, .47, colors.white, side * .45, .42, .36);
@@ -295,6 +310,27 @@
           panel(body, .28, .09, .18, colors.white, 0, .43, .38 - i * .22);
           panel(body, .07, .025, .12, colors.pink, 0, .493, .38 - i * .22, true);
         }
+        // Signature silhouettes stay in the branch's own body region.
+        for (const side of [-1, 1]) {
+          if (identity === 'mallow') {
+            const drum = fitting(THREE, body, new THREE.CylinderGeometry(.16, .16, .24 + level * .06, 12), colors.white, side * .5, .42, -.4);
+            drum.rotation.z = Math.PI / 2;
+            const cap = fitting(THREE, body, new THREE.TorusGeometry(.115, .025, 4, 12), colors.gold, side * .68, .42, -.4);
+            cap.rotation.y = Math.PI / 2;
+          } else if (identity === 'clover') {
+            panel(body, .27, .24 + level * .1, .25, colors.dark, side * .32, .52, -.55);
+            panel(body, .29, .055, .27, colors.gold, side * .32, .65 + level * .05, -.55);
+            for (let i = 0; i < level + 1; i++) {
+              const stripe = panel(body, .035, .18, .13, colors.gold, side * .67, .18, .27 + i * .075);
+              stripe.rotation.x = -.45;
+            }
+          } else if (identity === 'bramble' || identity === 'poppy') {
+            for (let i = 0; i < level; i++) {
+              const blade = panel(body, .16, .36 + i * .07, .12, i % 2 ? colors.gold : colors.shell, side * (.46 + i * .04), .42, .24 - i * .3);
+              blade.rotation.z = -side * (identity === 'bramble' ? .55 : .85);
+            }
+          }
+        }
         if (branch === 'craft') for (const side of (level === 1 ? [-1] : [-1, 1])) {
           const arm = mount(ctx.rig, 'forge-tool-' + side);
           arm.position.copy(ctx.torso.position).add(new THREE.Vector3(side * .47, .3, -.25));
@@ -302,6 +338,14 @@
           panel(arm, .1, .1, .32 + level * .08, colors.shell, side * .08, .27, .16);
           panel(arm, .22, .14, .12, colors.gold, side * .08, .27, .36 + level * .08);
           panel(arm, .08, .05, .3, colors.cyan, side * .08, .33, .17, true);
+          if (identity === 'mallow') {
+            // Open gripping jaws on the compact workshop manipulator.
+            for (const jaw of [-1, 1]) panel(arm, .045, .18, .08, colors.white, side * .08 + jaw * .105, .2, .41 + level * .08);
+          } else if (identity === 'clover') {
+            const drill = fitting(THREE, arm, new THREE.ConeGeometry(.13, .32, 6), colors.gold, side * .08, .27, .57 + level * .08);
+            drill.rotation.x = Math.PI / 2;
+            panel(arm, .16, .3, .18, colors.dark, side * .08, .08, 0);
+          }
           batch(arm); state.engines.push(arm);
         }
         if (branch === 'power') {
@@ -333,6 +377,17 @@
             }
 
           }
+          if (identity === 'poppy' || identity === 'bramble') {
+            const crest = panel(helmet, .08, .38, .48, colors.gold, 0, .45, -.06);
+            crest.rotation.x = identity === 'poppy' ? -.4 : .2;
+          } else if (identity === 'clover') {
+            panel(helmet, .7, .12, .24, colors.gold, 0, .27, .3);
+          } else if (identity === 'mallow') {
+            for (const side of [-1, 1]) {
+              const pod = fitting(THREE, helmet, new THREE.CylinderGeometry(.13, .13, .12, 12), colors.white, side * .36, .14, 0);
+              pod.rotation.z = Math.PI / 2;
+            }
+          }
           batch(helmet);
         }
         if (branch === 'reach') {
@@ -340,7 +395,14 @@
           helmet.scale.setScalar(.5 + level / 6);
             // Monumental swept-back rail horns, with continuous luminous cores.
             for (const side of [-1, 1]) {
-              const points = [[side * .18, .3, -.04], [side * .37, .62, -.16], [side * .54, .94, -.43], [side * .48, 1.23, -.72]];
+              const paths = {
+                goat: [[.18, .3, -.04], [.37, .62, -.16], [.54, .94, -.43], [.48, 1.23, -.72]],
+                mallow: [[.18, .3, -.04], [.48, .52, -.12], [.61, .32, -.34], [.42, .17, -.42]],
+                clover: [[.22, .28, -.02], [.59, .38, -.05], [.91, .52, -.1], [1.03, .84, -.2]],
+                bramble: [[.18, .3, -.04], [.33, .74, -.12], [.49, 1.16, -.3], [.62, 1.6, -.5]],
+                poppy: [[.18, .3, -.04], [.35, .59, -.22], [.45, .77, -.65], [.59, .87, -1.06]]
+              };
+              const points = paths[identity].map(p => [side * p[0], p[1], p[2]]);
               for (let i = 0; i < level; i++) {
                 const a = new THREE.Vector3(...points[i]), b = new THREE.Vector3(...points[i + 1]);
                 bar(helmet, a, b, .13 - i * .032, i === 1 ? colors.white : colors.shell);
@@ -349,7 +411,11 @@
               }
               const tip = new THREE.Vector3(...points[level]);
               fitting(THREE, helmet, new THREE.OctahedronGeometry(.05 + level * .02), accent, tip.x, tip.y, tip.z, true);
-              if (ctx.species === 'stag' && level >= 2) bar(helmet, new THREE.Vector3(side * .42, .74, -.26), new THREE.Vector3(side * .84, .98, -.35), .07, colors.gold);
+              if (identity === 'bramble') for (let i = 1; i <= level; i++) {
+                const a = new THREE.Vector3(...points[i]);
+                const b = a.clone().add(new THREE.Vector3(side * (.2 + i * .05), .25, .12));
+                bar(helmet, a, b, .055, colors.gold);
+              }
             }
           const charge = fitting(THREE, helmet, new THREE.OctahedronGeometry(.07 + level * .02), colors.cyan, 0, .42, -.08, true);
           charge.userData.cyberAnimated = true; state.lights.push(charge);
@@ -381,11 +447,23 @@
             if (level >= 2) panel(upper, .045, upperLen * .66, .028, colors.cyan, 0, -upperLen * .4, .145, true);
             const joint = fitting(THREE, lower, new THREE.CylinderGeometry(.115, .115, .29, 10), colors.dark, 0, 0, 0); joint.rotation.z = Math.PI / 2;
             const hub = fitting(THREE, lower, new THREE.TorusGeometry(.08, .025, 4, 12), colors.pink, side * .16, 0, 0, true); hub.rotation.y = Math.PI / 2;
-            panel(lower, .19, lowerLen * .8, .2, colors.white, 0, -lowerLen * .47, 0);
+            panel(lower, .19 * finish.width, lowerLen * .8, .2, colors.white, 0, -lowerLen * .47, 0);
             bar(lower, new THREE.Vector3(side * .12, -.06, -.06), new THREE.Vector3(side * .12, -lowerLen * .84, -.06), .032, colors.gold);
             panel(lower, .035, lowerLen * .55, .025, colors.cyan, 0, -lowerLen * .46, .12, true);
-            panel(foot, .26, .16, .32, colors.shell, 0, -.025, .035);
-            panel(foot, .27, .035, .33, colors.pink, 0, -.095, .035, true);
+            panel(foot, .26 * finish.width, .16, .32, colors.shell, 0, -.025, .035);
+            panel(foot, .27 * finish.width, .035, .33, colors.pink, 0, -.095, .035, true);
+            if (identity === 'clover') {
+              panel(foot, .36, .11, .14, colors.gold, 0, 0, .21);
+              panel(lower, .15, lowerLen * .8, .17, colors.shell, side * .14, -lowerLen * .45, -.09);
+            } else if (identity === 'mallow') {
+              const guard = fitting(THREE, lower, new THREE.SphereGeometry(.15, 8, 6), colors.shell, 0, -.06, .065);
+              guard.scale.set(1, .8, .5);
+              panel(foot, .3, .06, .16, colors.white, 0, .065, .13);
+            } else if (identity === 'bramble' || identity === 'poppy') {
+              const spur = panel(lower, .055, lowerLen * .7, .27, colors.shell, side * .15, -lowerLen * .28, -.12);
+              spur.rotation.x = identity === 'poppy' ? -.5 : -.25;
+              panel(foot, .09, .09, .2, colors.gold, side * .09, -.01, .19);
+            }
             if (full) {
               const jet = fitting(THREE, lower, new THREE.ConeGeometry(.065, .25, 5), colors.cyan, 0, -.1, -.22, true);
               jet.rotation.x = -Math.PI / 2; jet.userData.cyberAnimated = true; jet.visible = false; state.engines.push(jet);

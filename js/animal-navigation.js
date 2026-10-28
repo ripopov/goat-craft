@@ -73,6 +73,7 @@
     function stepClear(a, b, body) {
       const size = world.blockSize || 2;
       if (!Number.isFinite(b.y) || b.y < 0 || b.y - a.y > size + .01 || a.y - b.y > size * 4 + .25) return false;
+      if (!physics.clear(world, b.x, b.y, b.z, body)) return false;
       const rise = b.y > a.y + .1;
       // A root is not a staircase. Ordinary travel stays around the Hearth;
       // explicit construction climbs keep their own movement controller.
@@ -103,17 +104,25 @@
         let index = 0;
         for (let i = 1; i < open.length; i++) if (open[i].score < open[index].score) index = i;
         const a = open.splice(index, 1)[0];
+        if (a.cost > (seen.get([a.x, a.y, a.z].join('/')) ?? Infinity)) continue;
         if (Math.hypot(goal.x - a.x, goal.z - a.z) <= size * 1.5 && stepClear(a, goal, body)) {
           const result = [goal];
           for (let n = a; n.parent; n = n.parent) result.unshift(n);
           return result;
         }
-        for (const [dx, dz] of [[size, 0], [-size, 0], [0, size], [0, -size]]) {
-          const x = a.x + dx, z = a.z + dz;
+        // Anchor the lattice to voxel centres, not the animal's arbitrary
+        // offset. Otherwise an open one-block corridor can have no nodes.
+        // The start connects to nearby centres through the same body sweep.
+        const cx = (Math.floor(a.x / size) + .5) * size;
+        const cz = (Math.floor(a.z / size) + .5) * size;
+        for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
+          const x = cx + ix * size, z = cz + iz * size;
+          const distance = Math.hypot(x - a.x, z - a.z);
+          if (distance < .001) continue;
           if (x < Math.min(position.x, goal.x) - margin || x > Math.max(position.x, goal.x) + margin ||
               z < Math.min(position.z, goal.z) - margin || z > Math.max(position.z, goal.z) + margin) continue;
           const y = physics.support(world, { x, z }, a.y + size + .01, body);
-          const b = { x, y, z, parent: a, cost: a.cost + size + Math.abs(y - a.y) * .5 };
+          const b = { x, y, z, parent: a, cost: a.cost + distance + Math.abs(y - a.y) * .5 };
           const id = [x, y, z].join('/');
           if (b.cost >= (seen.get(id) ?? Infinity) || !stepClear(a, b, body)) continue;
           seen.set(id, b.cost);
@@ -126,8 +135,14 @@
     function waypoint(position, goal, body, state) {
       const displaced = state.last && Math.hypot(position.x - state.last.x, position.z - state.last.z) > 4;
       state.last = { x: position.x, z: position.z };
-      const changed = displaced || !state.goal || Math.hypot(goal.x - state.goal.x, goal.z - state.goal.z) > 1 ||
+      let changed = displaced || !state.goal || Math.hypot(goal.x - state.goal.x, goal.z - state.goal.z) > 1 ||
         state.revision !== world.revision || Math.abs((state.y || 0) - position.y) > .3;
+      // A crowd detour or collision slide may leave the next waypoint behind
+      // an obstacle without a terrain edit or a large displacement. Validate
+      // the committed segment at a bounded rate instead of keeping it forever.
+      if (!changed && state.retry <= 0 && state.path) {
+        changed = !stepClear(position, state.path[0] || state.goal, body);
+      }
       if (changed || state.retry <= 0) {
         const size = world.blockSize || 2;
         state.goal = { x: goal.x, y: position.y, z: goal.z }; state.revision = world.revision; state.y = position.y;
@@ -135,10 +150,16 @@
         if (changed || !state.path) {
           const floor = physics.support(world, goal, position.y + size + .01, body);
           const surface = world.surfaceHeight ? world.surfaceHeight(goal.x, goal.z) : floor;
+          const root = M.hearthTree && M.hearthTree.boxSupportHeight &&
+            M.hearthTree.boxSupportHeight(goal.x, goal.z, body.radius, floor + .01);
           // A higher destination can require pit recovery; it is not an
           // invalid goal merely because this search starts below its floor.
           state.invalid = surface <= position.y + size + .01 &&
             (!Number.isFinite(floor) || !physics.clear(world, goal.x, floor, goal.z, body));
+          // Destinations on permanent roots cannot be reached by ordinary
+          // travel, which deliberately never climbs the Hearth. Reject them
+          // before a failed search falls back to walking/jumping at the trunk.
+          if (root > surface + .1 && root >= floor - .01) state.invalid = true;
           state.goal.y = floor;
           if (state.invalid) state.path = null;
           else if (clear(position, state.goal, body) && Math.abs(floor - position.y) < .1) state.path = [];

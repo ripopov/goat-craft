@@ -63,6 +63,12 @@ species definitions supply both the model proportions and collision body.
 `animal-navigation.js` plans around the Hearth before physical recovery is
 needed. It caches graph edges by body dimensions, standing height and world
 revision, commits to waypoints, and replans for terrain or target changes.
+Committed segments are also revalidated every 0.75 seconds so collision slides
+and crowd detours cannot leave an animal following a blocked waypoint. Local
+search uses voxel-centred, eight-direction connections with body sweeps and a
+240-expansion budget; this preserves narrow passages regardless of the animal's
+starting offset. Ordinary travel rejects destinations on raised Hearth roots,
+matching its no-root-climbing rule instead of falling back to jumping at them.
 `core.js` owns shared goat/herd locomotion speeds and gait cadence. All NPC jobs use `travelSpeed`, `moveAnimal` and `updateRecovery`; roles choose goals without speed multipliers or separate navigation. Wall planning stays on the starting meadow, outside the 24-unit Hearth exclusion, and checks quarry availability with the same selector used during gathering.
 `animals.js` also uses `goat-excavation.js` for body-sized ascending cave exits. Wall sites store their X/Z axis, and footprint/quarry checks must honor it. `safeQuarryColumn` gates both wall and tower resource gathering to the Hearth-opposite side, at least three cells past the wall line, and preserves active/completed wall approach buffers. Tower jobs without an active project use the nearest completed wall. Revalidate quarry hits before editing terrain so construction during travel cannot lose its foundation. Salvage claims one physical tower item through `items.js`; `towers.js` consumes it only after successful validated construction.
 `animal-recovery.js` remains the fallback for ledges, walls and pits elsewhere.

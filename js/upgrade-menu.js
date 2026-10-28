@@ -1,6 +1,6 @@
 (function (M) {
   'use strict';
-  let dialog, target, nearby, previousFocus;
+  let dialog, target, nearby, previousFocus, skipClose = 0;
   const $ = function (id) { return document.getElementById(id); };
   const labels = { coins: 'coins', log: 'wood', stone: 'stone' };
   const icons = {
@@ -70,14 +70,17 @@
       actions.appendChild(button); card.appendChild(actions); cards.appendChild(card);
     });
   }
-  function close() {
+  function close(switching) {
     if (!dialog || !dialog.open) return;
+    if (switching) skipClose++;
     dialog.close();
-    M.controls.resumeLook();
   }
   function open(animal) {
     if (!dialog || dialog.open || (M.devConsole && M.devConsole.isOpen) || M.enemies.getState().defeated) return;
-    previousFocus = document.activeElement;
+    const focus = M.inventoryMenu && M.inventoryMenu.isOpen ? M.inventoryMenu.returnFocus : document.activeElement;
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
+    if (M.strategy && M.strategy.active) M.strategy.suspendInput();
+    previousFocus = focus;
     nearby = M.animals && M.animals.list.includes(animal) ? animal : M.upgrades.nearest();
     target = nearby || M.upgrades.player;
     M.controls.stopSteering(); M.controls.suspendLook(); M.controls.noteActivity();
@@ -92,7 +95,9 @@
   function init() {
     dialog = $('upgrade-menu');
     $('upgrade-open').addEventListener('click', function () { open(); });
-    $('upgrade-close').addEventListener('click', close);
+    $('upgrade-close').addEventListener('click', function () { close(); });
+    $('upgrade-to-bag').addEventListener('click', function () { M.inventoryMenu.open(); });
+    $('upgrade-to-strategy').addEventListener('click', function () { close(true); M.strategy.setActive(true); });
     $('upgrade-player-tab').addEventListener('click', function () { target = M.upgrades.player; $('upgrade-message').textContent = ''; render(); });
     $('upgrade-animal-tab').addEventListener('click', function () { if (nearby) { target = nearby; $('upgrade-message').textContent = ''; render(); } });
     dialog.addEventListener('keydown', function (event) {
@@ -104,6 +109,7 @@
     });
     dialog.addEventListener('cancel', function (event) { event.preventDefault(); close(); });
     dialog.addEventListener('close', function () {
+      if (skipClose) { skipClose--; return; }
       M.controls.stopSteering(); M.controls.noteActivity();
       if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
       M.controls.resumeLook();
@@ -114,5 +120,5 @@
     } });
   }
   M.upgradeMenu = { init: init, open: open, close: close, toggle: function () { if (dialog && dialog.open) close(); else open(); },
-    get isOpen() { return !!dialog && dialog.open; }, get target() { return target; } };
+    get returnFocus() { return previousFocus; }, get isOpen() { return !!dialog && dialog.open; }, get target() { return target; } };
 })(window.Meadow = window.Meadow || {});

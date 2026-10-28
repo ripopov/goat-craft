@@ -24,7 +24,8 @@
   function check() {
     if (active || !M.hellGates.won || tree.health <= 0 || M.oceanHorror?.active) return false;
     if (M.strategy?.active) M.strategy.setActive(false);
-    if (M.upgradeMenu?.isOpen) M.upgradeMenu.close();
+    if (M.upgradeMenu?.isOpen) M.upgradeMenu.close(true);
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
     if (M.devConsole?.isOpen) M.devConsole.close();
     M.enemies.finishVictory(); M.controls.stopSteering(); M.controls.suspendLook();
     Object.assign(M.goat.state, { manualHold: 1000, speed: 0, headbutt: -1, stomp: -1 });

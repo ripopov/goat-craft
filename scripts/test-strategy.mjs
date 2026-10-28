@@ -19,7 +19,7 @@ function commandGame({ coarsePointer = false, deferredLock = false } = {}) {
     if (elements.has(id)) return elements.get(id);
     const node = { id, hidden: false, open: false, innerHTML: '', textContent: '', attrs: {}, dataset: {}, children: [],
       classList: { add() {}, remove() {}, toggle() {} },
-      setAttribute(k, v) { this.attrs[k] = v; }, appendChild(child) { this.children.push(child); },
+      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, appendChild(child) { this.children.push(child); },
       querySelector: selector => element(id + selector),
       replaceChildren() { this.children = []; },
       focus() { document.activeElement = this; },
@@ -413,4 +413,32 @@ test('placement and inspection show the same elevation-adjusted range as combat'
   dispatch('scene', 'pointerup', { pointerId: 1, button: 0, clientX: 400, clientY: 300 });
   assert.ok(Math.abs(ring.scale.x - 30.4) < 1e-9);
   assert.match(element('rts-detail-stats').textContent, /30\.4m range \(\+60% height\)/);
+});
+
+
+test('inventory, upgrades and strategy switch directly without losing strategic view', () => {
+  const { M, load, press, dispatch, element, flush, document } = commandGame({ deferredLock: true });
+  load('js/inventory.js');
+  const bag = M.inventory.create(37);
+  M.items = { slots: bag.slots, hotbarSize: 10, iconFor: () => null, itemName: kind => kind,
+    count: bag.count, canAdd: bag.canAdd, canSpend: bag.canSpend };
+  load('js/inventory-menu.js'); M.inventoryMenu.init();
+  M.controls.requestLook(); flush(); assert.ok(document.pointerLockElement);
+  press('t', 'KeyT'); flush(); assert.equal(M.strategy.active, true); assert.equal(document.pointerLockElement, null);
+  press('i', 'KeyI'); assert.equal(M.inventoryMenu.isOpen, true);
+  assert.equal(M.strategy.active, true, 'opening the inventory keeps the map and its state');
+  press('q', 'KeyQ');
+  assert.equal(M.inventoryMenu.isOpen, false); assert.equal(M.upgradeMenu.isOpen, true);
+  flush(); assert.equal(document.activeElement, element('upgrade-player-tab'), 'old close events do not steal focus');
+  press('i', 'KeyI'); assert.equal(M.upgradeMenu.isOpen, false); assert.equal(M.inventoryMenu.isOpen, true);
+  flush(); assert.equal(document.activeElement, element('bag-close'));
+  assert.equal(document.pointerLockElement, null, 'switching menus does not recapture the pointer');
+  press('t', 'KeyT'); assert.equal(M.inventoryMenu.isOpen, false); assert.equal(M.strategy.active, true);
+  flush();
+  dispatch('rts-inventory', 'click'); assert.equal(M.inventoryMenu.isOpen, true);
+  dispatch('bag-to-upgrades', 'click'); assert.equal(M.upgradeMenu.isOpen, true);
+  dispatch('upgrade-to-strategy', 'click'); assert.equal(M.upgradeMenu.isOpen, false); assert.equal(M.strategy.active, true);
+  press('t', 'KeyT'); assert.equal(M.strategy.active, false);
+  press('i', 'KeyI'); assert.equal(M.inventoryMenu.isOpen, true);
+  press('t', 'KeyT'); assert.equal(M.inventoryMenu.isOpen, false); assert.equal(M.strategy.active, true);
 });

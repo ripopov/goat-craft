@@ -4,7 +4,7 @@ import { game, classicModules } from './helpers/animal-game.mjs';
 
 function fixture() {
   const h = game({ seed: 72 }), { M, load, scene } = h;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
   M.strategy = { active: true };
   M.goat.group.position.set(15, 14, 15);
   function advance(seconds, dt = .05, enemies = false) {

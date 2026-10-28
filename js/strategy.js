@@ -37,10 +37,15 @@
     document.getElementById('rts-pack').hidden = true;
     refresh(true);
   }
+  function suspendInput() {
+    keys.clear(); pointer = drag = null;
+    if (ghost) ghost.visible = false;
+  }
   function setActive(value) {
     if (!camera || active === value) return;
     active = value;
-    if (M.upgradeMenu.isOpen) M.upgradeMenu.close();
+    if (M.upgradeMenu.isOpen) M.upgradeMenu.close(true);
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
     keys.clear(); pointer = drag = null; M.controls.stopSteering();
     document.body.classList.toggle('rts-active', active);
     panel.hidden = !active; toggleButton.setAttribute('aria-pressed', String(active));
@@ -181,6 +186,8 @@
     });
     toggleButton.addEventListener('click', () => setActive(!active));
     document.getElementById('rts-close').addEventListener('click', () => setActive(false));
+    document.getElementById('rts-inventory').addEventListener('click', () => M.inventoryMenu.open());
+    document.getElementById('rts-upgrades').addEventListener('click', () => M.upgradeMenu.open());
     document.getElementById('rts-hearth').addEventListener('click', () => recenter(false));
     document.getElementById('rts-goat').addEventListener('click', () => recenter(true));
     document.getElementById('rts-rotate-left').addEventListener('click', () => turnBy(-Math.PI / 2));
@@ -193,9 +200,18 @@
       if (e.metaKey || e.altKey || e.ctrlKey) return;
       if (M.devConsole && M.devConsole.isOpen) return;
       if (e.code === 'KeyT' || e.key.toLowerCase() === 't') {
-        e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) setActive(!active); return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (!e.repeat) {
+          const modal = M.upgradeMenu.isOpen || (M.inventoryMenu && M.inventoryMenu.isOpen);
+          if (modal) {
+            if (M.upgradeMenu.isOpen) M.upgradeMenu.close(true);
+            if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
+            if (!active) setActive(true);
+          } else setActive(!active);
+        }
+        return;
       }
-      if (!active || M.upgradeMenu.isOpen) return;
+      if (!active || M.upgradeMenu.isOpen || (M.inventoryMenu && M.inventoryMenu.isOpen)) return;
       const key = e.key.toLowerCase();
       // Let focused controls receive Space as their native activation key.
       if ((e.code === 'Space' || key === ' ') && e.target && e.target.closest && e.target.closest('button')) return;
@@ -281,5 +297,5 @@
     updateTarget();
     hudTime -= dt; if (hudTime <= 0) { hudTime = .15; refresh(false); }
   }
-  M.strategy = { init, update, select, setActive, get active() { return active; }, get selected() { return selected; }, get focus() { return focus; } };
+  M.strategy = { init, update, select, setActive, suspendInput, get active() { return active; }, get selected() { return selected; }, get focus() { return focus; } };
 })(window.Meadow = window.Meadow || {});

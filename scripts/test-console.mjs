@@ -54,6 +54,7 @@ function consoleGame() {
   element('dev-console-log');
   element('dev-console-form');
   element('dev-console-input');
+  ['console-to-bag', 'console-to-upgrades', 'console-to-strategy'].forEach(id => element(id));
   const window = {
     matchMedia: () => ({ matches: false }),
     addEventListener(type, fn, options) {
@@ -213,4 +214,20 @@ test('the console opens without listing commands, and unknown commands stay ters
   assert.match(log, /Unknown command "dance"/);
   assert.doesNotMatch(log, /money|spawn|help/);
   assert.equal(M.devConsole.execute('help'), false);
+});
+
+
+test('console menu buttons switch destinations without consuming typed shortcut letters', () => {
+  const { M, calls, dispatch, press, elements } = consoleGame();
+  M.inventoryMenu = { open() { calls.push('inventory'); } };
+  M.upgradeMenu.open = () => calls.push('upgrades');
+  M.strategy = { setActive(value) { calls.push('strategy:' + value); } };
+  const input = elements.get('dev-console-input');
+  for (const [button, expected] of [['console-to-bag', 'inventory'], ['console-to-upgrades', 'upgrades'], ['console-to-strategy', 'strategy:true']]) {
+    press('/', 'Slash');
+    const event = press('i', 'KeyI', { target: input });
+    assert.equal(event.prevented, undefined, 'shortcut letters remain editable in the console');
+    dispatch(button, 'click');
+    assert.equal(M.devConsole.isOpen, false); assert.equal(calls.at(-1), expected);
+  }
 });

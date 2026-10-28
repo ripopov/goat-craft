@@ -53,7 +53,7 @@
     });
     line('Granted ' + AMOUNT + ' coins' +
       (added.length ? ' and ' + AMOUNT + ' each of ' + resourceNames(added) : '') + '.', 'ok');
-    if (full.length) line('No hotbar space for ' + resourceNames(full) + '.', 'warn');
+    if (full.length) line('No inventory space for ' + resourceNames(full) + '.', 'warn');
     return true;
   }
 
@@ -138,7 +138,8 @@
 
   function openConsole() {
     if (open) return;
-    if (M.upgradeMenu && M.upgradeMenu.isOpen) M.upgradeMenu.close();
+    if (M.upgradeMenu && M.upgradeMenu.isOpen) M.upgradeMenu.close(true);
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
     open = true;
     if (M.controls) {
       M.controls.stopSteering();
@@ -151,14 +152,14 @@
     input.focus();
   }
 
-  function closeConsole() {
+  function closeConsole(switching) {
     if (!open) return;
     open = false;
     root.hidden = true;
     if (typeof input.blur === 'function') input.blur();
     if (M.controls) {
       M.controls.noteActivity();
-      M.controls.resumeLook();
+      if (!switching) M.controls.resumeLook();
     }
   }
 
@@ -219,12 +220,19 @@
     form = document.getElementById('dev-console-form');
     input = document.getElementById('dev-console-input');
     if (!root || !logEl || !form || !input) return;
+    const destinations = { 'console-to-bag': function () { if (M.inventoryMenu) M.inventoryMenu.open(); },
+      'console-to-upgrades': function () { if (M.upgradeMenu) M.upgradeMenu.open(); },
+      'console-to-strategy': function () { if (M.strategy) M.strategy.setActive(true); } };
+    Object.keys(destinations).forEach(function (id) {
+      const button = document.getElementById(id);
+      if (button) button.addEventListener('click', function () { closeConsole(true); destinations[id](); });
+    });
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       submit();
     });
     root.addEventListener('pointerdown', function (event) {
-      if (event.target !== root && event.target !== input && typeof input.focus === 'function') input.focus();
+      if (event.target !== root && event.target !== input && !(event.target.closest && event.target.closest('button')) && typeof input.focus === 'function') input.focus();
     });
     root.addEventListener('click', function (event) {
       if (event.target !== root) return;

@@ -4,7 +4,7 @@ import { game, isolatedAnimal, classicModules } from './helpers/animal-game.mjs'
 
 function training(fixture = game()) {
   const { M, load, scene } = fixture;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
   return fixture;
 }
 function supplies(M, coins = 1000) {
@@ -613,7 +613,7 @@ test('enemy coin loot stays in the world until picked up and needs no inventory 
   assert.ok(minted.geometry.getAttribute('color'), 'rim, recessed field and raised emblem have distinct gold tones');
   assert.ok(minted.material.emissiveIntensity >= .6, 'emissive gold remains visible without ambient lights');
   assert.ok(minted.geometry.getAttribute('position').count < 6000, 'one bounded mesh per coin');
-  for (let i = 1; i < 10; i++) M.items.slots[i] = { kind: 'stone', name: 'Stone', count: 1 };
+  for (let i = 1; i < M.items.slots.length; i++) M.items.slots[i] = { kind: 'stone', name: 'Stone', count: 1 };
   const collector = new THREE.Group(); collector.position.set(30, 14, 30);
   for (let i = 0; i < 40; i++) M.items.update(.05, i * .05, collector);
   assert.equal(M.enemies.getState().coins, 0, 'distance prevents automatic collection');

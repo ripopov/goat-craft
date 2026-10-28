@@ -19,7 +19,9 @@ must run from `file://` and from GitHub Pages.
 | `animal-recovery.js` | Progress monitoring and physical escape target selection | World query interface |
 | `animals.js` | Individual NPC jobs, movement, hunting, building and recovery | Models, navigation, recovery, actor physics |
 | `coin-model.js` | Shared minted gold geometry, emissive material and glint clock | Three.js, core materials |
-| `items.js` | Inventory, spending, physical drops, attraction and collection | Coin model, world; tower item definitions when initialized |
+| `inventory.js` | Hotbar and bag stacks, transfers, validation and atomic material spending | None |
+| `items.js` | Hotbar presentation, held items, physical drops, attraction and collection | Inventory, coin model, world; tower item definitions when initialized |
+| `inventory-menu.js` | Paused inventory and resource exchange | Items, enemy coin wallet, controls |
 
 Models can be constructed without initializing a world or controller. Enemy
 model factories return separate joint state, so posing one renderer does not

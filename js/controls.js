@@ -184,7 +184,7 @@
   }
 
   function useHoof(e) {
-    if ((M.devConsole && M.devConsole.isOpen) || (M.upgradeMenu && M.upgradeMenu.isOpen) ||
+    if ((M.devConsole && M.devConsole.isOpen) || (M.upgradeMenu && M.upgradeMenu.isOpen) || (M.inventoryMenu && M.inventoryMenu.isOpen) ||
         (M.strategy && M.strategy.active)) return;
     e.preventDefault();
     noteActivity();
@@ -327,7 +327,7 @@
   function canResumeLook() {
     return pageFocused && !document.hidden &&
       (typeof document.hasFocus !== 'function' || document.hasFocus()) &&
-      !(M.upgradeMenu && M.upgradeMenu.isOpen) && !(M.strategy && M.strategy.active);
+      !(M.upgradeMenu && M.upgradeMenu.isOpen) && !(M.inventoryMenu && M.inventoryMenu.isOpen) && !(M.strategy && M.strategy.active);
   }
 
   function restoreLook() {
@@ -409,7 +409,7 @@
   // Handle F before the strategic view consumes its gameplay keys. It also
   // lets the player opt out while capture is temporarily suspended.
   window.addEventListener('keydown', function (e) {
-    if (M.devConsole && M.devConsole.isOpen) return;
+    if ((M.devConsole && M.devConsole.isOpen) || (M.inventoryMenu && M.inventoryMenu.isOpen)) return;
     if (e.metaKey || e.altKey || e.ctrlKey || !(e.code === 'KeyF' || e.key.toLowerCase() === 'f') || !supportsPointerLock) return;
     e.preventDefault();
     if (e.repeat) return;
@@ -443,9 +443,18 @@
   window.addEventListener('keydown', function (e) {
     if (e.metaKey || e.altKey) return;
     if (M.devConsole && M.devConsole.isOpen) return;
+    if (!e.ctrlKey && (e.code === 'KeyI' || e.key.toLowerCase() === 'i')) {
+      e.preventDefault();
+      if (!e.repeat && M.inventoryMenu) M.inventoryMenu.toggle();
+      return;
+    }
     if (!e.ctrlKey && (e.code === 'KeyQ' || e.key.toLowerCase() === 'q')) {
       e.preventDefault();
       if (!e.repeat && M.upgradeMenu) M.upgradeMenu.toggle();
+      return;
+    }
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) {
+      if (e.key === 'Escape') { e.preventDefault(); M.inventoryMenu.close(); }
       return;
     }
     if (M.upgradeMenu && M.upgradeMenu.isOpen) {

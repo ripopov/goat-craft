@@ -6,7 +6,7 @@ const JUMP_HEIGHT = 12.2 ** 2 / (2 * 26);
 
 function fixture(audio) {
   const h = game({ seed: 19 }), { M, controls, load, scene } = h;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
   if (audio) M.goat.init({ scene, camera: M.goat.aimCamera, controls, world: M.world, audio, ui: { showBubble() {} } });
   controls.firstPerson = true;
   M.goat.group.position.set(15,14,15);

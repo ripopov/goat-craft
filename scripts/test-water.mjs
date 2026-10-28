@@ -472,7 +472,7 @@ test('landed block drops fall again when their supporting block is mined', () =>
   const { M, THREE, load } = harness();
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
   assert.ok(M.world.placeBlock('stone', 10, 7, 0));
   M.items.dropBlock('dirt', 21, 17, 1);
   const distantGoat = new THREE.Group(); distantGoat.position.set(100, 14, 100);
@@ -487,7 +487,7 @@ test('a wall corner blocks pickup attraction until the wall is removed', () => {
   const { M, THREE, load } = harness();
   const scene = new THREE.Scene();
   M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
   M.world.placeBlock('stone', 10, 7, 0);
   M.items.dropBlock('dirt', 19.8, 15, 1.5);
   M.items.drops[0].position.set(19.8, 15, 1.5);

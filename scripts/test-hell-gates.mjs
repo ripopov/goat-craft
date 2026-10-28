@@ -168,7 +168,7 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
     assert.equal(next.group.visible, false);
     assert.equal(M.world.blockInfoAt(next.blocks[0].bx, next.blocks[0].by, next.blocks[0].bz), null, 'dormant frame has no collision');
   }
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.enemies.addCoins(10000);
   for (const kind of ['log', 'stone', 'dirt', 'coal', 'iron', 'copper']) M.items.addItem(kind, 1000);
   const road = gates.roads.find(r => r.gateId === first.id);

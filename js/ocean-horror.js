@@ -93,7 +93,8 @@
   function begin(water) {
     // Leave alternate camera modes before taking ownership of the camera.
     if (M.strategy && M.strategy.active) M.strategy.setActive(false);
-    if (M.upgradeMenu && M.upgradeMenu.isOpen) M.upgradeMenu.close();
+    if (M.upgradeMenu && M.upgradeMenu.isOpen) M.upgradeMenu.close(true);
+    if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
     if (M.devConsole && M.devConsole.isOpen) M.devConsole.close();
     active = true; time = 0;
     origin.copy(goat.group.position); seaLevel = water.level;

@@ -28,7 +28,7 @@ test('the mined world bottom has no invisible collision or support plane', () =>
 
 test('three-block void fall returns above the Hearth, preserves progress, and free-falls onto its crown', () => {
   const { M, load, scene, cameraSnaps } = fixture(), goat = M.goat, p = goat.group.position;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
   M.enemies.addCoins(42); M.items.addItem('stone',5);
   assert.ok(M.upgrades.buy(M.upgrades.player,'power'));
   const slot = M.items.addItem('log',2); M.items.selectSlot(slot);

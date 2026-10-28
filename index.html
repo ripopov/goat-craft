@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <canvas id="scene" aria-label="An animated goat in a blocky meadow surrounded by an endless ocean, with rivers and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to mine or place blocks (attacks fire automatically at nearby enemies), right click or R to mine beneath the hoof or use Aerial Stomp at any point while jumping (longer falls after pressing hit harder with larger shockwaves), Q to upgrade yourself or a nearby animal, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (F releases it). Drag still orbits on touch or when the pointer is free."></canvas>
+  <canvas id="scene" aria-label="An animated goat in a blocky meadow surrounded by an endless ocean, with rivers and ponds full of fish, and a herd of sheep, a cow and a stag that hunt zombies, build and repair walls, and jump or dig their way out of trouble. Use W A S D to walk, hold Shift to gallop, Space to jump or swim upward, Ctrl to dive, mouse look to steer while swimming, E or left click to mine or place blocks (attacks fire automatically at nearby enemies), right click or R to mine beneath the hoof or use Aerial Stomp at any point while jumping (longer falls after pressing hit harder with larger shockwaves), Q to upgrade yourself or a nearby animal, I to open your inventory and trade, number keys 1-0 to select hotbar items, P to switch between third-person and first-person cameras, and F or the Mouse look button to capture the pointer for free mouse-look (F releases it). Drag still orbits on touch or when the pointer is free."></canvas>
   <div id="aim-reticle" aria-hidden="true"></div>
   <div id="vignette"></div>
   <div id="water-overlay" aria-hidden="true"></div>
@@ -65,14 +65,31 @@
       <p><b>WASD</b> Move <b>Shift</b> Gallop<br><b>Space</b> Jump / swim up <b>Ctrl</b> Dive</p>
       <p><b>E / click</b> Mine / place (attacks are automatic)<br><b>Right click / R</b> Hoof mine / place; in air: Aerial Stomp<br>Longer falls after pressing hit harder with larger shockwaves<br><b>1–0</b> Items</p>
       <p><b>F</b> Mouse look / release<br><b>P</b> Camera <b>Scroll</b> Zoom</p>
-      <p><b>Q</b> Train yourself / nearby animal<br><b>T</b> Strategic view / tower building</p>
+      <p><b>Q</b> Train yourself / nearby animal<br><b>I</b> Inventory / resource exchange<br><b>T</b> Strategic view / tower building</p>
       <p><b>/</b> Console — press again to close</p><small>Spend coins, wood and stone on upgrades.<br>Clear waves for bonus coins.</small>
     </div>
   </details>
+  <button id="bag-open" type="button" aria-haspopup="dialog" aria-controls="bag-menu">Inventory <kbd>I</kbd></button>
+  <dialog id="bag-menu" aria-labelledby="bag-title">
+    <div class="bag-shell">
+      <header class="bag-heading"><div><span>HEARTH SUPPLIES</span><h2 id="bag-title">Inventory &amp; exchange</h2></div><button id="bag-close" type="button">Close <kbd>I</kbd></button></header>
+      <nav class="menu-switch" aria-label="Switch menu"><button id="bag-to-upgrades" type="button">Upgrades <kbd>Q</kbd></button><button id="bag-to-strategy" type="button">Strategic view <kbd>T</kbd></button></nav>
+      <p id="bag-instruction"></p>
+      <h3>Hotbar <small>Keys 1–0 · slot 1 is your tool</small></h3>
+      <div id="bag-hotbar" class="bag-grid" aria-label="Hotbar slots"></div>
+      <h3>Bag <small>27 extra slots</small></h3>
+      <div id="bag-grid" class="bag-grid" aria-label="Bag slots"></div>
+      <div class="trade-heading"><div><h3>Resource exchange</h3><p>Buy or sell bundles of 5 materials.</p></div><strong id="bag-coins"></strong></div>
+      <div id="trade-list"></div>
+      <p id="bag-message" role="status" aria-live="polite"></p>
+      <footer>Game paused · I or Esc to return</footer>
+    </div>
+  </dialog>
   <button id="upgrade-open" type="button" aria-haspopup="dialog" aria-controls="upgrade-menu"><span aria-hidden="true">↑</span> Upgrades <kbd>Q</kbd></button>
   <dialog id="upgrade-menu" aria-labelledby="upgrade-title" aria-describedby="upgrade-pause">
     <div class="upgrade-shell">
       <div class="upgrade-topline"><span>HEARTH TRAINING</span><button id="upgrade-close" type="button" aria-label="Close upgrades">Close <kbd>Q</kbd></button></div>
+      <nav class="menu-switch" aria-label="Switch menu"><button id="upgrade-to-bag" type="button">Inventory <kbd>I</kbd></button><button id="upgrade-to-strategy" type="button">Strategic view <kbd>T</kbd></button></nav>
       <nav class="upgrade-tabs" aria-label="Train a character">
         <button id="upgrade-player-tab" type="button" aria-pressed="true">Your goat</button>
         <button id="upgrade-animal-tab" type="button" aria-pressed="false" hidden>Nearby animal</button>
@@ -88,7 +105,7 @@
   <button id="hi" type="button"><span></span>Say hi</button>
   <button id="strategy-toggle" type="button" aria-pressed="false" aria-controls="rts-hud"><i aria-hidden="true">⌘</i><span>Strategic view</span><kbd>T</kbd></button>
   <section id="rts-hud" aria-label="Strategic command" hidden>
-    <header class="rts-banner"><span class="rts-live" title="Your goat is roaming on autopilot">● STRATEGY</span><div class="rts-camera-actions" role="group" aria-label="Camera controls"><button id="rts-rotate-left" type="button" aria-label="Rotate map counterclockwise 90 degrees" title="Rotate map counterclockwise (Z)">↶ <kbd>Z</kbd></button><button id="rts-compass" type="button" aria-label="Reset camera to north" title="Reset camera to north"><span id="rts-compass-needle" aria-hidden="true">▲<small>N</small></span></button><button id="rts-rotate-right" type="button" aria-label="Rotate map clockwise 90 degrees" title="Rotate map clockwise (X)">↷ <kbd>X</kbd></button><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Goat</button></div></header>
+    <header class="rts-banner"><span class="rts-live" title="Your goat is roaming on autopilot">● STRATEGY</span><div class="rts-menu-actions"><button id="rts-inventory" type="button">Inventory <kbd>I</kbd></button><button id="rts-upgrades" type="button">Upgrades <kbd>Q</kbd></button></div><div class="rts-camera-actions" role="group" aria-label="Camera controls"><button id="rts-rotate-left" type="button" aria-label="Rotate map counterclockwise 90 degrees" title="Rotate map counterclockwise (Z)">↶ <kbd>Z</kbd></button><button id="rts-compass" type="button" aria-label="Reset camera to north" title="Reset camera to north"><span id="rts-compass-needle" aria-hidden="true">▲<small>N</small></span></button><button id="rts-rotate-right" type="button" aria-label="Rotate map clockwise 90 degrees" title="Rotate map clockwise (X)">↷ <kbd>X</kbd></button><button id="rts-hearth" type="button">⌂ Hearth <kbd>Space</kbd></button><button id="rts-goat" type="button">⌖ Goat</button></div></header>
     <div id="rts-resources" aria-label="Building resources"></div>
     <div class="rts-dock">
       <div class="rts-dock-top"><h2>Workshop <small id="rts-count">0 / 80 deployed</small></h2><div id="rts-animals" role="group" aria-label="Animal upgrades"></div><button id="rts-close" type="button">Close <kbd>T</kbd></button></div>
@@ -106,6 +123,7 @@
   <div id="dev-console" hidden>
     <section id="dev-console-panel" role="dialog" aria-modal="false" aria-labelledby="dev-console-title">
       <div id="dev-console-head"><strong id="dev-console-title">Console</strong><span><kbd>/</kbd> open / close</span></div>
+      <nav class="menu-switch console-menu-switch" aria-label="Switch menu"><button id="console-to-bag" type="button">Inventory <kbd>I</kbd></button><button id="console-to-upgrades" type="button">Upgrades <kbd>Q</kbd></button><button id="console-to-strategy" type="button">Strategic view <kbd>T</kbd></button></nav>
       <div id="dev-console-log" role="log" aria-live="polite"></div>
       <form id="dev-console-form" autocomplete="off">
         <span class="dev-console-prompt" aria-hidden="true">&gt;</span>
@@ -127,6 +145,7 @@
 <script src="js/ui.js"></script>
 <script src="js/console.js"></script>
 <script src="js/coin-model.js"></script>
+<script src="js/inventory.js"></script>
 <script src="js/items.js"></script>
 <script src="js/actor-physics.js"></script>
 <script src="js/voxel-water.js"></script>
@@ -156,6 +175,7 @@
 <script src="js/controls.js"></script>
 <script src="js/upgrades.js"></script>
 <script src="js/upgrade-menu.js"></script>
+<script src="js/inventory-menu.js"></script>
 <script src="js/minimap.js"></script>
 <script src="js/highlights.js"></script>
 <script src="js/towers.js"></script>

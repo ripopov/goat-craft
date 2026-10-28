@@ -4,7 +4,7 @@ import { isolatedAnimal } from './helpers/animal-game.mjs';
 
 function builders(name = 'Mallow', tier = 1) {
   const fixture = isolatedAnimal(name, { seed: 42 }), { M, animal, load, scene } = fixture;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.enemies.addCoins(1000); M.items.addItem('stone', 100);
   for (let i = 0; i < tier; i++) assert.equal(M.upgrades.buy(animal, 'craft'), true);
   M.goat.group.position.set(-5, 14, 8);

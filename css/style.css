@@ -676,3 +676,41 @@
     #dev-console-log { max-height: 26vh; }
     #dev-console-panel { font-size: 12px; }
   }
+
+/* Inventory and resource exchange */
+#bag-open { position: fixed; right: max(20px, env(safe-area-inset-right)); bottom: calc(var(--bar-bottom) + 164px); z-index: 6; padding: 10px 16px; border: 1px solid #b6c795; border-radius: 10px; background: #253b2eed; color: #fff0c1; font: 600 12px system-ui, sans-serif; cursor: pointer; touch-action: manipulation; }
+#bag-menu { width: min(760px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid #bda86c; border-radius: 18px; background: #1d2d25; color: #f4ecd7; box-shadow: 0 30px 100px #06180dbb; }
+#bag-menu::backdrop { background: #071c1399; backdrop-filter: blur(5px); }
+.bag-shell { padding: 22px; font-family: system-ui, sans-serif; }
+.bag-heading, .trade-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bag-heading span { color: #d1b978; font-size: 10px; font-weight: 700; letter-spacing: .15em; }
+.bag-heading h2 { margin: 4px 0; font-size: 24px; }
+#bag-menu h3 { margin: 16px 0 8px; font-size: 14px; }
+#bag-menu h3 small { color: #a6b9a4; font-weight: 400; }
+#bag-instruction, .trade-heading p, #bag-menu footer { color: #a9bda8; font-size: 12px; }
+#bag-menu button { font-family: inherit; cursor: pointer; }
+#bag-menu button:focus-visible, #bag-open:focus-visible { outline: 2px solid #f2cf7a; outline-offset: 2px; }
+#bag-close, .trade-row button { border: 1px solid #8ba17d; border-radius: 8px; padding: 8px 10px; background: #304b39; color: #f4ecd7; font-size: 11px; }
+#bag-menu button:disabled { opacity: .45; cursor: default; }
+.bag-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 5px; }
+.bag-slot { position: relative; aspect-ratio: 1; min-width: 0; border: 1px solid #809579; border-radius: 7px; background: #314437; color: white; }
+.bag-slot.chosen { outline: 2px solid #f2cf7a; background: #526546; }
+.bag-slot img { width: 80%; height: 80%; object-fit: contain; }
+.bag-slot-number, .bag-slot-count { position: absolute; font-size: 10px; font-weight: 700; text-shadow: 0 1px 3px #000; }
+.bag-slot-number { top: 3px; left: 5px; color: #c7d2b5; }.bag-slot-count { right: 4px; bottom: 3px; }
+.trade-heading { margin-top: 20px; border-top: 1px solid #bac69535; }.trade-heading p { margin: 0 0 10px; }.trade-heading strong { color: #f1d28a; white-space: nowrap; }
+#trade-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.trade-row { display: flex; align-items: center; gap: 5px; padding: 7px; border-radius: 8px; background: #263a2e; }
+.trade-info { flex: 1; min-width: 0; }.trade-info strong, .trade-info small { display: block; font-size: 11px; }.trade-info small { color: #a9bda8; }
+#bag-message { min-height: 1em; font-size: 12px; color: #e5cf8f; }
+body.rts-active #bag-open { display: none; }
+@media (max-width: 760px) { #bag-open { right: 12px; bottom: calc(var(--bar-bottom) + 224px); padding: 8px 11px; } .bag-shell { padding: 14px; } #trade-list { grid-template-columns: 1fr; } .bag-grid { gap: 3px; } .bag-slot-number, .bag-slot-count { font-size: 9px; } }
+
+.rts-menu-actions { pointer-events: auto; }
+.menu-switch, .rts-menu-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.menu-switch { margin: 12px 0; }
+.menu-switch button, .rts-menu-actions button { border: 1px solid #8ba17d; border-radius: 8px; padding: 7px 10px; background: #304b39; color: #f4ecd7; font: 600 11px system-ui, sans-serif; cursor: pointer; }
+.menu-switch button:hover, .rts-menu-actions button:hover { background: #466047; }
+@media (max-width: 700px) { .rts-menu-actions button { padding: 5px 7px; font-size: 10px; } }
+
+.console-menu-switch { margin: 0; padding: 7px 14px; border-bottom: 1px solid #d9c2822e; }

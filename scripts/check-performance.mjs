@@ -6,7 +6,7 @@ import { game } from './helpers/animal-game.mjs';
 // CPU timings exclude WebGL; render submissions count visible mesh batches.
 export function stressBattle(frames = 360, loadout = 'mixed') {
   const { M, THREE, scene, load } = game({ seed: 42 });
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
   load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   assert.ok(loadout === 'mixed' || M.towers.definitions.some(def => def.id === loadout), 'use mixed or a workshop blueprint ID');
   M.enemies.addCoins(100000);

@@ -6,7 +6,7 @@ function defense(rich = true, renderRadius = 0) {
   // Most tower checks stay in the initial chunk. Load neighboring chunks only
   // for the negative-coordinate case; avoid rendering irrelevant forest.
   const fixture = game({ renderRadius }), { M, load, scene } = fixture;
-  load('js/coin-model.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
+  load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/towers.js'); M.towers.init(scene);
   M.goat.group.position.set(-25, 14, -25);
   M.animals.list.forEach((animal, i) => animal.group.position.set(-25 + i * 3, 14, -20));
   if (rich) {
@@ -119,7 +119,7 @@ test('packed towers stay collectible when inventory is full and foundations cann
   M.world.breakBlockAt(8, 6, 8); M.towers.update(.02);
   assert.equal(M.towers.list.length, 0);
   const packed = M.items.drops.find(d => d.userData.drop.kind === 'tower_frost'); assert.ok(packed);
-  for (let i = 1; i < 10; i++) M.items.slots[i] = { kind: 'stone', count: 1, name: 'Stone' };
+  for (let i = 1; i < M.items.slots.length; i++) M.items.slots[i] = { kind: 'stone', count: 1, name: 'Stone' };
   const collector = new THREE.Group(); collector.position.copy(packed.position); collector.position.y -= .9;
   M.items.update(.01, 0, collector);
   assert.ok(M.items.drops.includes(packed), 'full inventory retains physical tower');

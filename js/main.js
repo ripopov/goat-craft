@@ -72,6 +72,7 @@
   M.enemies.init({ scene: scene, world: M.world, tree: M.hearthTree });
 
   M.upgradeMenu.init();
+  M.inventoryMenu.init();
   M.minimap.init();
   M.highlights.init(scene);
   M.towers.init(scene);
@@ -161,7 +162,7 @@
       if (!document.hidden) renderOceanCutscene(dt);
       return;
     }
-    if (document.hidden || M.upgradeMenu.isOpen) {
+    if (document.hidden || M.upgradeMenu.isOpen || M.inventoryMenu.isOpen) {
       M.music.update(dt, { paused: true });
       accumulator = 0; return;
     }

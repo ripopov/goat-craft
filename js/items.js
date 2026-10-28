@@ -22,13 +22,10 @@
     leaves: 'Leaves'
   };
 
-  // Slot 1 is the goat's built-in horns-and-hooves "item". The other nine
-  // slots collect blocks broken out of the world.
-  const slots = new Array(SLOT_COUNT).fill(null);
-  slots[0] = { kind: 'tool', name: 'Horns & Hooves', count: 1 };
+  const inventory = M.inventory.create(SLOT_COUNT + 27);
+  const slots = inventory.slots;
 
   let selectedSlot = 0;
-  let sceneRef = null;
   let dropGroup = null;
   let itemNameEl = null;
   const drops = [];
@@ -100,14 +97,10 @@
     }
     if (!target || !target.valid || !M.world.placeBlock(target.kind, target.bx, target.by, target.bz)) return false;
 
-    const item = slots[selectedSlot];
-    if (item) {
-      item.count--;
-      if (item.count <= 0) slots[selectedSlot] = null;
-      renderSlot(selectedSlot);
-      renderSelection();
-      flashSlot(selectedSlot);
-    }
+    inventory.consumeSlot(selectedSlot);
+    renderSlot(selectedSlot);
+    renderSelection();
+    flashSlot(selectedSlot);
     return true;
   }
 
@@ -287,57 +280,18 @@
   }
 
   function addItem(kind, count) {
-    count = Math.max(1, Math.floor(count || 1));
-    let target = -1;
-
-    // A matching stack always wins over opening a new slot.
-    for (let i = 1; i < SLOT_COUNT; i++) {
-      if (slots[i] && slots[i].kind === kind) {
-        target = i;
-        break;
-      }
-    }
-
-    if (target >= 0) {
-      slots[target].count += count;
-    } else {
-      for (let i = 1; i < SLOT_COUNT; i++) {
-        if (!slots[i]) {
-          target = i;
-          break;
-        }
-      }
-      if (target < 0) return -1;
-      slots[target] = { kind: kind, name: itemName(kind), count: count };
-    }
-
+    const target = inventory.add(kind, count, itemName);
+    if (target < 0) return -1;
     renderSlot(target);
     renderSelection();
     flashSlot(target);
     return target;
   }
 
-  function countItem(kind) {
-    return slots.reduce(function (sum, item) { return sum + (item && item.kind === kind ? item.count : 0); }, 0);
-  }
-  function canSpend(cost) {
-    return Object.keys(cost).filter(function (kind) { return kind !== 'coins'; }).every(function (kind) {
-      return kind !== 'tool' && Number.isInteger(cost[kind]) && cost[kind] >= 0 && countItem(kind) >= cost[kind];
-    });
-  }
   function spend(cost) {
-    if (!canSpend(cost)) return false;
-    Object.keys(cost).forEach(function (kind) {
-      if (kind === 'coins') return;
-      let left = cost[kind];
-      for (let i = 1; i < SLOT_COUNT && left > 0; i++) {
-        if (!slots[i] || slots[i].kind !== kind) continue;
-        const amount = Math.min(left, slots[i].count);
-        slots[i].count -= amount; left -= amount;
-        if (!slots[i].count) slots[i] = null;
-        renderSlot(i);
-      }
-    });
+    const changed = inventory.spend(cost);
+    if (!changed) return false;
+    changed.forEach(renderSlot);
     renderSelection();
     return true;
   }
@@ -531,9 +485,8 @@
 
   // -------------------------------------------------------------------- init
   function init(scene) {
-    sceneRef = scene;
     dropGroup = new THREE.Group();
-    sceneRef.add(dropGroup);
+    scene.add(dropGroup);
 
     itemNameEl = document.getElementById('item-name');
     const hotbar = document.getElementById('hotbar');
@@ -548,13 +501,18 @@
   }
 
   M.items = {
-    count: countItem, canSpend: canSpend, spend: spend,
+    count: inventory.count, canSpend: inventory.canSpend, spend: spend,
     init: init,
     update: update,
     dropBlock: dropBlock,
     dropCoins: dropCoins,
     nearestCoin: nearestCoin, takeCoins: takeCoins,
-    addItem: addItem,
+    addItem: addItem, canAdd: inventory.canAdd, iconFor: iconFor, hotbarSize: SLOT_COUNT,
+    moveStack: function (from, to) {
+      if (!inventory.move(from, to)) return false;
+      renderSlot(from); renderSlot(to); renderSelection();
+      return true;
+    },
     selectSlot: selectSlot,
     itemName: itemName,
     hasSelectedBlock: hasSelectedBlock,

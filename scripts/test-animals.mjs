@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
-import { game } from './helpers/animal-game.mjs';
+import { game, isolatedAnimal } from './helpers/animal-game.mjs';
 
 function advanceAnimals(M, seconds) {
   for (let i = 0; i < Math.round(seconds / .05); i++) M.animals.update(.05, i * .05);
@@ -42,6 +42,21 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
     Object.assign(animal.state, { mode: 'idle', wait: 1000, buildTimer: 1000, pitTimer: 1000, retired: true });
   });
 
+  let quarried = 0;
+  const breakBlock = M.world.breakBlockAt;
+  M.world.breakBlockAt = (bx, by, bz, options) => {
+    const action = builder.state.action;
+    if (action?.quarry) {
+      const site = builder.state.project.site, acrossX = site.axis === 'z';
+      const boundary = acrossX ? site.centerX : site.centerZ;
+      const hearth = acrossX ? M.hearthTree.position.x : M.hearthTree.position.z;
+      const cell = (acrossX ? bx + .5 : bz + .5) * 2;
+      assert.ok((cell - boundary) * Math.sign(boundary - hearth) >= 6, 'real quarry hits stay outside the wall and its approaches');
+      assert.equal(options.protectPlaced, true);
+      quarried++;
+    }
+    return breakBlock(bx, by, bz, options);
+  };
   let wall = null;
   for (let i = 0; i < 6000 && !wall; i++) {
     M.animals.update(.05, i * .05);
@@ -52,6 +67,7 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
     batchGoal: builder.state.batchGoal, wait: builder.state.wait, buildTimer: builder.state.buildTimer,
     project: builder.state.project && { steps: builder.state.project.stepCount,
       missing: builder.state.project.plan.filter(target => !M.world.blockInfoAt(target.bx, target.by, target.bz)) } }));
+  assert.ok(quarried >= 20, 'wall materials are actually gathered outside');
   assert.equal(wall.plan.length, 20);
   const xs = new Set(wall.plan.map(target => target.bx));
   const zs = new Set(wall.plan.map(target => target.bz));
@@ -71,7 +87,7 @@ test('builders complete ten-block walls outside the tree exclusion and repair mi
   for (let i = 0; i < 4000 && !M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz); i++) {
     M.animals.update(.05, 300 + i * .05);
   }
-  assert.ok(M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz), 'missing wall block is rebuilt');
+  assert.ok(M.world.blockInfoAt(damaged.bx, damaged.by, damaged.bz), 'missing wall block is rebuilt: ' + JSON.stringify({ p: builder.group.position, mode: builder.state.mode, abandon: builder.state.lastAbandon }));
 });
 
 test('every NPC body routes across the Hearth from eight directions without jumping, digging or rescue', () => {
@@ -207,4 +223,49 @@ test('hunter chase uses shared gallop speed and applies terrain slowdown once', 
   assert.ok(hunter.group.position.distanceTo(before) > 4.5, 'hunter actually gallops toward its target');
   const fullSpeed = M.config.locomotion.runSpeed * .65;
   assert.ok(hunter.state.speed > fullSpeed * .98 && hunter.state.speed <= fullSpeed, 'no role-specific chase multiplier');
+});
+
+
+test('wall and tower quarry searches use the outside in all four directions and recheck construction before mining', () => {
+  const { M, animal } = isolatedAnimal('Mallow');
+  const soil = M.world.topSoilInfo;
+  for (const axis of ['x', 'z']) for (const sign of [-1, 1]) {
+    const acrossX = axis === 'z', center = sign * 13;
+    const site = { axis, centerX: acrossX ? center : 15, centerZ: acrossX ? 15 : center, groundY: 14, baseBy: 7 };
+    site.bx = Math.floor(site.centerX / 2); site.bz = Math.floor(site.centerZ / 2);
+    const point = offset => ({ bx: Math.floor((acrossX ? center + sign * offset : 15) / 2),
+      bz: Math.floor((acrossX ? 15 : center + sign * offset) / 2) });
+    const inner = point(-10), outer = point(6);
+    const project = { site, stepCount: 4, plan: [{ bx: site.bx, by: 7, bz: site.bz }], steps: [] };
+    M.world.topSoilInfo = (bx, bz) => [inner, outer].some(c => c.bx === bx && c.bz === bz)
+      ? { bx, by: 6, bz, kind: 'grass', top: 14 } : null;
+    animal.group.position.set(acrossX ? center - sign * 8 : 15, 14, acrossX ? 15 : center - sign * 8);
+    Object.assign(animal.state, { mode: 'idle', wait: 0, project, walls: [], action: null, gathering: true,
+      carryCount: 0, carry: null, batchGoal: 1, escape: null, grounded: true, vy: 0, pitTimer: 1000 });
+    M.animals.update(.05, 0);
+    assert.ok(animal.state.action?.quarry, axis + sign + ' finds a wall quarry');
+    assert.deepEqual([animal.state.action.target.bx, animal.state.action.target.bz], [outer.bx, outer.bz], 'rejects closer soil on the Hearth side');
+
+    // A player builds above the selected soil while the builder approaches.
+    assert.ok(M.world.placeBlock('stone', outer.bx, 7, outer.bz));
+    animal.state.mode = 'break'; animal.state.action.time = .21;
+    M.animals.update(.05, .05);
+    assert.equal(animal.state.action.result, 'failed');
+    assert.ok(M.world.blockInfoAt(outer.bx, 6, outer.bz), 'new player wall keeps its natural foundation');
+    M.world.breakBlockAt(outer.bx, 7, outer.bz, { drop: false });
+
+    // Tower gathering must obey the same wall boundary, including completed walls.
+    const nearInner = point(-2), nearOuter = point(6);
+    M.world.topSoilInfo = (bx, bz) => [nearInner, nearOuter].some(c => c.bx === bx && c.bz === bz)
+      ? { bx, by: 6, bz, kind: 'stone', top: 14 } : null;
+    animal.group.position.set(acrossX ? center + sign * 2 : 15, 14, acrossX ? 15 : center + sign * 2);
+    M.towers = { builderDefinition: () => ({ id: 'frost', cost: { coins: 12, stone: 3 } }) };
+    Object.assign(animal.state, { mode: 'idle', wait: 0, action: null, project: null, walls: [project],
+      towerTimer: 0, coins: 12, towerStone: 0, grounded: true, vy: 0 });
+    M.animals.update(.05, .1);
+    assert.ok(animal.state.action?.towerQuarry, 'trained builder finds an outside tower quarry');
+    assert.deepEqual([animal.state.action.target.bx, animal.state.action.target.bz], [nearOuter.bx, nearOuter.bz]);
+    M.towers = null;
+  }
+  M.world.topSoilInfo = soil;
 });

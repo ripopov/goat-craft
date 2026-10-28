@@ -470,6 +470,38 @@
   // A quarry pass is intentionally local and shallow: shave the top turf
   // course around the animal, one block at a time. This keeps NPCs on the
   // surface instead of digging themselves into ever-deeper pits.
+  // The wall is a boundary: quarry on its Hearth-opposite side, leaving the
+  // wall and both approach rows intact. Completed walls keep their buffers.
+  function outsideWall(project, bx, bz) {
+    const site = project.site, tree = M.hearthTree ? M.hearthTree.position : M.config.startingArea;
+    const alongX = site.axis === 'z';
+    const wall = alongX ? site.centerX : site.centerZ;
+    const hearth = alongX ? tree.x : tree.z;
+    const cell = (alongX ? bx + .5 : bz + .5) * sizeOf();
+    const outward = Math.sign(wall - hearth);
+    return outward !== 0 && (cell - wall) * outward >= 3 * sizeOf();
+  }
+
+  function safeQuarryColumn(animal, project, bx, bz) {
+    let boundary = project || animal.state.project;
+    if (!boundary) {
+      // Tower jobs keep using the nearest completed wall when no wall is
+      // currently being built or repaired.
+      const c = cellCenter(bx, bz);
+      let nearest = Infinity;
+      for (const wall of animal.state.walls) {
+        const distance = Math.hypot(c.x - wall.site.centerX, c.z - wall.site.centerZ);
+        if (distance < nearest) { boundary = wall; nearest = distance; }
+      }
+    }
+    if (!boundary || !outsideWall(boundary, bx, bz)) return false;
+    for (const other of animals) {
+      if (other.state.project && inSiteFootprint(other.state.project, bx, bz, 2)) return false;
+      for (const wall of other.state.walls) if (inSiteFootprint(wall, bx, bz, 2)) return false;
+    }
+    return !worldRef.isProtectedArea || !worldRef.isProtectedArea(bx, bz);
+  }
+
   function findSurfaceQuarryTarget(animal, project, position) {
     const p = position || animal.group.position;
     const player = goatRef.group.position;
@@ -488,19 +520,7 @@
         const c = cellCenter(bx, bz);
         const dist = Math.hypot(c.x - p.x, c.z - p.z);
         if (dist < 1.65 || dist > 14.0) continue;
-        // Preserve the wall foundation and its two approach rows on either
-        // side, in the project's own orientation.
-        if (inSiteFootprint(project, bx, bz, 2)) continue;
-        let nearSite = false;
-        for (let i = 0; i < animals.length; i++) {
-          const other = animals[i];
-          if (other === animal || !other.state.project) continue;
-          if (inSiteFootprint(other.state.project, bx, bz, 0)) {
-            nearSite = true;
-            break;
-          }
-        }
-        if (nearSite) continue;
+        if (!safeQuarryColumn(animal, project, bx, bz)) continue;
         if (worldRef.isPondArea(bx, bz) || worldRef.isWaterColumn(bx, bz)) continue;
         const info = worldRef.topSoilInfo(bx, bz);
         if (!info) continue;
@@ -543,7 +563,10 @@
     const project = s.project;
     if (!project || s.carryCount >= CARRY_LIMIT || !hasBuildTarget(project)) return false;
 
-    const target = findSurfaceQuarryTarget(animal, project);
+    // A repair may start far inside the defended area. Search the wall's
+    // outskirts too, instead of giving up or digging near the builder.
+    const target = findSurfaceQuarryTarget(animal, project) || findSurfaceQuarryTarget(animal, project,
+      { x: project.site.centerX, y: project.site.groundY, z: project.site.centerZ });
     if (!target) return false;
 
     s.action = {
@@ -603,6 +626,7 @@
       if (distance < 2.4 || distance > 8 || distance >= score || entityBlocksCell(animal, c.x, c.z, 1.5)) continue;
       if (animals.some(other => [other.state.project, ...other.state.walls].some(project => project && inSiteFootprint(project, bx, bz, 1)))) continue;
       if (!salvaged && s.towerStone < def.cost.stone) {
+        if (!safeQuarryColumn(animal, s.project, bx, bz)) continue;
         const info = worldRef.topSoilInfo(bx, bz);
         if (!info || !['grass', 'dirt', 'stone'].includes(info.kind) || worldRef.isPlacedBlock(bx, info.by, bz) ||
             worldRef.blockInfoAt(bx, info.by + 1, bz) ||
@@ -1162,6 +1186,14 @@
 
     if (action.kind === 'break') {
       const target = action.target;
+      // Construction or a changed project can invalidate a queued quarry hit.
+      if ((action.quarry || action.towerQuarry) &&
+          (!safeQuarryColumn(animal, s.project, target.bx, target.bz) ||
+           worldRef.isPlacedBlock(target.bx, target.by, target.bz) ||
+           worldRef.blockInfoAt(target.bx, target.by + 1, target.bz))) {
+        action.result = 'failed'; action.hit = true;
+        return;
+      }
       const kind = worldRef.breakBlockAt(target.bx, target.by, target.bz, {
         drop: false,
         protectPlaced: !action.escape

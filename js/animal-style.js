@@ -1,20 +1,6 @@
-// Shared visual style machinery for the player goat and the herd. Fleet
-// hooves, Quick strikes, Long horns and Heavy horns decorate the same rig pieces on every
-// animal: glowing energy bands climb the legs and the tail tip lights up,
-// tier 3 turns the legs into spinning wheel rims, and the horns re-forge
-// into cyan / gold / molten elemental charges that pulse with the spell
-// about to be thrown. NPC hunters train with exactly the same looks as the
-// player goat.
+// Shared tiered equipment, articulated fittings and combat-clock effects.
 (function (M) {
   'use strict';
-
-  const TIER_GLOW = [0x000000, 0x2fe6d0, 0xffc13d, 0xff5ce1]; // none, teal, gold, magenta
-  const HORN_STYLE = [
-    null,
-    { tint: 0x4fd8ff, tips: 0.05, base: 0.5, swing: 0.14, pulse: 3.4 },   // bolt
-    { tint: 0xffc13d, tips: 0.06, base: 0.6, swing: 0.18, pulse: 5.2 },   // chain
-    { tint: 0xff7a2a, tips: 0.085, base: 0.8, swing: 0.24, pulse: 8 }     // fireball
-  ];
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
@@ -39,225 +25,45 @@
     nodes.length = 0;
   }
 
-  // ------------------------------------------------------------------ speed
-  // ctx = { legs: [{ ankle, hip }], tailPivot, scale } — scale is the
-  // leg-size ratio against the player goat (goat 1, sheep ~0.85, ...).
-  function makeSpeedStyle(THREE) {
-    const state = { level: 0, nodes: [] };
-    const api = {
-      apply: function (level, ctx) {
-        level = clamp(level || 0, 0, 3);
-        if (level === state.level || !ctx || !ctx.legs || !ctx.legs.length) return state.level;
-        state.level = level;
-        disposeNodes(THREE, state.nodes);
-        if (level < 1) return 0;
-        const color = TIER_GLOW[level];
-        const k = ctx.scale || 1;
-        for (let i = 0; i < ctx.legs.length; i++) {
-          const leg = ctx.legs[i];
-          const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.082 * k, 0.022 * k, 8, 20), glowMaterial(THREE, color));
-          ankle.rotation.x = Math.PI / 2;
-          ankle.position.y = 0;
-          leg.ankle.add(ankle);
-          state.nodes.push(ankle);
-          if (level >= 2) {
-            const hipBand = new THREE.Mesh(new THREE.TorusGeometry(0.135 * k, 0.022 * k, 8, 20), glowMaterial(THREE, color));
-            hipBand.rotation.x = Math.PI / 2;
-            hipBand.position.y = -0.24;
-            leg.hip.add(hipBand);
-            state.nodes.push(hipBand);
-          }
-          if (level >= 3) {
-            const upperBand = new THREE.Mesh(new THREE.TorusGeometry(0.17 * k, 0.022 * k, 8, 20), glowMaterial(THREE, color));
-            upperBand.rotation.x = Math.PI / 2;
-            upperBand.position.y = -0.08;
-            leg.hip.add(upperBand);
-            state.nodes.push(upperBand);
-            const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5 * k, 0.022 * k, 8, 28), glowMaterial(THREE, color));
-            rim.rotation.y = Math.PI / 2;
-            rim.position.y = -0.47;   // hub at mid-leg; the leg is the spoke
-            leg.hip.add(rim);
-            state.nodes.push(rim);
-            const hub = new THREE.Mesh(new THREE.SphereGeometry(0.09 * k, 10, 8), glowMaterial(THREE, color));
-            hub.position.y = -0.47;
-            leg.hip.add(hub);
-            state.nodes.push(hub);
-          }
-        }
-        if (ctx.tailPivot) {
-          const comet = new THREE.Mesh(new THREE.SphereGeometry(0.06 * k, 10, 8), glowMaterial(THREE, color));
-          comet.position.y = 0.46;
-          ctx.tailPivot.add(comet);
-          state.nodes.push(comet);
-        }
-        return state.level;
-      },
-      get level() { return state.level; },
-      dispose: function () { disposeNodes(THREE, state.nodes); state.level = 0; }
-    };
-    return api;
+  // Each fitting owns its geometry/material. Rebuild only on tier transitions;
+  // animation reuses the same objects and never emits unbounded particles.
+  function fitting(THREE, parent, geometry, color, x, y, z, glow) {
+    const material = glow ? glowMaterial(THREE, color) : new THREE.MeshStandardMaterial({
+      color: color, roughness: 0.48, metalness: 0.6, flatShading: true
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z); mesh.castShadow = !glow;
+    parent.add(mesh); return mesh;
+  }
+  const METAL = [0, 0x353eaa, 0xd9f5ff, 0x353eaa];
+  function makeSpeedStyle() { return makeTierHandle(); }
+  function makeHornStyle() {
+    const handle = makeTierHandle(); handle.pulse = function () {}; return handle;
   }
 
-  // ------------------------------------------------------------------ horns
-  // ctx = { horns: [{ mesh, tip: Vector3|undefined, band: Vector3|undefined }],
-  //         defaultMat, scale } — tip/band offsets are in the horn mesh's local
-  // space; antler tines can omit them to stay a simple tint.
-  function makeHornStyle(THREE) {
-    const state = { level: 0, mats: [], nodes: [] };
-    const api = {
-      apply: function (level, ctx) {
-        level = clamp(level || 0, 0, 3);
-        if (level === state.level || !ctx || !ctx.horns || !ctx.horns.length) return state.level;
-        state.level = level;
-        disposeNodes(THREE, state.nodes);
-        for (let i = 0; i < state.mats.length; i++) state.mats[i].dispose();
-        state.mats = [];
-        const style = HORN_STYLE[level];
-        const k = ctx.scale || 1;
-        for (let i = 0; i < ctx.horns.length; i++) {
-          const horn = ctx.horns[i];
-          const mesh = horn.mesh;
-          if (style) {
-            if (mesh.material !== ctx.defaultMat && state.mats.indexOf(mesh.material) < 0) {
-              state.mats.push(mesh.material);
-            } else {
-              const mat = mesh.material.clone();
-              mesh.material = mat;
-              state.mats.push(mat);
-            }
-            mesh.material.emissive = new THREE.Color(style.tint);
-            mesh.material.emissiveIntensity = style.base;
-            if (horn.tip) {
-              const tip = new THREE.Mesh(new THREE.SphereGeometry(style.tips * k, 10, 8), glowMaterial(THREE, style.tint));
-              tip.position.copy(horn.tip);
-              mesh.add(tip);
-              state.nodes.push(tip);
-              if (level >= 3) {
-                const halo = new THREE.Mesh(new THREE.SphereGeometry(style.tips * 1.7 * k, 10, 8), glowMaterial(THREE, style.tint));
-                halo.material.transparent = true;
-                halo.material.opacity = 0.35;
-                halo.material.depthWrite = false;
-                halo.position.copy(horn.tip);
-                mesh.add(halo);
-                state.nodes.push(halo);
-              }
-            }
-            if (level >= 2 && horn.band) {
-              const bandR = level >= 3 ? 0.082 : 0.072;
-              const band = new THREE.Mesh(new THREE.TorusGeometry(bandR * k, 0.022 * k, 8, 20), glowMaterial(THREE, style.tint));
-              band.rotation.x = Math.PI / 2;
-              band.position.copy(horn.band);
-              mesh.add(band);
-              state.nodes.push(band);
-            }
-          } else {
-            mesh.material = ctx.defaultMat;
-          }
-        }
-        return state.level;
-      },
-      pulse: function (t) {
-        if (state.level <= 0 || !HORN_STYLE[state.level]) return;
-        const style = HORN_STYLE[state.level];
-        const charge = style.base + Math.sin(t * style.pulse) * style.swing;
-        for (let i = 0; i < state.mats.length; i++) state.mats[i].emissiveIntensity = charge;
-      },
-      get level() { return state.level; },
-      dispose: function () {
-        disposeNodes(THREE, state.nodes);
-        for (let i = 0; i < state.mats.length; i++) state.mats[i].dispose();
-        state.mats = [];
-        state.level = 0;
-      }
-    };
-    return api;
-  }
+  // Builder work has its own module and tier handle.
+  function makeCraftStyle() { return makeTierHandle(); }
 
-  // Quick strikes reshapes the neck itself, with fittings scaled to each
+  // Reflex Drive reshapes the neck itself, with fittings scaled to each
   // species. Animation uses the combat clock, so the pose peaks at real impact.
   const NECK_STYLE = [null,
-    { name: 'braced jab', width: 1.12, length: 1.04, color: 0x58cbb7 },
-    { name: 'spring snap', width: 1.18, length: 1.18, color: 0xffc65b },
-    { name: 'piston strike', width: 1.26, length: 1.32, color: 0xeb83ff }
+    { name: 'servo jab', width: 1.12, length: 1.04, color: 0xff28bd },
+    { name: 'coil snap', width: 1.18, length: 1.09, color: 0xff28bd },
+    { name: 'overclock strike', width: 1.26, length: 1.14, color: 0xff28bd }
   ];
   const POWER_STYLE = [
-    { hornWidth: 1, hornLength: 1, beard: 'natural tuft', boltRadius: 0.018, glow: 0.12, fireballSize: 1 },
-    { hornWidth: 1.18, hornLength: 1.25, beard: 'pointed goatee', boltRadius: 0.035, glow: 0.2, fireballSize: 1.22 },
-    { hornWidth: 1.4, hornLength: 1.55, beard: 'forked beard', boltRadius: 0.055, glow: 0.28, fireballSize: 1.48 },
-    { hornWidth: 1.65, hornLength: 1.9, beard: 'braided beard', boltRadius: 0.08, glow: 0.36, fireballSize: 1.78 }
+    { name: 'unpowered', boltRadius: 0.018, glow: 0.12, fireballSize: 1 },
+    { name: 'ignition cell', boltRadius: 0.035, glow: 0.2, fireballSize: 1.22 },
+    { name: 'reactor mantle', boltRadius: 0.055, glow: 0.28, fireballSize: 1.48 },
+    { name: 'nova carapace', boltRadius: 0.08, glow: 0.36, fireballSize: 1.78 }
   ];
-  // Heavy horns scales the existing horn meshes, so elemental tips/bands and
-  // stag antler branches stay attached regardless of upgrade purchase order.
-  function makePowerStyle(THREE) {
-    const state = { level: 0, ctx: null, rest: [], originalBeard: [], nodes: [] };
-    function restore() {
-      if (!state.ctx) return;
-      state.ctx.horns.forEach(function (horn, i) { horn.mesh.scale.copy(state.rest[i]); });
-      state.originalBeard.forEach(function (part) { part.node.visible = part.visible; });
-    }
-    return {
-      apply: function (level, ctx) {
-        level = clamp(level || 0, 0, 3);
-        if (level === state.level || !ctx || !ctx.horns || !ctx.horns.length) return state.level;
-        if (!state.ctx) {
-          state.ctx = ctx;
-          state.rest = ctx.horns.map(function (horn) { return horn.mesh.scale.clone(); });
-          state.originalBeard = ctx.beard ? ctx.beard.children.map(function (node) { return { node: node, visible: node.visible }; }) : [];
-        }
-        disposeNodes(THREE, state.nodes);
-        restore();
-        state.level = level;
-        const style = POWER_STYLE[level];
-        ctx.horns.forEach(function (horn, i) {
-          const rest = state.rest[i];
-          horn.mesh.scale.set(rest.x * style.hornWidth, rest.y * style.hornLength, rest.z * style.hornLength);
-        });
-        if (!level || !ctx.beard) return level;
-        state.originalBeard.forEach(function (part) { part.node.visible = false; });
-        const beard = new THREE.Group();
-        beard.name = 'heavy-horns-beard-' + level;
-        ctx.beard.add(beard);
-        state.nodes.push(beard);
-        const k = ctx.scale || 1;
-        function piece(geometry, x, y, z, gold) {
-          const material = gold ? new THREE.MeshStandardMaterial({ color: 0xe9bf68, roughness: 0.25, metalness: 0.65 })
-            : ctx.beardMat.clone();
-          const mesh = new THREE.Mesh(geometry, material);
-          mesh.position.set(x * k, y * k, z * k);
-          mesh.scale.setScalar(k);
-          mesh.castShadow = mesh.receiveShadow = true;
-          beard.add(mesh);
-          return mesh;
-        }
-        function tuft(x, y, width, length, tilt) {
-          const mesh = piece(new THREE.ConeGeometry(width, length, 7), x, y, 0, false);
-          mesh.rotation.z = Math.PI + tilt;
-        }
-        if (level === 1) {
-          tuft(0, -0.12, 0.11, 0.32, 0);
-          tuft(-0.06, -0.07, 0.055, 0.22, -0.12);
-          tuft(0.06, -0.07, 0.055, 0.22, 0.12);
-        } else if (level === 2) {
-          for (const side of [-1, 1]) {
-            tuft(side * 0.075, -0.17, 0.085, 0.43, side * 0.22);
-            piece(new THREE.CylinderGeometry(0.036, 0.033, 0.045, 8), side * 0.11, -0.28, 0.012, true);
-          }
-        } else {
-          tuft(0, -0.05, 0.12, 0.24, 0);
-          for (let i = 0; i < 6; i++) {
-            const knot = piece(new THREE.SphereGeometry(1, 8, 6), (i % 2 ? -1 : 1) * 0.025, -0.12 - i * 0.053, 0.015, false);
-            knot.scale.set(0.075 * k * (1 - i * 0.075), 0.065 * k, 0.055 * k);
-            knot.rotation.z = (i % 2 ? -1 : 1) * 0.4;
-          }
-          piece(new THREE.CylinderGeometry(0.05, 0.044, 0.055, 8), 0, -0.43, 0.012, true);
-          tuft(0, -0.49, 0.05, 0.14, 0);
-        }
-        return level;
-      },
-      get level() { return state.level; },
-      dispose: function () { disposeNodes(THREE, state.nodes); restore(); state.level = 0; }
-    };
+  // Tier handles preserve the controller API; modules own all equipment geometry.
+  function makeTierHandle() {
+    let tier = 0;
+    return { apply: function (level) { tier = clamp(level || 0, 0, 3); return tier; },
+      animate: function () {}, get level() { return tier; }, dispose: function () { tier = 0; } };
   }
+  function makePowerStyle() { return makeTierHandle(); }
   function makeNeckStyle(THREE) {
     const state = { level: 0, nodes: [], ctx: null, rest: null };
     const pose = { lunge: 0, yaw: 0, roll: 0 };
@@ -298,29 +104,17 @@
           fittings.add(mesh);
           return mesh;
         }
-        for (let i = 0; i < level; i++) {
-          const y = height * (-0.25 + i * 0.27);
-          const r = THREE.MathUtils.lerp(p.radiusBottom, p.radiusTop, y / height + 0.5) + 0.018;
-          const brace = mount(new THREE.TorusGeometry(r, 0.025, 4, 12), 0, y, 0, true);
-          brace.rotation.x = Math.PI / 2;
-        }
-        if (level === 2) {
-          const points = [];
-          for (let i = 0; i <= 48; i++) {
-            const a = i / 48 * Math.PI * 6;
-            const y = (i / 48 - 0.5) * height * 0.8;
-            const r = THREE.MathUtils.lerp(p.radiusBottom, p.radiusTop, y / height + 0.5) + 0.022;
-            points.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
-          }
-          mount(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 48, 0.018, 4, false), 0, 0, 0, false);
-        } else if (level === 3) {
-          for (let i = 0; i < 3; i++) {
-            mount(new THREE.BoxGeometry(radius * 1.1, height * 0.2, 0.065), 0, height * (-0.26 + i * 0.28), radius * 0.86, false);
-          }
+        for (let i = 0; i <= level; i++) {
+          const y = height * (-.3 + i * .55 / level);
+          const r = THREE.MathUtils.lerp(p.radiusBottom, p.radiusTop, y / height + .5);
           for (const side of [-1, 1]) {
-            mount(new THREE.CylinderGeometry(0.028, 0.028, height * 0.82, 6), side * radius, 0, 0, false);
+            const plate = mount(new THREE.BoxGeometry(.055, height * .24, radius * 1.25), side * (r + .018), y, 0, false);
+            plate.rotation.z = side * .13;
+            plate.material.color.setHex(METAL[level]);
           }
         }
+        const clasp = mount(new THREE.OctahedronGeometry(radius * .3), 0, -height * .18, radius + .035, true);
+        clasp.scale.set(1, 1.4, .45);
         return level;
       },
       animate: function (time, impact, end, reducedMotion) {
@@ -341,10 +135,10 @@
             pose.yaw = (before ? -Math.sin(windup * Math.PI) : Math.sin(recovery * Math.PI) * 0.4) * 0.24 * secondary;
             extension = (before ? -0.16 * Math.sin(windup * Math.PI) + Math.pow(windup, 7) * 0.22 : 0.22 * Math.pow(1 - recovery, 3)) * motion;
           } else {
-            const recoil = Math.sin(recovery * Math.PI * 4) * Math.pow(1 - recovery, 2) * secondary;
-            pose.lunge = before ? -0.28 * Math.sin(windup * Math.PI) + Math.pow(windup, 9) : Math.pow(1 - recovery, 4) - recoil * 0.3;
-            pose.roll = before ? Math.sin(windup * Math.PI) * 0.1 * secondary : recoil * 0.12;
-            extension = (before ? -0.2 * Math.sin(windup * Math.PI) + Math.pow(windup, 9) * 0.3 : 0.3 * Math.pow(1 - recovery, 4) - recoil * 0.12) * motion;
+            const recoil = Math.sin(recovery * Math.PI * 2) * Math.pow(1 - recovery, 2) * secondary;
+            pose.lunge = before ? -0.28 * Math.sin(windup * Math.PI) + Math.pow(windup, 9) : Math.pow(1 - recovery, 4) - recoil * 0.1;
+            pose.roll = before ? Math.sin(windup * Math.PI) * 0.1 * secondary : recoil * 0.04;
+            extension = (before ? -0.2 * Math.sin(windup * Math.PI) + Math.pow(windup, 9) * 0.3 : 0.3 * Math.pow(1 - recovery, 4) - recoil * 0.04) * motion;
           }
         }
         fit(extension);
@@ -356,14 +150,296 @@
     return api;
   }
 
+  // Layer elemental casting onto the cadence pose without
+  // moving its impact. Caller reuses the pose returned by its neck rig.
+  function dressAttack(pose, reach, power, time, impact, end, reduced) {
+    if (!pose || time < 0 || time >= end || reduced) return;
+    const before = time < impact;
+    const phase = before ? time / impact : (time - impact) / (end - impact);
+    const arc = Math.sin(phase * Math.PI);
+
+    if (reach === 1) pose.lunge -= before ? arc * .08 : 0;
+    if (reach === 2) pose.yaw += arc * (before ? -.18 : .12);
+    if (reach === 3) {
+      pose.lunge -= arc * (before ? .22 : .08);
+      pose.roll += arc * (before ? .06 : -.04);
+    }
+  }
+
+  // Each branch owns an exclusive set of attachments and natural surfaces.
+  // Purchasing another branch never rebuilds or changes this module.
+  function makeModuleStyle(THREE, branch) {
+    const state = { level: 0, nodes: [], hidden: [], engines: [], lights: [], recoil: null, waves: [] };
+    const accent = { move: 0x18f5ff, cadence: 0xff28bd, reach: 0xa45bff, power: 0xff8a20, craft: 0x26f0a0 }[branch];
+    const colors = { shell: 0x353eaa, dark: 0x101b35, white: 0xd9f5ff,
+      cyan: accent, pink: accent, gold: 0xffcb37 };
+    function clear() {
+      state.hidden.forEach(function (entry) { entry.node.visible = entry.visible; });
+      state.hidden = []; state.engines = []; state.lights = []; state.recoil = null; state.waves = [];
+      disposeNodes(THREE, state.nodes);
+    }
+    function hide(node) {
+      if (state.hidden.some(entry => entry.node === node)) return;
+      state.hidden.push({ node: node, visible: node.visible }); node.visible = false;
+    }
+    function mount(parent, name) {
+      const group = new THREE.Group(); group.name = name;
+      group.userData.upgrade = branch;
+      parent.add(group); state.nodes.push(group); return group;
+    }
+    // Chamfered voxel panels: broad colored faces, crisp highlights at edges.
+    function panel(parent, w, h, d, color, x, y, z, glow) {
+      const b = Math.min(w, h, d) * .18;
+      const shape = new THREE.Shape();
+      shape.moveTo(-w / 2 + b, -h / 2); shape.lineTo(w / 2 - b, -h / 2);
+      shape.lineTo(w / 2, -h / 2 + b); shape.lineTo(w / 2, h / 2 - b);
+      shape.lineTo(w / 2 - b, h / 2); shape.lineTo(-w / 2 + b, h / 2);
+      shape.lineTo(-w / 2, h / 2 - b); shape.lineTo(-w / 2, -h / 2 + b); shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: d - b * 2, bevelEnabled: true, bevelSize: b, bevelThickness: b, bevelSegments: 1, steps: 1, curveSegments: 1 });
+      geo.translate(0, 0, -d / 2 + b);
+      return fitting(THREE, parent, geo, color, x, y, z, glow);
+    }
+    function bar(parent, a, b, radius, color, glow) {
+      const delta = b.clone().sub(a);
+      const mesh = fitting(THREE, parent, new THREE.CylinderGeometry(radius * .7, radius, delta.length(), 6), color, 0, 0, 0, glow);
+      mesh.position.copy(a).add(b).multiplyScalar(.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+      return mesh;
+    }
+    // Bake static panels by finish within each attachment. Joints and animated
+    // reactor parts stay independent; no new geometry is made during animation.
+    function batch(group) {
+      const buckets = new Map();
+      group.children.slice().forEach(function (mesh) {
+        if (!mesh.isMesh || mesh.userData.cyberAnimated) return;
+        const key = mesh.material.color.getHex() + ':' + mesh.material.emissive.getHex();
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(mesh);
+      });
+      buckets.forEach(function (meshes) {
+        if (meshes.length < 2) return;
+        const positions = [], normals = [];
+        meshes.forEach(function (mesh) {
+          mesh.updateMatrix();
+          const geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+          geo.applyMatrix4(mesh.matrix);
+          for (const v of geo.attributes.position.array) positions.push(v);
+          for (const v of geo.attributes.normal.array) normals.push(v);
+          geo.dispose(); mesh.geometry.dispose(); group.remove(mesh);
+        });
+        const material = meshes[0].material;
+        meshes.slice(1).forEach(function (mesh) { mesh.material.dispose(); });
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+        geometry.computeBoundingSphere();
+        const mesh = new THREE.Mesh(geometry, material); mesh.castShadow = material.emissive.getHex() === 0;
+        mesh.name = 'cyber-panels'; group.add(mesh);
+      });
+    }
+    return {
+      apply: function (level, ctx) {
+        level = clamp(level || 0, 0, 3);
+        if (level === state.level) return level;
+        clear(); state.level = level;
+        if (!level) return 0;
+        const full = level === 3;
+        const k = ctx.torso.scale.x / .4;
+        // Capture only natural surfaces before mounting this style. Child joints
+        // keep animating normally; neither collision dimensions nor items move.
+        if (full && (branch === 'power' || branch === 'craft')) {
+          ctx.rig.children.filter(n => n.isMesh).forEach(hide);
+          if (ctx.tail) ctx.tail.children.filter(n => n.isMesh).forEach(hide);
+        }
+        if (full && branch === 'cadence') {
+          const horns = ctx.horns.map(h => h.mesh || h);
+          ctx.head.children.filter(n => n.isMesh && !horns.includes(n)).forEach(hide);
+          if (ctx.beard) hide(ctx.beard);
+          if (ctx.ears) ctx.ears.forEach(ear => hide(ear.pivot));
+          ctx.neck.parent.children.filter(n => n.isMesh && n !== ctx.neck).forEach(hide);
+        }
+        if (branch === 'reach') ctx.horns.forEach(h => hide(h.mesh || h));
+        if (full && branch === 'move') ctx.legs.forEach(function (leg) {
+          [leg.hip, leg.knee, leg.ankle].forEach(joint => joint.children.filter(n => n.isMesh).forEach(hide));
+        });
+        if (branch === 'power' || branch === 'craft') {
+        const body = mount(ctx.rig, branch + '-chassis-' + level);
+        if (branch === 'power') state.recoil = body;
+        body.position.copy(ctx.torso.position); body.scale.set(k, 1, 1);
+        if (full) {
+          panel(body, .87, .72, 1.37, colors.dark, 0, 0, -.02);
+          panel(body, .76, .38, .24, colors.white, 0, -.12, .64);
+          panel(body, .72, .42, .19, colors.shell, 0, -.02, -.75);
+        }
+          panel(body, .32, .32, .1, colors.dark, 0, -.1, .74);
+          const core = fitting(THREE, body, new THREE.OctahedronGeometry(.12), colors.cyan, 0, -.1, .8, true);
+          core.scale.set(1, 1.2, .35); core.userData.cyberAnimated = true; state.lights.push(core);
+        for (const side of [-1, 1]) {
+          const shoulder = panel(body, .31 + level * .035, .3 + level * .035, .46, colors.shell, side * .43, .19, .39);
+          shoulder.rotation.z = -side * .2;
+          panel(body, .025, .19, .36, colors.cyan, side * (.61 + level * .012), .19, .39, true);
+          panel(body, .26, .07, .47, colors.white, side * .45, .42, .36);
+          if (level >= 2) {
+            for (let i = 0; i < 3; i++) {
+              const plate = panel(body, .13, .48, .31, i % 2 ? colors.white : colors.shell, side * .46, -.015, .15 - i * .3);
+              plate.rotation.z = side * .08;
+              panel(body, .026, .035, .21, i % 2 ? colors.pink : colors.cyan, side * .535, .04, .15 - i * .3, true);
+            }
+            panel(body, .3, .28, .42, colors.shell, side * .4, .17, -.56);
+          }
+          if (level >= 2) {
+            for (let vent = 0; vent < level; vent++) panel(body, .08, .18, .2, colors.dark, side * .24, .5, -.22 - vent * .15);
+          }
+        }
+        for (let i = 0; i < level + 2; i++) {
+          panel(body, .28, .09, .18, colors.white, 0, .43, .38 - i * .22);
+          panel(body, .07, .025, .12, colors.pink, 0, .493, .38 - i * .22, true);
+        }
+        if (branch === 'craft') for (const side of (level === 1 ? [-1] : [-1, 1])) {
+          const arm = mount(ctx.rig, 'forge-tool-' + side);
+          arm.position.copy(ctx.torso.position).add(new THREE.Vector3(side * .47, .3, -.25));
+          panel(arm, .1, .34, .12, colors.white, side * .08, .1, 0);
+          panel(arm, .1, .1, .32 + level * .08, colors.shell, side * .08, .27, .16);
+          panel(arm, .22, .14, .12, colors.gold, side * .08, .27, .36 + level * .08);
+          panel(arm, .08, .05, .3, colors.cyan, side * .08, .33, .17, true);
+          batch(arm); state.engines.push(arm);
+        }
+        if (branch === 'power') {
+          const wave = fitting(THREE, body, new THREE.RingGeometry(.16, .19, 20), accent, 0, -.1, .83, true);
+          wave.material.transparent = true; wave.material.depthWrite = false; wave.material.side = THREE.DoubleSide;
+          wave.userData.cyberAnimated = true; wave.visible = false; state.waves.push(wave);
+        }
+        batch(body);
+        }
+        if (branch === 'cadence' && level >= 2) {
+          const helmet = mount(ctx.head, 'reflex-helmet-' + level);
+          const hk = ctx.species === 'cow' ? 1.18 : ctx.species === 'stag' ? .92 : 1;
+          helmet.scale.setScalar(hk);
+          panel(helmet, .57, .18, .55, colors.shell, 0, .24, .05);
+          for (const side of [-1, 1]) {
+            panel(helmet, .12, .37, .43, colors.white, side * .265, .015, .05);
+            panel(helmet, .045, .045, .28, colors.pink, side * .337, .08, .1, true);
+            const fin = panel(helmet, .07, .28, .24, colors.shell, side * .32, .29, -.12);
+            fin.rotation.z = side * -.45;
+          }
+          if (full) {
+            panel(helmet, .44, .13, .12, colors.dark, 0, .07, .36);
+            panel(helmet, .4, .035, .028, colors.cyan, 0, .075, .432, true);
+            panel(helmet, .33, .19, .37, colors.white, 0, -.13, .29);
+            for (const side of [-1, 1]) panel(helmet, .05, .08, .027, colors.gold, side * .09, -.13, .49, true);
+            for (let i = -1; i <= 1; i++) {
+              bar(helmet, new THREE.Vector3(i * .07, -.22, .28), new THREE.Vector3(i * .095, -.45 + Math.abs(i) * .07, .26), .025, colors.dark);
+              panel(helmet, .045, .07, .045, colors.pink, i * .095, -.45 + Math.abs(i) * .07, .26, true);
+            }
+
+          }
+          batch(helmet);
+        }
+        if (branch === 'reach') {
+          const helmet = mount(ctx.head, 'arc-antlers-' + level);
+          helmet.scale.setScalar(.5 + level / 6);
+            // Monumental swept-back rail horns, with continuous luminous cores.
+            for (const side of [-1, 1]) {
+              const points = [[side * .18, .3, -.04], [side * .37, .62, -.16], [side * .54, .94, -.43], [side * .48, 1.23, -.72]];
+              for (let i = 0; i < level; i++) {
+                const a = new THREE.Vector3(...points[i]), b = new THREE.Vector3(...points[i + 1]);
+                bar(helmet, a, b, .13 - i * .032, i === 1 ? colors.white : colors.shell);
+                a.z += .09 - i * .02; b.z += .07 - i * .02;
+                bar(helmet, a, b, .03 - i * .006, i === 2 ? colors.pink : colors.cyan, true);
+              }
+              const tip = new THREE.Vector3(...points[level]);
+              fitting(THREE, helmet, new THREE.OctahedronGeometry(.05 + level * .02), accent, tip.x, tip.y, tip.z, true);
+              if (ctx.species === 'stag' && level >= 2) bar(helmet, new THREE.Vector3(side * .42, .74, -.26), new THREE.Vector3(side * .84, .98, -.35), .07, colors.gold);
+            }
+          const charge = fitting(THREE, helmet, new THREE.OctahedronGeometry(.07 + level * .02), colors.cyan, 0, .42, -.08, true);
+          charge.userData.cyberAnimated = true; state.lights.push(charge);
+          const wave = fitting(THREE, helmet, new THREE.RingGeometry(.12, .14, 16), accent, 0, .65, .05, true);
+          wave.material.transparent = true; wave.material.depthWrite = false; wave.material.side = THREE.DoubleSide;
+          wave.userData.cyberAnimated = true; wave.visible = false; state.waves.push(wave);
+          batch(helmet);
+        }
+        if (branch === 'cadence') {
+          const collar = mount(ctx.neck, 'reflex-neck-' + level);
+          // Attach to the neck mesh so its telescoping cadence pose carries the armor.
+          const p = ctx.neck.geometry.parameters;
+          const sleeve = fitting(THREE, collar, new THREE.CylinderGeometry(p.radiusTop + .035, p.radiusBottom + .035, p.height, 8), colors.dark, 0, 0, 0);
+          for (let i = 0; i < level + 2; i++) {
+            const r = p.radiusBottom + (p.radiusTop - p.radiusBottom) * i / (level + 1) + .045;
+            const ring = fitting(THREE, collar, new THREE.TorusGeometry(r, .025, 4, 12), i % 2 ? colors.white : colors.cyan, 0, p.height * (i / (level + 1) - .5), 0, i % 2 === 0);
+            ring.rotation.x = Math.PI / 2;
+          }
+          batch(collar);
+        }
+        if (branch === 'move') {
+          ctx.legs.forEach(function (leg, index) {
+            const side = Math.sign(leg.hip.position.x) || 1;
+            const upper = mount(leg.hip, 'cyber-upper-leg-' + index);
+            const lower = mount(leg.knee, 'cyber-lower-leg-' + index);
+            const foot = mount(leg.ankle, 'cyber-foot-' + index);
+            const upperLen = Math.abs(leg.knee.position.y), lowerLen = Math.abs(leg.ankle.position.y);
+            if (level >= 2) panel(upper, .24, upperLen * .8, .25, colors.shell, 0, -upperLen * .4, 0);
+            if (level >= 2) panel(upper, .045, upperLen * .66, .028, colors.cyan, 0, -upperLen * .4, .145, true);
+            const joint = fitting(THREE, lower, new THREE.CylinderGeometry(.115, .115, .29, 10), colors.dark, 0, 0, 0); joint.rotation.z = Math.PI / 2;
+            const hub = fitting(THREE, lower, new THREE.TorusGeometry(.08, .025, 4, 12), colors.pink, side * .16, 0, 0, true); hub.rotation.y = Math.PI / 2;
+            panel(lower, .19, lowerLen * .8, .2, colors.white, 0, -lowerLen * .47, 0);
+            bar(lower, new THREE.Vector3(side * .12, -.06, -.06), new THREE.Vector3(side * .12, -lowerLen * .84, -.06), .032, colors.gold);
+            panel(lower, .035, lowerLen * .55, .025, colors.cyan, 0, -lowerLen * .46, .12, true);
+            panel(foot, .26, .16, .32, colors.shell, 0, -.025, .035);
+            panel(foot, .27, .035, .33, colors.pink, 0, -.095, .035, true);
+            if (full) {
+              const jet = fitting(THREE, lower, new THREE.ConeGeometry(.065, .25, 5), colors.cyan, 0, -.1, -.22, true);
+              jet.rotation.x = -Math.PI / 2; jet.userData.cyberAnimated = true; jet.visible = false; state.engines.push(jet);
+            }
+            [upper, lower, foot].forEach(batch);
+          });
+        }
+        if (full && (branch === 'power' || branch === 'craft')) {
+          if (ctx.tail) {
+            const tail = mount(ctx.tail, 'cyber-tail');
+            panel(tail, .13, .35, .13, colors.shell, 0, .17, 0);
+            panel(tail, .14, .06, .14, colors.cyan, 0, .35, 0, true); batch(tail);
+          }
+        }
+        return level;
+      },
+      animate: function (t, speed, attack, reduced) {
+        if (state.recoil) state.recoil.rotation.x = reduced ? 0 : -Math.max(0, attack) * state.level * .035;
+        state.waves.forEach(function (wave) {
+          wave.visible = !reduced && attack > .25;
+          wave.scale.setScalar(1 + (1 - Math.min(1, Math.max(0, attack))) * state.level * 2);
+          wave.material.opacity = Math.max(0, attack) * .65;
+        });
+        state.engines.forEach(function (jet) {
+          if (branch === 'craft') jet.rotation.x = reduced ? 0 : -Math.max(0, attack) * (.15 + state.level * .12);
+          else { jet.visible = !reduced && speed > .15; jet.scale.y = .65 + speed * .7; }
+        });
+        state.lights.forEach(function (light) { light.material.emissiveIntensity = reduced ? .8 : .9 + Math.max(0, attack) * 1.4 + Math.sin(t * 3) * .12; });
+      },
+      get level() { return state.level; },
+      dispose: function () { clear(); state.level = 0; }
+    };
+  }
+
+  function makeLoadout(THREE) {
+    const modules = {};
+    for (const key of ['move', 'cadence', 'reach', 'power', 'craft']) modules[key] = makeModuleStyle(THREE, key);
+    return {
+      apply: function (levels, ctx) { for (const key of Object.keys(modules)) modules[key].apply(levels[key] || 0, ctx); },
+      animate: function (t, speed, attack, reduced) { for (const key of Object.keys(modules)) modules[key].animate(t, speed, attack, reduced); },
+      dispose: function () { for (const key of Object.keys(modules)) modules[key].dispose(); }
+    };
+  }
+
   M.styleFx = {
+    makeLoadout: makeLoadout,
+    makeModuleStyle: makeModuleStyle,
+    dressAttack: dressAttack,
+    makeCraftStyle: makeCraftStyle,
     makeSpeedStyle: makeSpeedStyle,
     makeHornStyle: makeHornStyle,
     makeNeckStyle: makeNeckStyle,
     makePowerStyle: makePowerStyle,
     powerStyle: POWER_STYLE,
     neckStyle: NECK_STYLE,
-    tierGlow: TIER_GLOW,
-    hornStyle: HORN_STYLE
   };
 })(window.Meadow = window.Meadow || {});

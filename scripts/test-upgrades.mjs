@@ -285,11 +285,11 @@ test('trained animals wear the same visible upgrades as the player goat', () => 
   M.goat.group.position.set(15, 14, 2); // keep the goat away from the fight
   train(M, hunter, 'move', 3); train(M, hunter, 'reach', 3); train(M, M.upgrades.player, 'move', 3);
   for (let i = 0; i < 10; i++) M.animals.update(.1, i * .1);
-  assert.equal(hunter.speedFx.level, 3, 'the stag spins wheel rims at tier 3 like the goat');
+  assert.equal(hunter.speedFx.level, 3, 'the stag wears gilded greaves at tier 3 like the goat');
   assert.equal(hunter.hornFx.level, 3, 'the stag horns charge molten at tier 3');
-  const rimCount = hunter.parts.legs.reduce((sum, leg) => sum + leg.hip.children.length, 0);
-  assert.ok(rimCount > 4 * 2, 'wheel rims, hubs and bands are mounted on the stag legs');
-  assert.equal(M.goat.speedStyle, 3, 'the player goat keeps its wheel rims after the shared refactor');
+  const rimCount = hunter.parts.legs.filter(leg => leg.ankle.children.find(n => n.userData.upgrade === 'move')).length;
+  assert.equal(rimCount, 4, 'fitted greaves are mounted on all four articulated ankles');
+  assert.equal(M.goat.speedStyle, 3, 'the player goat uses the same tiered equipment');
   const builder = M.animals.list.find(a => a.name === 'Mallow');
   assert.equal(builder.hornFx.level, 0, 'builders never train horns and keep plain antlers');
 });
@@ -487,45 +487,21 @@ test('builder Fleet hooves accelerates work waits, stacks with Practiced builder
   }
 });
 
-test('Heavy horns tiers enlarge horns and restyle beards without disturbing elemental training', () => {
+test('Nova Core purchases change the torso without changing horn or leg modules', () => {
   const { M } = training(); supplies(M);
-  const goatHorns = ['goat-horn-left', 'goat-horn-right'].map(name => M.goat.headPivot.getObjectByName(name));
-  const goatBeard = M.goat.headPivot.getObjectByName('goat-beard');
-  const originalTufts = goatBeard.children.slice();
-  const actors = [{ target: M.upgrades.player, horns: goatHorns, beard: goatBeard },
-    ...M.animals.list.filter(a => a.role === 'hunter').map(a => ({ target: a, horns: a.parts.horns.map(h => h.mesh), beard: a.parts.beard }))];
-  for (const [i, { target, horns, beard }] of actors.entries()) {
-    if (i === 0) train(M, target, 'reach'); // elemental glow before horn growth
-    let previousSize = 1;
+  for (const target of [M.upgrades.player, ...M.animals.list.filter(a => a.role === 'hunter')]) {
+    train(M, target, 'reach', 2); train(M, target, 'move', 1);
+    const group = target === M.upgrades.player ? M.goat.group : target.group;
+    const antlers = group.getObjectByName('arc-antlers-2');
+    const leg = group.getObjectByName('cyber-lower-leg-0');
     for (let tier = 1; tier <= 3; tier++) {
-      const old = beard.getObjectByName('heavy-horns-beard-' + (tier - 1));
-      let owned = 0, disposed = 0;
-      old?.traverse(node => {
-        for (const resource of [node.geometry, node.material].filter(Boolean)) {
-          owned++; resource.addEventListener('dispose', () => disposed++);
-        }
-      });
       train(M, target, 'power', 1);
-      assert.ok(horns.every(h => h.scale.y > previousSize && h.scale.x > 1), 'every horn and antler branch grows');
-      assert.ok(beard.getObjectByName('heavy-horns-beard-' + tier), 'each purchase changes the beard immediately');
-      if (old) { assert.equal(old.parent, null); assert.equal(disposed, owned); }
-      previousSize = horns[0].scale.y;
+      assert.equal(group.getObjectByName('arc-antlers-2'), antlers);
+      assert.equal(group.getObjectByName('cyber-lower-leg-0'), leg);
+      assert.ok(group.getObjectByName('power-chassis-' + tier));
+      assert.equal(group.getObjectByName('reflex-helmet-3'), undefined);
     }
-    if (i > 0) {
-      train(M, target, 'reach'); // elemental glow after horn growth
-      M.animals.update(.001, 0);
-    }
-    assert.ok(horns[0].children.length > 0, 'elemental tips and bands stay attached');
-    const before = horns[0].scale.clone();
-    if (target === M.upgrades.player) M.goat.applyPowerStyle(3);
-    else target.powerFx.apply(3, target.powerCtx);
-    assert.ok(horns[0].scale.equals(before), 'reapplying the style never compounds growth');
   }
-  assert.ok(originalTufts.every(tuft => !tuft.visible), 'the original tuft gives way to the upgraded beard');
-  assert.ok(M.animals.list.filter(a => a.role === 'builder').every(a => a.powerFx.level === 0));
-  M.goat.applyPowerStyle(0);
-  assert.ok(goatHorns.every(h => h.scale.x === 1 && h.scale.y === 1));
-  assert.ok(originalTufts.every(tuft => tuft.visible), 'reset restores the original beard');
 });
 
 test('Heavy horns makes bolts and fireballs progressively thicker and shinier while preserving spell damage', () => {

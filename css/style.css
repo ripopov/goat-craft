@@ -736,3 +736,12 @@ body.rts-active #bag-open { display: none; }
   @media (max-height: 500px) {
     .rts-dock { max-height: 55vh; overflow-y: auto; }
   }
+
+/* Upgrade branches carry the same accents as their model modules. */
+.upgrade-card[data-branch="move"] { --branch: #18eaff; }
+.upgrade-card[data-branch="cadence"] { --branch: #ff48c3; }
+.upgrade-card[data-branch="reach"] { --branch: #b285ff; }
+.upgrade-card[data-branch="power"] { --branch: #ffac4b; }
+.upgrade-card[data-branch="craft"] { --branch: #38eaa7; }
+.upgrade-card[data-branch] { border-top: 3px solid var(--branch); }
+.upgrade-region { color: var(--branch); font-size: 11px; line-height: 1.5; margin: 8px 0; }

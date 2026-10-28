@@ -1752,11 +1752,6 @@
     }
   }
 
-  // After a long wheel spin the hip angle is some large multiple of two pi;
-  // fold it back into the nearest turn before easing back into the walk gait,
-  // so the legs wind down instead of unwinding a full rotation backwards.
-  function foldAngle(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
-
   function updateVisual(animal, dt, t) {
     const s = animal.state;
     const parts = animal.parts;
@@ -1786,9 +1781,7 @@
     const swim = M.config.reducedMotion ? 0 : s.swimBlend;
     s.tuck = damp(s.tuck || 0, s.grounded || s.swimming ? 0 : 1, 11, dt);
     const tuck = s.tuck;
-    // Fleet hooves and Long horns train the herd with the same visible
-    // transformations as the player goat: glowing bands up the legs, wheel
-    // rims at tier 3, and charging elemental horns that pulse.
+    // Shared tier fittings preserve each species silhouette.
     const speedLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'move') : 0;
     const hornLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
     const cadenceLevel = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'cadence') : 0;
@@ -1798,11 +1791,14 @@
     if (animal.powerFx) animal.powerFx.apply(powerLevel, animal.powerCtx);
     if (animal.hornFx) {
       animal.hornFx.apply(hornLevel, animal.hornCtx);
-      animal.hornFx.pulse(t);
+      animal.hornFx.pulse(t, s.strikeTime, .16, .45, M.config.reducedMotion);
     }
+    animal.craftFx.apply(M.upgrades ? M.upgrades.level(animal, 'craft') : 0, { chest: parts.chest });
+    animal.refreshLoadout();
+    animal.speedFx.animate(s.walkPhase, stride, s.grounded && !s.swimming, M.config.reducedMotion);
     const bob = moving ? Math.abs(Math.sin(s.walkPhase)) * 0.024 * stride : 0;
     // Faster tiers bounce with each stride instead of just moving quicker.
-    const hop = moving && s.grounded && speedLevel < 3 ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.012 * speedLevel * stride : 0;
+    const hop = !M.config.reducedMotion && moving && s.grounded ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.012 * speedLevel * stride : 0;
     parts.rig.position.y = parts.rigBaseY + bob + hop - (s.landPulse || 0) * 0.045 - tuck * 0.025;
     const weightShift = M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * 0.014 * stride;
     parts.rig.position.x = damp(parts.rig.position.x, weightShift, 10, dt);
@@ -1815,10 +1811,14 @@
 
     const walkLift = moving ? Math.sin(s.walkPhase * 2) * 0.04 * stride : 0;
     const neckAttack = animal.neckFx ? animal.neckFx.animate(s.strikeTime, 0.16, 0.45, M.config.reducedMotion) : null;
+    M.styleFx.dressAttack(neckAttack, hornLevel, powerLevel, s.strikeTime, .16, .45, M.config.reducedMotion);
     const actionLunge = (s.mode === 'break' || s.mode === 'place') && s.action
       ? actionPose(s.action.time, 0.22, s.action.duration)
       : neckAttack ? neckAttack.lunge : s.strikeTime >= 0 ? actionPose(s.strikeTime, 0.16, 0.45) : 0;
     parts.rig.position.z = actionLunge * 0.13;
+    animal.craftFx.animate(s.walkPhase, s.action ? actionLunge : 0, M.config.reducedMotion);
+    animal.loadoutFx.animate(t, stride, actionLunge, M.config.reducedMotion);
+    if (parts.beard) parts.beard.rotation.x = -.22 + (M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * stride * .035 - actionLunge * .12);
     const terrainGrab = s.action && s.action.kind === 'break' && s.action.target.type === 'terrain'
       ? actionLunge
       : 0;
@@ -1864,30 +1864,18 @@
       parts.mouth.rotation.x = chew * 0.18;
     }
 
-    // Legs. Trained tiers take crisper, deeper strides; tier 3 spins the legs
-    // as cartwheels. Wheel hips rotate continuously from their current angle so
-    // entering and leaving the spin is seamless, then fold back into gait damp.
+    // Fitted greaves follow a planted, increasingly assertive gait.
     for (let i = 0; i < parts.legs.length; i++) {
       const leg = parts.legs[i];
       const phase = s.walkPhase + leg.offset;
       const gait = hoofPose(phase, stride, 1);
       const gaitShape = animal.species === 'cow' ? 0.84 : animal.species === 'stag' ? 1.08 : 0.94;
-      const wheel = speedLevel >= 3 && moving && s.grounded && tuck < 0.01;
       let hipTarget;
       let kneeTarget;
       if (tuck > 0.01) {
         hipTarget = (leg.front ? -0.52 : 0.45) * tuck;
         kneeTarget = 0.72 * tuck;
-      } else if (wheel) {
-        const rawPhase = s.walkPhase * 0.7 + leg.offset;
-        if (leg.wheelBase === undefined) leg.wheelBase = leg.hip.rotation.x - rawPhase;
-        hipTarget = leg.wheelBase + rawPhase;
-        kneeTarget = 0.04;
       } else {
-        if (leg.wheelBase !== undefined) {
-          leg.hip.rotation.x = foldAngle(leg.hip.rotation.x);
-          leg.wheelBase = undefined;
-        }
         const energy = 1 + speedLevel * 0.05;
         const kneeEnergy = 1 + speedLevel * 0.07;
         hipTarget = gait.hip * gaitShape * energy;
@@ -1898,17 +1886,13 @@
         hipTarget += ((leg.front ? -.5 : .3) + Math.sin(paddle) * .65 - hipTarget) * swim;
         kneeTarget += (.6 + Math.cos(paddle + .6) * .35 - kneeTarget) * swim;
       }
-      if (actionLunge > 0 && tuck < 0.4 && !wheel) {
+      if (actionLunge > 0 && tuck < 0.4) {
         hipTarget += (leg.front ? -0.18 : 0.12) * actionLunge;
         kneeTarget += (leg.front ? 0.12 : 0.03) * actionLunge;
       }
-      if (wheel) {
-        leg.hip.rotation.x = hipTarget; // continuous rotation, no damping lag
-      } else {
-        leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 20, dt);
-      }
+      leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 20, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 20, dt);
-      const ankleTarget = wheel ? 0 : -kneeTarget * 0.55 + Math.max(0, Math.sin(phase)) * 0.13 * stride + tuck * 0.2;
+      const ankleTarget = -kneeTarget * 0.55 + Math.max(0, Math.sin(phase)) * 0.13 * stride + tuck * 0.2;
       leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 22, dt);
     }
 
@@ -1980,7 +1964,7 @@
     const p = animal.group.position;
     const upgrades = M.upgrades ? M.upgrades.stats(animal) : { rate: 1, reach: 0, damage: 0 };
     const reachTier = M.upgrades && M.upgrades.level ? M.upgrades.level(animal, 'reach') : 0;
-    // Long horns trains hunters exactly like the player: tier 1 throws an
+    // Arc Antlers trains hunters exactly like the player: tier 1 throws an
     // auto-aimed electric bolt, tier 2 a chaining arc, tier 3 a fireball with
     // a 3-block blast. Untrained hunters keep their melee headbutt.
     const spellRange = reachTier >= 1 && M.upgrades && M.upgrades.spellRanges
@@ -2519,6 +2503,8 @@
       parts: parts,
       group: parts.group,
       seed: rand(0, Math.PI * 2),
+      loadoutFx: M.styleFx.makeLoadout(THREE),
+      craftFx: M.styleFx.makeCraftStyle(THREE),
       speedFx: M.styleFx ? M.styleFx.makeSpeedStyle(THREE) : null,
       hornFx: M.styleFx ? M.styleFx.makeHornStyle(THREE) : null,
       neckFx: M.styleFx ? M.styleFx.makeNeckStyle(THREE) : null,
@@ -2539,6 +2525,10 @@
     }
     animal.powerCtx = { horns: parts.horns, beard: parts.beard, beardMat: parts.mats.face, scale: 0.85 };
 
+    animal.refreshLoadout = function () {
+      animal.loadoutFx.apply({ move: animal.speedFx.level, reach: animal.hornFx.level, cadence: animal.neckFx.level, power: animal.powerFx.level, craft: animal.craftFx.level },
+        { rig: parts.rig, torso: parts.torso, head: parts.headPivot, neck: parts.neck, legs: parts.legs, horns: parts.horns, tail: parts.tailPivot, ears: parts.ears, beard: parts.beard, species: animal.species });
+    };
     animal.state = {
       mode: 'idle',
       wait: rand(1.2, 3.5),

@@ -58,7 +58,7 @@ loaded and tested directly without terrain initialization.
 
 ## Change NPC navigation or appearance
 
-Edit rigs in `animal-models.js` without changing NPC job logic. The shared
+Edit rigs in `animal-models.js` without changing NPC job logic. `animal-style.js` owns independent upgrade modules. `makeLoadout` routes each branch's own level to `makeModuleStyle`: move owns legs, cadence owns neck/jaw, reach owns horns, power owns torso/tail, and builder craft owns its forge shell/tools. There is no maximum-tier chassis. Rank changes rebuild only the affected module; unrelated attachments retain object identity. Modules restore their own natural surfaces and dispose their own resources. Static panels batch per finish and attachment; fixed reactor, jet, discharge and tool meshes animate from locomotion or combat/work clocks. The shared
 species definitions supply both the model proportions and collision body.
 `animal-navigation.js` plans around the Hearth before physical recovery is
 needed. It caches graph edges by body dimensions, standing height and world

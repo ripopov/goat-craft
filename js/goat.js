@@ -421,31 +421,36 @@
   const stompLeg = legs[1];
 
   // ----------------------------------------------------------------- speed style
-  // Fleet hooves training visibly refits the player's goat (and, through
-  // M.styleFx, the whole herd): tiers stack glowing energy bands up each leg
-  // and tint the tail light; tier 3 adds spinning wheel rims and swaps the
-  // gait for a cartoon wheel spin.
+  // Shared fitted equipment retains the natural articulated gait.
+  const loadoutFx = M.styleFx.makeLoadout(THREE);
   const speedFx = M.styleFx.makeSpeedStyle(THREE);
   const hornFx = M.styleFx.makeHornStyle(THREE);
   const neckFx = M.styleFx.makeNeckStyle(THREE);
   const powerFx = M.styleFx.makePowerStyle(THREE);
   const HORN_TIP = new THREE.Vector3(0, 0.26, -0.37); // far end of makeHorn's curve
   const GOAT_HORN_BAND = new THREE.Vector3(0, 0.07, -0.03);
+  function refreshLoadout() {
+    loadoutFx.apply({ move: speedFx.level, reach: hornFx.level, cadence: neckFx.level, power: powerFx.level },
+      { rig: rig, torso: torso, head: headPivot, neck: neck, legs: legs, horns: horns, tail: tailPivot, ears: ears, beard: beard, species: 'goat' });
+  }
   function applySpeedStyle(level) {
     speedFx.apply(level, { legs: legs, tailPivot: tailPivot });
+    refreshLoadout();
   }
   function applyHornStyle(level) {
     const ctx = { horns: [], defaultMat: hornMat, scale: 1 };
     for (let i = 0; i < horns.length; i++) ctx.horns.push({ mesh: horns[i], tip: HORN_TIP, band: GOAT_HORN_BAND });
     hornFx.apply(level, ctx);
+    refreshLoadout();
   }
   function applyPowerStyle(level) {
     powerFx.apply(level, { horns: horns.map(function (mesh) { return { mesh: mesh }; }), beard: beard, beardMat: beardMat });
+    refreshLoadout();
   }
   function applyNeckStyle(level) {
     neckFx.apply(level, { neck: neck, headPivot: headPivot });
-    // Quick strikes changes the goat's gaze alongside its neck: teal, gold,
-    // then violet, with increasingly glossy irises and more catchlights.
+    refreshLoadout();
+    // Reflex Drive adds magenta targeting optics, glossy irises and catchlights.
     const tier = neckFx.level, style = M.styleFx.neckStyle[tier];
     eyeMat.color.setHex(style ? style.color : 0xe8c078);
     eyeMat.emissive.setHex(style ? style.color : 0x000000);
@@ -463,14 +468,8 @@
     }
   }
 
-  // Damping toward a gait pose normally keeps hips in a small arc. After a long
-  // wheel spin the hip angle is some large multiple of two pi; fold it back into
-  // the nearest turn before easing into the walk, so the legs wind down instead
-  // of unwinding a full rotation backwards.
-  function foldAngle(a) { return ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; }
-
   // ------------------------------------------------------------------ spells
-  // Elemental strikes from Long horns. Effects live here so the goat owns its
+  // Elemental strikes from Arc Antlers. Effects live here so the goat owns its
   // own bolts, sparks and fireball; damage is dealt through M.enemies so loot,
   // HUD and death handling stay in one place.
   const boltMaterial = new THREE.LineBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.9,
@@ -900,7 +899,7 @@
     if (terrainSpeed < 1 && !s.mired && uiRef && uiRef.showBubble) uiRef.showBubble('Mire slows hooves — jump or move out of the amber ring');
     s.mired = terrainSpeed < 1;
     const speedLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'move') : 0;
-    const wheel = speedLevel >= 3;
+
     const reachLevel = M.upgrades && M.upgrades.player && typeof M.upgrades.level === 'function' ? M.upgrades.level(M.upgrades.player, 'reach') : 0;
     const previousYaw = s.yaw;
     s.landPulse = damp(s.landPulse || 0, 0, 13, dt);
@@ -1174,7 +1173,9 @@
     const neckAttack = headTime >= 0
       ? neckFx.animate(headTime, 0.12, 0.34, M.config.reducedMotion)
       : neckFx.animate(stompTime, STOMP_IMPACT, STOMP_END, M.config.reducedMotion);
-    if (neckFx.level > 0) buttPose = neckAttack.lunge;
+    M.styleFx.dressAttack(neckAttack, reachLevel, powerFx.level, headTime >= 0 ? headTime : stompTime,
+      headTime >= 0 ? .12 : STOMP_IMPACT, headTime >= 0 ? .34 : STOMP_END, M.config.reducedMotion);
+    if (neckFx.level > 0 || reachLevel > 0) buttPose = neckAttack.lunge;
 
     s.tuck = damp(s.tuck, s.grounded || s.swimming || s.aerialStomp ? 0 : 1, 12, dt);
     const jumpK = s.tuck;
@@ -1182,7 +1183,6 @@
     s.stride = damp(s.stride || 0, moving ? clamp(s.speed / 0.6, 0, 1) : 0, 12, dt);
     const stride = s.stride;
 
-    const wheelSpin = wheel && jumpK <= 0.01 && stride > 0.06 && swim < 0.5;
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i];
       let hipTarget;
@@ -1190,19 +1190,7 @@
       if (jumpK > 0.01) {
         hipTarget = (leg.front ? -0.55 : 0.5) * jumpK;
         kneeTarget = 0.75 * jumpK;
-      } else if (wheelSpin) {
-        // Third tier: legs cartwheel end over end like spinning wheel spokes.
-        // Diagonal pairs stay opposite, as in a gallop, and knees lock straight.
-        // The wheel starts at the leg's current angle so switching gaits is seamless.
-        const rawPhase = s.walkPhase * 0.7 + leg.offset;
-        if (leg.wheelBase === undefined) leg.wheelBase = leg.hip.rotation.x - rawPhase;
-        hipTarget = leg.wheelBase + rawPhase;
-        kneeTarget = 0.02;
       } else {
-        if (leg.wheelBase !== undefined) {
-          leg.hip.rotation.x = foldAngle(leg.hip.rotation.x);
-          leg.wheelBase = undefined;
-        }
         // Trained tiers take crisper, deeper strides rather than a plain speed-up.
         const amp = 1 + speedLevel * 0.06;
         const kneeAmp = 1 + speedLevel * 0.08;
@@ -1233,21 +1221,17 @@
         hipTarget -= 0.72 * stompLift;
         kneeTarget += 1.35 * stompLift;
       }
-      if (wheelSpin) {
-        leg.hip.rotation.x = hipTarget; // continuous rotation, no damping lag
-      } else {
-        leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
-      }
+      leg.hip.rotation.x = damp(leg.hip.rotation.x, hipTarget, 22, dt);
       leg.knee.rotation.x = damp(leg.knee.rotation.x, kneeTarget, 22, dt);
       const recovery = Math.max(0, Math.sin(s.walkPhase + leg.offset));
-      const ankleTarget = wheelSpin ? 0 : -kneeTarget * 0.58 + recovery * 0.16 * stride * (1 - swim) + jumpK * 0.22;
+      const ankleTarget = -kneeTarget * 0.58 + recovery * 0.16 * stride * (1 - swim) + jumpK * 0.22;
       leg.ankle.rotation.x = damp(leg.ankle.rotation.x, ankleTarget, 24, dt);
     }
 
     const walkBob = moving && s.grounded ? Math.abs(Math.sin(s.walkPhase)) * 0.03 * stride : 0;
     const runBob = moving && s.grounded ? Math.max(0, Math.sin(s.runPhase)) * 0.1 * stride : 0;
     // Faster tiers bounce with each stride instead of just moving quicker.
-    const hopBob = !wheel && moving && s.grounded ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.014 * speedLevel * stride : 0;
+    const hopBob = !M.config.reducedMotion && moving && s.grounded ? Math.abs(Math.sin(s.walkPhase * 2)) * 0.014 * speedLevel * stride : 0;
     const bob = walkBob * (1 - run) + runBob * run;
     rig.position.y = damp(rig.position.y, bob * (1 - swim) + hopBob * (1 - swim) - s.landPulse * 0.08 + Math.sin(s.swimPhase * 2) * 0.018 * swim, 15, dt);
     rig.position.z = damp(rig.position.z, buttPose * 0.18 + run * 0.035, 16, dt);
@@ -1289,7 +1273,7 @@
     if (headbuttPending) {
       s.headbuttHit = true;
       if (reachLevel >= 1 && castSpell(reachLevel)) {
-        // Long horns channel an elemental strike instead of a melee lunge.
+        // Arc Antlers channel an elemental strike instead of a melee lunge.
       } else if (M.enemies && M.enemies.attack(goat.position, s.yaw, false, { range: MELEE_RANGE, damage: 1 + upgrades.damage, maxTargets: 1 })) {
         audioRef.thud();
       }
@@ -1341,7 +1325,7 @@
 
     s.happy = Math.max(0, s.happy - dt * 0.75);
     tailPivot.rotation.z = Math.sin(t * (3.2 + s.happy * 6.5)) * (0.22 + s.happy * 0.3 + run * 0.14);
-    tailPivot.rotation.x = -0.55 - run * 0.25 - speedLevel * 0.12 + Math.sin(t * 1.6) * 0.05 + wheel * Math.sin(s.walkPhase) * 0.15;
+    tailPivot.rotation.x = -0.55 - run * 0.25 - speedLevel * 0.12 + Math.sin(t * 1.6) * 0.05;
 
     blinkTimer -= dt;
     if (blinkTimer <= 0) {
@@ -1356,7 +1340,10 @@
     bell.rotation.x = Math.sin(t * 2.1 + 1) * 0.1;
 
     // Horns glow and pulse at the speed of their elemental charge.
-    hornFx.pulse(t);
+    hornFx.pulse(t, headTime >= 0 ? headTime : stompTime, headTime >= 0 ? .12 : STOMP_IMPACT, headTime >= 0 ? .34 : STOMP_END, M.config.reducedMotion);
+    speedFx.animate(s.walkPhase, stride, s.grounded && !s.swimming, M.config.reducedMotion);
+    loadoutFx.animate(t, stride, buttPose, M.config.reducedMotion);
+    beard.rotation.x = -.22 + (M.config.reducedMotion ? 0 : Math.sin(s.walkPhase) * stride * .035 - buttPose * .12);
 
     // Advance bolts, sparks and fireballs, and their collisions.
     updateSpellFx(dt, t);

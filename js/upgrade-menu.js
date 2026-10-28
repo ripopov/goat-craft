@@ -4,11 +4,11 @@
   const $ = function (id) { return document.getElementById(id); };
   const labels = { coins: 'coins', log: 'wood', stone: 'stone' };
   const icons = {
-    move: 'assets/upgrades/move.png',
-    cadence: 'assets/upgrades/cadence.png',
-    reach: 'assets/upgrades/reach.png',
-    power: 'assets/upgrades/power.png',
-    craft: 'assets/upgrades/craft.png'
+    move: 'assets/upgrades/vector-striders.png',
+    cadence: 'assets/upgrades/reflex-drive.png',
+    reach: 'assets/upgrades/arc-antlers.png',
+    power: 'assets/upgrades/nova-core.png',
+    craft: 'assets/upgrades/forge-harness.png'
   };
   function balance(kind) { return kind === 'coins' ? M.enemies.getState().coins : M.items.count(kind); }
   function render() {
@@ -17,7 +17,7 @@
     $('upgrade-title').textContent = isPlayer ? 'Your goat' : target.name;
     $('upgrade-role').textContent = isPlayer ? 'Hearth defender' : target.species + ' · ' + target.role;
     $('upgrade-emblem').textContent = isPlayer ? 'YOU' : target.name.slice(0, 1);
-    $('upgrade-note').textContent = isPlayer ? 'Build your own fighting style. Training lasts for this run.' :
+    $('upgrade-note').textContent = isPlayer ? 'Each system upgrades its own body region. Combine all four to build a complete cyborg.' :
       target.role === 'builder' ? 'Train walls, repairs and Frost Spires. Tower funds: ' + (construction.coins || 0) +
         ' coins · ' + (construction.towerStone || 0) + ' stone. Construction uses gathered resources.' :
       'Strengthen your hunting partner. Training belongs to ' + target.name + '.';
@@ -27,7 +27,7 @@
     const cards = $('upgrade-cards'); cards.replaceChildren();
     M.upgrades.keys(target).forEach(function (key) {
       const offer = M.upgrades.offer(target, key);
-      const card = document.createElement('article'); card.className = 'upgrade-card';
+      const card = document.createElement('article'); card.className = 'upgrade-card'; card.dataset.branch = key;
       const heading = document.createElement('div'); heading.className = 'upgrade-card-heading';
       const icon = document.createElement('img'); icon.className = 'upgrade-icon';
       icon.src = icons[key]; icon.alt = ''; icon.setAttribute('aria-hidden', 'true');
@@ -40,6 +40,7 @@
       const pips = document.createElement('div'); pips.className = 'upgrade-pips'; pips.setAttribute('aria-hidden', 'true');
       for (let i = 0; i < 3; i++) { const pip = document.createElement('i'); if (i < offer.level) pip.className = 'trained'; pips.appendChild(pip); }
       summary.appendChild(pips); heading.appendChild(summary); card.appendChild(heading);
+      const region = document.createElement('div'); region.className = 'upgrade-region'; region.textContent = offer.region + ' · ' + (offer.maxed ? offer.appearance : offer.appearance + ' → ' + offer.nextAppearance); card.appendChild(region);
       const description = document.createElement('p'); description.textContent = offer.description; card.appendChild(description);
       const effect = document.createElement('div'); effect.className = 'upgrade-effect';
       effect.textContent = offer.maxed ? offer.current + ' · Mastered' : offer.current + ' → ' + offer.next;

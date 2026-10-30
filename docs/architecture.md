@@ -62,7 +62,8 @@ loaded and tested directly without terrain initialization.
 ## Final encounter and victory
 
 `hellGates.won` means all eight gates are sealed. It stops further wave delivery;
-it does not award victory. `enemies.js` summons one final actor, using Boss combat
+it does not award victory. Cleanup releases tunneling Worm spoil without assuming
+a shaft exists; only an active emergence shaft is settled. `enemies.js` summons one final actor, using Boss combat
 rules with `finalBoss: true`, a dedicated `cthulhu` rig and twice the current
 wave's Boss health (minimum wave 7). The actor uses shared collision and terrain
 queries, warns before damaging the Hearth and is exempt from the travel watchdog.

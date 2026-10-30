@@ -305,7 +305,7 @@
     enemy.spoil.length = 0;
   }
   function settleShaft(enemy) {
-    if (world.placeBlock) {
+    if (world.placeBlock && enemy.shaft && enemy.emergence) {
       const shaft = enemy.shaft, by = Math.floor(enemy.emergence.y / SIZE) - 2;
       for (let bx = Math.floor((shaft.x - .42) / SIZE); bx <= Math.floor((shaft.x + .42) / SIZE); bx++)
         for (let bz = Math.floor((shaft.z - .42) / SIZE); bz <= Math.floor((shaft.z + .42) / SIZE); bz++) {
@@ -461,7 +461,11 @@
     // The elder is the only remaining combatant and can never queue a new wave.
     pending = 0; nextWave = Infinity; spawnLanes = []; seaLanes = [];
     zombies.forEach(enemy => {
-      if (enemy.burrowed) settleShaft(enemy);
+      // Tunneling Worms have no emergence shaft yet (or retain an old
+      // shaft from a retry). Only settle an active dig-out; release other
+      // retained material without inventing a shaft at their current position.
+      if (enemy.mode === 'emerge') settleShaft(enemy);
+      else releaseSpoil(enemy, enemy.position);
       if (M.towers) M.towers.list.forEach(tower => { if (tower.snareOwner === enemy) { tower.snareOwner = null; tower.snareTime = 0; } });
     });
     zombies.length = 0; fallen.length = 0; fleet.boats.length = 0;

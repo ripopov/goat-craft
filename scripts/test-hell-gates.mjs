@@ -225,6 +225,12 @@ test('tower siege seals eight gates, Cthulhu must be defeated, then the victory 
   const siege = M.towers.place('ballista', forward.bx, forward.top, forward.bz); assert.ok(siege);
   const nextHp = next.hp; advance(3); assert.ok(next.hp < nextHp, 'replacement gates take real projectile damage');
   M.towers.dismantle(siege);
+  const tunneling = M.enemies.spawnAt({ x: 51, y: 14, z: 1 }, 'worm');
+  M.enemies.update(.1);
+  assert.equal(tunneling.burrowed, true); assert.equal(tunneling.shaft, undefined);
+  const retained = tunneling.spoil.length; assert.ok(retained > 0, 'Worm carries real excavated material');
+  const newborn = M.enemies.spawnAt({ x: -51, y: 14, z: 1 }, 'worm');
+  assert.equal(newborn.shaft, undefined); assert.equal(newborn.spoil.length, 0);
   M.enemies.startWave(100);
   assert.ok(M.enemies.spawnAt({ x: 17, y: 14, z: 17 }));
   for (const gate of initial.slice(1)) gates.damage(gate, gate.hp);
@@ -246,7 +252,11 @@ test('tower siege seals eight gates, Cthulhu must be defeated, then the victory 
   M.victory.init({ scene, camera, tree: M.hearthTree });
   assert.equal(M.victory.check(), false, 'sealing gates cannot trigger victory');
   assert.equal(M.enemies.finishVictory(), false);
-  M.enemies.update(.05);
+  const dropped = () => M.items.drops.reduce((sum, drop) => sum + drop.userData.drop.count, 0);
+  const beforeCleanup = dropped();
+  assert.doesNotThrow(() => M.enemies.update(.05), 'a tunneling Worm cannot crash the eighth-gate transition');
+  assert.equal(tunneling.spoil.length, 0); assert.equal(newborn.spoil.length, 0);
+  assert.equal(dropped(), beforeCleanup + retained, 'despawned Worm returns its retained material once');
   const elder = M.enemies.finalBoss;
   assert.ok(elder && elder.finalBoss); assert.equal(M.enemies.zombies.length, 1);
   assert.equal(elder.maxHp, M.enemyRules.healthForWave('boss', 100) * 2);

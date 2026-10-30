@@ -14,6 +14,7 @@ Object.assign(M.world, {
   surfaceHeight: floor, terrainHeight: floor,
   waterInfoAtBlock: (bx, bz, y) => wet(bx * 2 + 1, bz * 2 + 1) && (y === undefined || y < 10 && y >= 0) ? water : null,
   waterDepthAt: (x, z) => wet(x, z) ? 10 : 0,
+  waterLevelAt: (x, z) => wet(x, z) ? 10 : 0,
   waterAt: (x, y, z) => wet(x, z) && y >= 0 && y < 10 ? water : null,
   isWaterColumn: (bx, bz) => wet(bx * 2 + 1, bz * 2 + 1), isProtectedArea: () => false,
   blockedAt: blocked, navigationBlockedAt: blocked,
@@ -86,7 +87,7 @@ test('all surface enemy species follow swimming routes, animate and exit deep wa
   const node = M.enemies.navigation.nodeAt(11, 8.7, 1);
   assert.ok(node.swim && Number.isFinite(node.distance), 'surface flow connects across a deep pool to a high bank');
   assert.equal(M.enemies.navigation.nodes.some(n => n.x === 11 && n.z === 1 && n.y === 0), false, 'ground enemies do not choose the waterbed');
-  for (const type of Object.keys(M.enemies.types)) {
+  for (const type of Object.keys(M.enemies.types).filter(type => !M.enemies.types[type].flying)) {
     M.enemies.zombies.length = 0;
     const draft = M.actorPhysics.swimDepth(M.enemies.types[type]);
     const enemy = M.enemies.spawnAt({ x: 11, y: 10 - draft, z: 1 }, type, { surface: true });
@@ -146,4 +147,15 @@ test('every NPC abandons an unclimbable job bank and swims around to a reachable
       animal.group.position.set(-20, bank, -15); s.mode = 'idle'; s.wait = 1000;
     }
   } finally { westWall = false; }
+});
+
+
+test('Cinderwings cross deep water in flight without paddling or grounding', () => {
+  M.enemies.zombies.length = 0; bank = 12; ceiling = Infinity; westWall = false;
+  const enemy = M.enemies.spawnAt({ x: 17, y: 0, z: 1 }, 'cinderwing');
+  assert.equal(enemy.position.y, 14, 'cruises two blocks above the water');
+  advance(5, dt => M.enemies.update(dt));
+  assert.ok(enemy.position.x < 8, 'flies across the pool toward the Hearth');
+  assert.equal(enemy.swimming, false); assert.equal(enemy.grounded, false);
+  assert.equal(enemy.swimBlend, 0); assert.ok(enemy.position.y >= bank);
 });

@@ -103,7 +103,7 @@ function harness({ suspended = false, missingTrack = false } = {}) {
 }
 
 const effects = [
-  ...['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].flatMap(species =>
+  ...['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].flatMap(species =>
     ['warn', 'cast', 'hurt', 'death', 'idle', 'step', 'bite'].map(event => ['enemy', species, event, { x: 0, y: 0, z: 0 }])),
   ['enemy', 'boat', 'land', { x: 0, y: 0, z: 0 }],
   ['enemy', 'parachute', 'open', { x: 0, y: 0, z: 0 }], ['enemy', 'parachute', 'land', { x: 0, y: 0, z: 0 }],

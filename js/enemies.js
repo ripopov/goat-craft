@@ -30,7 +30,17 @@
     const bruteWalk = enemy.type === 'brute' ? 0.65 : 1;
     model.joints.forEach(function (j) {
       j.rx = j.ry = j.rz = 0;
-      if (j.kind === 'leg') {
+      if (j.kind === 'flightWing') {
+        j.rz = j.side * (.12 + Math.sin(time * 7 + enemy.id * 1.7) * .48 * motion);
+        j.rx = Math.cos(time * 7 + enemy.id * 1.7) * .09 * motion;
+      } else if (j.kind === 'flightTip') {
+        j.rz = j.side * (.12 + Math.sin(time * 7 + enemy.id * 1.7 - .65) * .27 * motion);
+      } else if (j.kind === 'flightTail') {
+        j.rx = Math.sin(time * 3 + enemy.id - j.side * .4) * .16 * motion;
+        j.ry = j.side * .18 + Math.sin(time * 2.3 + enemy.id) * .12 * motion;
+      } else if (j.kind === 'flightBody') {
+        j.rx = -.08 - enemy.stride * .08 + Math.sin(time * 3.5 + enemy.id) * .025 * motion;
+      } else if (j.kind === 'leg') {
         j.rx = j.side * gait * (enemy.type === 'skeleton' ? 0.72 : 0.55) * bruteWalk + (enemy.grounded ? 0 : 0.28);
         if (enemy.type === 'brute') j.rz = j.side * Math.abs(gait) * 0.08;
       } else if (j.kind === 'knee') {
@@ -104,7 +114,7 @@
         const dying = enemy.death !== undefined, death = dying ? clamp(enemy.death / 0.65, 0, 1) : 0;
         const motion = reducedMotion || M.config.reducedMotion ? 0 : 1;
         const recoil = Math.sin(clamp(enemy.flash / 0.2, 0, 1) * Math.PI) * 0.22 * motion;
-        const bob = Math.abs(Math.sin(enemy.phase)) * (enemy.type === 'brute' ? 0.075 : enemy.type === 'spider' ? 0.025 : 0.045) * enemy.stride * motion;
+        const bob = enemy.flying ? Math.sin(time * 3.5 + enemy.id) * .1 * motion : Math.abs(Math.sin(enemy.phase)) * (enemy.type === 'brute' ? 0.075 : enemy.type === 'spider' ? 0.025 : 0.045) * enemy.stride * motion;
         const collapse = enemy.exploded ? 0 : death;
         const roll = Math.sin(enemy.phase) * (enemy.type === 'brute' ? 0.075 : 0.04) * enemy.stride * motion;
         const swim = enemy.swimBlend * motion;
@@ -338,6 +348,7 @@
       return true;
     }
     if (enemy.recoverTime > 0) { enemy.recoverTime -= dt; enemy.moving = false; enemy.mode = 'recover'; return true; }
+    if (enemy.flying) { fly(enemy, dt); return true; }
     if (enemy.type !== 'worm' || !enemy.burrowed && enemy.mode !== 'emerge') return false;
     const goal = enemy.emergence;
     enemy.surfaceY = tunnelRoofAt(p.x, p.z, enemy.surfaceY);
@@ -390,6 +401,43 @@
     }
     return true;
   }
+  function flightFloor(x, z, y) {
+    // Shared solid-column query includes constructed walls, but excludes the
+    // Hearth canopy so fliers approach its trunk rather than orbiting its crown.
+    const terrain = surfaceAt(x, z, 0);
+    return Math.max(terrain, world.landingHeight(x, z, Math.max(terrain + 64, y + 16), false), world.waterLevelAt ? world.waterLevelAt(x, z) : -Infinity);
+  }
+  function fly(enemy, dt) {
+    const p = enemy.position, dx = tree.position.x - p.x, dz = tree.position.z - p.z;
+    const distance = Math.hypot(dx, dz), nx = distance > .001 ? dx / distance : 0, nz = distance > .001 ? dz / distance : 0;
+    enemy.grounded = false; enemy.swimming = false; enemy.mode = 'fly'; enemy.moving = false;
+    enemy.yaw = turnToward(enemy.yaw, Math.atan2(dx, dz), dt * 4);
+    // Fixed look-ahead samples anticipate walls before the body reaches them.
+    // Lift and descent use damping; collision pauses forward travel during a
+    // steep climb instead of snapping vertically or cutting through masonry.
+    let floor = flightFloor(p.x, p.z, p.y);
+    let ahead = floor;
+    for (let i = 1; i <= 3; i++) ahead = Math.max(ahead, flightFloor(p.x + nx * i * 2, p.z + nz * i * 2, p.y));
+    const desired = ahead + SIZE * 2;
+    p.y += clamp(damp(p.y, desired, desired > p.y ? 4 : 2, dt) - p.y, -4 * dt, 6 * dt);
+    p.y = Math.max(p.y, floor + .2);
+    if (navigation.contact(p.x, p.y, p.z)) {
+      enemy.mode = 'tree'; enemy.bite += dt;
+      while (enemy.bite + .000001 >= TYPES[enemy.type].bite && tree.health > 0) {
+        tree.damage(TYPES[enemy.type].damage); enemy.bite = Math.max(0, enemy.bite - TYPES[enemy.type].bite);
+      }
+      return;
+    }
+    enemy.bite = 0;
+    const step = Math.min(Math.max(0, distance - 1), TYPES[enemy.type].speed * enemy.speedScale *
+      (enemy.towerSlowTime > 0 ? enemy.towerSlow : 1) * dt);
+    const x = p.x + nx * step, z = p.z + nz * step;
+    if (physics.clear(world, x, p.y, z, enemy.body, false)) {
+      p.x = x; p.z = z; enemy.moving = step > 0;
+    }
+    enemy.phase += dt * 5;
+  }
+
   function tacticalAbility(enemy, dt) {
     const p = enemy.position;
     enemy.abilityTimer -= dt;
@@ -532,6 +580,11 @@
       abilityTimer: 4, charge: 0, casts: 0, prismPhase: 'march', prismTimer: 6, recoverTime: 0,
       progressAt: elapsed,
       bestTreeDistance: Math.hypot(node.x - tree.position.x, node.z - tree.position.z) };
+    zombie.flying = !!def.flying;
+    if (zombie.flying) {
+      zombie.position.y = flightFloor(node.x, node.z, node.y) + SIZE * 2;
+      zombie.grounded = false; zombie.mode = 'fly';
+    }
     zombies.push(zombie);
     if (type === 'worm' && !(options && (options.surface || options.airborne))) {
       zombie.spoil = [];
@@ -626,6 +679,12 @@
     const lane = spawnLanes[Math.floor(waveSpawned / plan.squadSize) % spawnLanes.length];
     if (!lane) return false;
     const gate = lane.gate;
+    if (TYPES[type].flying) {
+      if (zombies.some(e => e.flying && Math.hypot(e.position.x - gate.x, e.position.z - gate.z) < .9)) return false;
+      const enemy = spawnAt(gate, type);
+      if (enemy) enemy.gateId = gate.id;
+      return !!enemy;
+    }
     if (type === 'worm') {
       // Burrowers share the announced gate, but appear beneath its immutable
       // plinth. Surface walls cannot block delivery into the covered tunnel.
@@ -686,7 +745,7 @@
     if (index < 0 || tree.health <= 0) return false;
     enemy.bite = 0; enemy.blockBite = 0;
     const killed = damageEnemy(enemy, damage, { origin: origin, area: area });
-    if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
+    if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(enemy.type) && M.audio && M.audio.zombie) M.audio.zombie(killed ? 'death' : 'hurt', enemy.position);
     updateHud(); render(elapsed);
     return killed;
   }
@@ -733,7 +792,7 @@
       hit = true; hits++;
       zombie.bite = 0; zombie.blockBite = 0;
       damageEnemy(zombie, damage, { origin: origin, area: stomp });
-      if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
+      if (!['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(zombie.type) && M.audio && M.audio.zombie) M.audio.zombie(zombie.hp <= 0 ? 'death' : 'hurt', p);
     }
     if (hit) { updateHud(); render(elapsed); }
     return hit;
@@ -942,18 +1001,18 @@
       zombie.eatBlend = damp(zombie.eatBlend, eating ? 1 : 0, 10, dt);
       const footBeat = Math.floor(zombie.phase / Math.PI);
       if (zombie.moving && zombie.grounded && zombie.footBeat !== undefined && zombie.footBeat !== footBeat) {
-        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(zombie.type)) sound(zombie.type, 'step', zombie.position);
         else if (M.audio && M.audio.actorStep) M.audio.actorStep('zombie', zombie.position);
       }
       zombie.footBeat = footBeat;
       zombie.voiceTimer -= dt; zombie.chewTimer -= dt;
       if (zombie.voiceTimer <= 0) {
-        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(zombie.type)) sound(zombie.type, 'idle', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie(zombie.type === 'spider' || zombie.type === 'skeleton' ? 'bite' : 'groan', zombie.position);
         zombie.voiceTimer = 7.5 + Math.sin(elapsed + zombie.id) * 3.5;
       }
       if (eating && zombie.chewTimer <= 0) {
-        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
+        if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(zombie.type)) sound(zombie.type, 'bite', zombie.position);
         else if (M.audio && M.audio.zombie) M.audio.zombie('bite', zombie.position);
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
@@ -1003,7 +1062,7 @@
     }
     enemy.hp -= amount; enemy.flash = .15;
     const killed = enemy.hp <= 0;
-    if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
+    if (['boss', 'raider', 'worm', 'binder', 'prismback', 'sower', 'cinderwing'].includes(enemy.type)) sound(enemy.type, killed ? 'death' : 'hurt', enemy.position);
     if (killed) removeEnemy(enemy, index, false);
     updateHud();
     return killed;

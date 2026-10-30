@@ -16,4 +16,4 @@ Meadow Goat is evolving into a tower defense game in a Minecraft-style voxel wor
 - The full suite, `node --test scripts/test-*.mjs`, must finish within **30 seconds**. Never raise this limit. If exceeded, shorten scenarios, remove redundant coverage, or move less relevant checks outside the default suite while preserving essential regressions.
 - Longer defense simulations remain separately runnable: `node --test scripts/check-enemy-balance-tests.mjs`.
 - After script or asset changes, run `node scripts/build-site.mjs` and `node scripts/check-site.mjs _site`. Treat `_site/` as generated output.
-- Check the actual page from disk after initialization or shader changes; verify affected gameplay, visuals, and input in-browser.
+- Use headless browser testing (for example, Playwright) for browser validation; do not use computer-use or desktop UI automation. Check the actual page from disk after initialization or shader changes, and verify affected gameplay, visuals, and input headlessly.

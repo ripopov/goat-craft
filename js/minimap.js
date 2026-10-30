@@ -59,8 +59,8 @@
     (M.enemies.boats || []).forEach(boat => { if (boat.collapse === undefined) marker(boat.position, '#78d8e6', 'boat'); });
     M.enemies.zombies.forEach(function (enemy) {
       if (enemy.boat) return;
-      marker(enemy.position, enemy.type === 'boss' ? '#ffd24d' : enemy.burrowed ? '#d8ae70' : enemy.airborne ? '#deb6ff' : '#f58a72',
-        enemy.type === 'boss' ? 'boss' : enemy.burrowed ? 'burrow' : enemy.airborne ? 'air' : 'enemy');
+      marker(enemy.position, enemy.type === 'boss' ? '#ffd24d' : enemy.burrowed ? '#d8ae70' : (enemy.airborne || enemy.flying) ? '#deb6ff' : '#f58a72',
+        enemy.type === 'boss' ? 'boss' : enemy.burrowed ? 'burrow' : (enemy.airborne || enemy.flying) ? 'air' : 'enemy');
     });
     M.animals.list.forEach(function (animal) { marker(animal.group.position, '#9dd9a8', 'npc'); });
     marker(M.hearthTree.position, '#f3d17d', 'tree');

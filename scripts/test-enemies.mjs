@@ -69,7 +69,13 @@ function fixture() {
     blockedAt(x, z, min, max) { return x >= 0 && x < 2 && z >= 0 && z < 2 && min < 8 && max > 0; } };
   return { M, THREE, scene, world, tree, drops, coinDrops, context };
 }
-const advance = (M, seconds, dt = .05) => { for (let i = 0; i < Math.round(seconds / dt); i++) M.enemies.update(dt); };
+// Simulation scenarios need only their final pose; dedicated render tests below
+// exercise per-frame uploads and animation independently.
+const advance = (M, seconds, dt = .05) => {
+  M.enemies.beginFrame();
+  for (let i = 0; i < Math.round(seconds / dt); i++) M.enemies.update(dt);
+  M.enemies.syncRender();
+};
 
 // Deliberately assert resulting routes and behavior rather than the particular
 // search implementation: edits, height limits, unreachable goals and timing.
@@ -569,7 +575,7 @@ test('all enemy species walk toward the Hearth and deal their distinct contact d
 
 test('a mixed horde shares the living cap, finite render pool and physical rewards', () => {
   const { M, scene, world, tree, coinDrops } = fixture(); M.enemies.init({ scene, world, tree });
-  const types = Object.keys(M.enemies.types);
+  const types = ['zombie', 'spider', 'raider', 'skeleton'];
   for (let i = 0; i < M.enemies.maxEnemies + 100; i++) M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, types[i % 4]);
   assert.equal(M.enemies.getState().count, M.enemies.maxEnemies);
   const expected = M.enemies.zombies.reduce((sum, enemy) => sum + M.enemies.types[enemy.type].reward, 0);
@@ -625,13 +631,17 @@ test('automatic waves skip isolated canopy surfaces that would stall wave comple
   assert.notEqual(node, stranded);
 });
 
-test('thirty seconds without getting closer explodes every stalled species, drops loot once and frees the cap', () => {
-  for (const type of Object.keys(harness().M.enemies.types)) {
+test('thirty seconds without progress explodes stalled walkers, burrowers and fliers and pays loot once', () => {
+  // The watchdog is shared; sample all three movement modes rather than
+  // repeating the same thirty-second scenario for every walking model.
+  for (const type of ['zombie', 'worm', 'cinderwing']) {
     const { M, scene, world, tree, coinDrops } = fixture();
     const blasts = []; M.audio = { enemyBurst: point => blasts.push(point.clone()) };
     M.enemies.init({ scene, world, tree });
     const enemy = M.enemies.spawnAt({ x: 9, y: 0, z: 1 }, type, { surface: true });
     M.actorPhysics.moveHorizontal = () => false;
+    enemy.speedScale = 0; // Flight also stalls for the shared watchdog scenario.
+    M.enemies.beginFrame(); // Only the final pose matters in this timing regression.
     advance(M, 29.95); assert.ok(M.enemies.zombies.includes(enemy), type + ' survives until the full deadline');
     advance(M, .05); assert.equal(M.enemies.zombies.includes(enemy), false, type + ' explodes at 30 seconds');
     assert.equal(enemy.hp, 0); assert.equal(enemy.exploded, true);
@@ -639,6 +649,7 @@ test('thirty seconds without getting closer explodes every stalled species, drop
     assert.equal(coinDrops[0].count, M.enemies.types[type].reward);
     assert.equal(M.enemies.getState().coins, 0, 'watchdog loot must still be collected');
     assert.equal(tree.health, 100, 'a recovery explosion does not damage the Hearth');
+    M.enemies.syncRender();
     const mesh = scene.getObjectByName('Enemy horde');
     assert.ok(mesh.count <= mesh.instanceMatrix.count); assert.ok(Array.from(mesh.instanceMatrix.array).every(Number.isFinite));
     advance(M, 1); assert.equal(blasts.length, 1); assert.equal(coinDrops.length, 1);
@@ -745,4 +756,66 @@ test('catch-up simulation and multi-target spells upload just one final horde po
   assert.equal(mesh.instanceColor.updateRange.count, mesh.count * 3);
   M.enemies.update(1 / 60);
   assert.equal(mesh.instanceMatrix.version, version + 2, 'standalone simulation keeps its normal rendering behavior');
+});
+
+
+test('Cinderwings smoothly clear constructed walls, hover four units above ground and bite the Hearth', () => {
+  const { M, scene, world, tree, drops, coinDrops } = fixture();
+  for (let z = -4; z <= 4; z++) for (let y = 0; y < 4; y++) world.place(6, y, z);
+  M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 23, y: 0, z: 1 }, 'cinderwing');
+  assert.equal(enemy.position.y, 4); assert.equal(enemy.grounded, false);
+  let crossed = false, previous = enemy.position.clone();
+  for (let i = 0; i < 360; i++) {
+    M.enemies.update(.05);
+    assert.ok(Math.abs(enemy.position.y - previous.y) <= .301, 'continuous lift and descent');
+    assert.equal(enemy.swimming, false); assert.equal(enemy.grounded, false);
+    assert.ok(M.actorPhysics.clear(world, enemy.position.x, enemy.position.y, enemy.position.z, enemy.body, false));
+    if (enemy.position.x >= 12 && enemy.position.x < 14) {
+      crossed = true; assert.ok(enemy.position.y >= 8, 'body clears the four-block wall');
+    }
+    previous.copy(enemy.position);
+  }
+  assert.ok(crossed); assert.equal(drops.length, 0, 'walls remain intact');
+  assert.ok(tree.health < 100, 'hovering at the trunk deals normal contact damage');
+  assert.ok(Math.abs(enemy.position.y - 4) < .1, 'returns to two-block cruise clearance');
+  assert.equal(M.enemies.isTargetable(enemy), true);
+  M.enemies.damageEnemy(enemy, enemy.hp);
+  assert.equal(coinDrops.length, 1); assert.equal(coinDrops[0].count, 3);
+});
+
+test('Cinderwings unlock at wave five and actually leave gates', () => {
+  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree;
+  M.enemies.init({ scene, world, tree });
+  for (let wave = 1; wave <= 8; wave++) {
+    const types = Array.from({ length: M.enemies.waveSize(wave) }, (_, i) => M.enemies.typeForWave(wave, i));
+    assert.equal(types.includes('cinderwing'), wave >= 5);
+    for (let i = 0; i < types.length; i++) if (types[i] === 'cinderwing') assert.equal(M.enemies.deliveryForWave(wave, i, types[i]), 'ground');
+  }
+  M.enemies.startWave(5);
+  let flier;
+  for (let i = 0; i < 500 && !flier; i++) {
+    M.enemies.update(.05);
+    flier = M.enemies.zombies.find(e => e.type === 'cinderwing');
+    for (const e of [...M.enemies.zombies]) if (e !== flier) M.enemies.damageEnemy(e, e.hp);
+  }
+  assert.ok(flier); assert.ok(flier.gateId !== undefined);
+  const gate = M.hellGates.gates.find(g => g.id === flier.gateId);
+  assert.ok(gate); assert.ok(Math.hypot(flier.position.x - gate.x, flier.position.z - gate.z) < 1);
+  assert.equal(flier.airborne, undefined, 'natural flight has no parachute');
+});
+
+
+test('Cinderwing wingbeats freeze under reduced motion and jumping brings melee into reach', () => {
+  const { M, scene, world, tree } = fixture(); M.enemies.init({ scene, world, tree });
+  const enemy = M.enemies.spawnAt({ x: 23, y: 0, z: 1 }, 'cinderwing'); enemy.speedScale = 0; enemy.yaw = -Math.PI / 2;
+  assert.equal(M.enemies.canHit(enemy, { x: 23, y: 0, z: 1 }, 0, true, 3), false);
+  assert.equal(M.enemies.canHit(enemy, { x: 23, y: 2, z: 1 }, 0, true, 3), true);
+  const mesh = scene.getObjectByName('Enemy horde');
+  M.config.reducedMotion = true; M.enemies.update(.05);
+  const pose = Array.from(mesh.instanceMatrix.array.slice(0, mesh.count * 16));
+  M.enemies.update(.1);
+  assert.deepEqual(Array.from(mesh.instanceMatrix.array.slice(0, mesh.count * 16)), pose);
+  M.config.reducedMotion = false; M.enemies.update(.1);
+  assert.notDeepEqual(Array.from(mesh.instanceMatrix.array.slice(0, mesh.count * 16)), pose);
 });

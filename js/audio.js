@@ -373,7 +373,7 @@
   // Each new silhouette has a matching acoustic material. Wind-ups rise in
   // pitch; casts resolve them, without long bass sweeps or permanent loops.
   function enemy(species, event, point) {
-    if (!['parachute', 'boat', 'raider', 'worm', 'binder', 'prismback', 'sower', 'boss'].includes(species)) return;
+    if (!['parachute', 'boat', 'raider', 'worm', 'binder', 'prismback', 'sower', 'boss', 'cinderwing'].includes(species)) return;
     const warning = event === 'warn' || event === 'open';
     const death = event === 'death', hurt = event === 'hurt';
     nearby(point, 42, 'enemy-' + species + '-' + event, event === 'idle' ? 1.5 : .16, function (voice, when, level) {
@@ -382,6 +382,9 @@
         body(voice, when, 180, .35, gain, 'wood');
         fragments(voice, when + .08, 1600, gain * .4, 4);
         noise(voice, when + .03, { frequency: 900, endFrequency: 360, duration: .45, level: gain * .6, attack: .02 });
+      } else if (species === 'cinderwing') {
+        tone(voice, when, { frequency: hurt ? 620 : 340, endFrequency: hurt ? 310 : 510, duration: death ? .45 : .22, level: gain * .5, attack: .025 });
+        noise(voice, when, { frequency: 1700, endFrequency: 900, duration: .24, level: gain * .35, attack: .04 });
       } else if (species === 'raider') {
         vocal(voice, when, hurt ? 200 : 145, death ? .65 : .3, gain, 740);
         if (event === 'bite') body(voice, when + .03, 980, .14, gain * .4, 'metal');

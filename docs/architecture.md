@@ -50,10 +50,11 @@ loaded and tested directly without terrain initialization.
 2. Add its articulated parts and joints to `enemy-models.js`. Parents must be
    created before their children. The factory derives render capacities from
    the largest model plus its parachute; do not add a separate capacity limit.
-3. Add any new joint pose, ability or movement behavior to `enemies.js`. Reuse
+3. Flying species use `types[type].flying`; the controller owns gate delivery and a fixed three-sample look-ahead flight path, using shared solid-column and body-clearance queries to clear walls. Two-block cruising clearance is four world units. Shared transport runs before flight.
+4. Add any new joint pose, ability or movement behavior to `enemies.js`. Reuse
    actor physics, shared navigation, targetability, damage and removal paths so
    water, cover, rewards and the 30-second watchdog remain consistent.
-4. Add silhouettes to the minimap and sounds to `audio.js` if needed. Exercise
+5. Add silhouettes to the minimap and sounds to `audio.js` if needed. Exercise
    ground delivery, parachute landing and boat disembarking.
 
 ## Change NPC navigation or appearance

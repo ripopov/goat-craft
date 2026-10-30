@@ -18,6 +18,7 @@
     zombie: { name: 'Zombie', unlock: 1, hp: 8, speed: 1.65, reward: 1, bite: 3, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
     spider: { name: 'Spider', unlock: 3, hp: 8, speed: 2.7, reward: 2, bite: 3.5, damage: 1, chew: 12, radius: 0.42, height: 1.15 },
     raider: { name: 'Sea Raider', unlock: 4, hp: 12, speed: 1.85, reward: 2, bite: 3, damage: 1, chew: 9, radius: .34, height: 2.8 },
+    cinderwing: { name: 'Cinderwing', unlock: 5, hp: 8, speed: 2.25, reward: 3, bite: 3.2, damage: 1, chew: 10, radius: .42, height: 1.45, flying: true },
     skeleton: { name: 'Skeleton', unlock: 5, hp: 12, speed: 1.9, reward: 2, bite: 2.6, damage: 1, chew: 10, radius: 0.34, height: 2.8 },
     brute: { name: 'Stone brute', unlock: 8, hp: 28, speed: 1.15, reward: 4, bite: 3.5, damage: 2, chew: 7, radius: 0.44, height: 2.8 },
     worm: { name: 'Burrow Worm', unlock: 10, hp: 16, speed: 1.6, reward: 4, bite: 3.6, damage: 1, chew: 9, radius: .4, height: 1.4 },
@@ -69,6 +70,7 @@
     if (level >= 12 && slot % 20 === 13) return 'prismback';
     if (level >= 7 && slot % 20 === 7) return 'binder';
     if (seaSlot(level, slot)) return 'raider';
+    if (level >= 5 && slot % 12 === (level === 100 ? 2 : 8)) return 'cinderwing';
     if (level >= 8 && slot % 6 === 5) return 'brute';
     if (level >= 5 && slot % 4 === 2) return 'skeleton';
     if (level >= 3 && slot % 3 === 1) return 'spider';
@@ -76,13 +78,14 @@
   }
   function deliveryForWave(level, slot, type) {
     if (specialWaves[level] && specialWaves[level].delivery) return specialWaves[level].delivery;
+    if (TYPES[type] && TYPES[type].flying) return 'ground';
     if (!specialWaves[level] && seaSlot(level, slot)) return 'boat';
     if (level === 100) return slot % 12 >= 8 ? 'parachute' : 'ground';
     return level >= 5 && (type === 'zombie' || type === 'skeleton') &&
       (level === 5 ? slot === 3 : slot % 10 === 3) ? 'parachute' : 'ground';
   }
   function introduction(wave) {
-    const introductions = { 3: 'Spiders incoming!', 4: 'Sea Raiders! Four enemies sail in each boat — defend the river landings.', 5: 'Skeletons and parachutes — watch the lavender landing rings.',
+    const introductions = { 3: 'Spiders incoming!', 4: 'Sea Raiders! Four enemies sail in each boat — defend the river landings.', 5: 'Cinderwings fly over walls! Skeletons and parachutes — watch the lavender landing rings.',
       7: 'Briar Binders — interrupt their glowing tower-snare chant.', 8: 'Stone brutes incoming!',
       10: 'Burrow Worms — watch for dig-outs 19–36 units from the Hearth.', 12: 'Prismbacks — flank them or use stomps and splash.',
       15: 'Mire Sowers — avoid amber puddles or jump clear.' };

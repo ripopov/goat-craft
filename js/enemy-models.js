@@ -345,6 +345,29 @@
     part('sower', 0, .4, .7, .38, .12, .13, 0x3c392e);
     for (let i = 0; i < 3; i++) part('sower', (i - 1) * .2, 1.36, -.63, .11, .11, .08, 0xffcf6c, 0, true);
 
+    // Cinderwing: a flying kiln-moth with stained ember panels and forked tails.
+    const kiln = joint('cinderwing', 'flightBody', 0, 0, .65, 0);
+    part('cinderwing', 0, 0, 0, .62, .7, 1.05, 0x302b40, kiln);
+    part('cinderwing', 0, -.12, .2, .4, .42, .64, 0xfba35d, kiln, true);
+    part('cinderwing', 0, .25, -.1, .46, .18, .85, 0x68536b, kiln);
+    for (const side of [-1, 1]) {
+      part('cinderwing', side * .3, -.08, .18, .12, .58, .72, 0x48374a, kiln).rz = side * .18;
+      part('cinderwing', side * .18, .16, .57, .14, .12, .08, 0xffebad, kiln, true);
+      part('cinderwing', side * .21, .48, .45, .09, .5, .1, 0xc48a65, kiln).rz = -side * .35;
+      part('cinderwing', side * .3, .69, .45, .14, .12, .13, 0xffc678, kiln, true);
+      const wing = joint('cinderwing', 'flightWing', kiln, side * .3, .15, .05, side);
+      part('cinderwing', side * .55, 0, 0, 1.15, .12, 1.05, 0x8c535f, wing).ry = side * .18;
+      part('cinderwing', side * .55, .075, .3, 1.2, .09, .12, 0xdca06d, wing).ry = side * .18;
+      part('cinderwing', side * .56, .07, -.05, .4, .07, .55, 0xffb969, wing, true);
+      const tip = joint('cinderwing', 'flightTip', wing, side * 1.05, 0, -.13, side);
+      part('cinderwing', side * .36, 0, -.12, .78, .1, .72, 0x47364f, tip).ry = -side * .3;
+      part('cinderwing', side * .35, .06, -.11, .51, .06, .38, 0xba7364, tip).ry = -side * .3;
+      const tail = joint('cinderwing', 'flightTail', kiln, side * .2, -.12, -.48, side);
+      part('cinderwing', 0, -.08, -.37, .14, .14, .85, 0x9b6867, tail);
+      part('cinderwing', 0, -.08, -.82, .23, .16, .26, 0xffbd72, tail, true);
+      part('cinderwing', side * .2, -.44, .32, .09, .33, .12, 0xcca17e, kiln).rx = -.4;
+    }
+
     // Voxel cloth panels and four suspension cords ride in the horde batch.
     for (let x = -2; x <= 2; x++) for (let z = -1; z <= 1; z++) {
       const panel = part('parachute', x * .53, 5.15 - x * x * .11 - z * z * .15, z * .65,

@@ -44,7 +44,7 @@ js/zombie-navigation.js shared walk routes, one-block jumps, terrain edits and w
 js/hell-gates.js    two-stage destructible gates, siege health, impacts, collapse and permanent roads
 js/enemy-rules.js   species stats, special-wave registry, difficulty, timers and rewards
 js/enemy-models.js  beveled voxel geometry and articulated enemy model construction
-js/enemies.js       ten instanced species, parachutes, tunnels, specialist abilities and combat
+js/enemies.js       eleven instanced species, parachutes, tunnels, specialist abilities and combat
 js/enemy-boats.js   ocean routes, four-enemy landing boats and collapsing hulls
 js/coin-model.js    shared minted gold geometry, emissive finish and animated glint
 js/upgrades.js      individual training tiers, prices, resource purchases and nearby targeting
@@ -236,6 +236,7 @@ Character finishes also cover neck fittings, armor cores, jets and discharge rin
 | Zombie | 1 | 8 | 1.65 | 1 / 3s | 10s | 1 |
 | Spider | 3 | 8 | 2.7 | 1 / 3.5s | 12s | 2 |
 | Sea Raider | 4 | 12 | 1.85 | 1 / 3s | 9s | 2 |
+| Cinderwing | 5 | 8 | 2.25 | 1 / 3.2s | Flies over walls | 3 |
 | Skeleton | 5 | 12 | 1.9 | 1 / 2.6s | 10s | 2 |
 | Briar Binder | 7 | 12 | 1.35 | 1 / 3.8s | 11s | 3 |
 | Stone brute | 8 | 28 | 1.15 | 2 / 3.5s | 7s | 4 |
@@ -243,6 +244,8 @@ Character finishes also cover neck fittings, armor cores, jets and discharge rin
 | Prismback | 12 | 16 | 1.25; short 2× rush | 1 / 3.8s | 9s | 4 |
 | Mire Sower | 15 | 12 | 1.5 | 1 / 3.5s | 11s | 3 |
 | Boss | 7 | 20× a regular enemy | 1.2 | 2 / 4s | 6s | 20 |
+
+**Cinderwings arrive through gates from wave 5**, replacing up to one slot in twelve. These charcoal kiln-moths have glowing ember bellies, copper-edged articulated wings and forked tails. They cruise roughly two blocks (four world units) above the surface, anticipate and climb over walls, and cross water without swimming. Towers can shoot them normally; jumping brings melee and spells into reach. They hover beside the Hearth to bite it. Wingbeats, flexible tips, tails and hovering use smooth continuous animation; reduced-motion mode holds their decorative pose still. Special boat/parachute invasions retain their delivery rules; Cinderwings resume flight after disembarking or landing. Lavender triangles track them on the minimap.
 
 Spiders pressure gaps with speed, bone-white skeletons add staying power, and slow stone brutes threaten walls. Brutes occupy at most one in six wave slots; zombies remain the main force. Beveled voxel parts, hierarchical joints, species-specific silhouettes, layered faces, clothing, bone and rock details share one bounded instanced draw; fallen bodies do not count toward the live cap.
 

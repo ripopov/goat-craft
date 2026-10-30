@@ -63,7 +63,7 @@
     { name: 'overclock strike', width: 1.26, length: 1.14, color: 0xff28bd }
   ];
   const POWER_STYLE = [
-    { name: 'unpowered', boltRadius: 0.018, glow: 0.12, fireballSize: 1 },
+    { name: 'unpowered', boltRadius: 0.028, glow: 0.16, fireballSize: 1 },
     { name: 'ignition cell', boltRadius: 0.035, glow: 0.2, fireballSize: 1.22 },
     { name: 'reactor mantle', boltRadius: 0.055, glow: 0.28, fireballSize: 1.48 },
     { name: 'nova carapace', boltRadius: 0.08, glow: 0.36, fireballSize: 1.78 }

@@ -472,15 +472,11 @@
   // Elemental strikes from Arc Antlers. Effects live here so the goat owns its
   // own bolts, sparks and fireball; damage is dealt through M.enemies so loot,
   // HUD and death handling stay in one place.
-  const boltMaterial = new THREE.LineBasicMaterial({ color: 0x8ce8ff, transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
   const flashGeometry = new THREE.SphereGeometry(1, 12, 10);
   const fireballGeometry = new THREE.SphereGeometry(0.24, 12, 10);
-  const fireballMaterial = new THREE.MeshStandardMaterial({ color: 0xff9a3c, emissive: 0xff5c1a, emissiveIntensity: 1.5 });
   const fireballRingGeometry = new THREE.TorusGeometry(0.29, 0.012, 5, 24);
   const POWER_VISUALS = M.styleFx.powerStyle;
   const fireballLayers = POWER_VISUALS.map(function (style, tier) {
-    if (!tier) return null;
     return {
       core: new THREE.MeshBasicMaterial({ color: 0xfff4ce, toneMapped: false }),
       shell: new THREE.MeshBasicMaterial({ color: 0xff9c32, transparent: true, opacity: 0.55 + tier * 0.06,
@@ -506,31 +502,36 @@
       const k = i / 12, offset = i === 0 || i === 12 ? 0 : rand(-0.5, 0.5) * 0.55;
       points.push(new THREE.Vector3().copy(from).addScaledVector(delta, k).addScaledVector(side, offset).add(new THREE.Vector3(0, offset * 0.5, 0)));
     }
-    let onAge;
-    if (!powerLevel) {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const line = new THREE.Line(geometry, boltMaterial);
-      group.add(line);
-      group.userData.disposeGeometry = geometry;
-      group.userData.sharedMaterial = true;
-      onAge = function (k) { line.visible = k < 0.8; };
-    } else {
-      // WebGL line widths are often fixed to one pixel. Real tubes give the
-      // white-hot core and soft colored envelope visible volume on every GPU.
-      const style = POWER_VISUALS[powerLevel], path = new THREE.CatmullRomCurve3(points);
-      const core = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius, 6, false),
-        new THREE.MeshBasicMaterial({ color: 0xeaffff, transparent: true, depthWrite: false, toneMapped: false }));
-      core.name = 'spell-bolt-core';
-      const halo = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius * 2.8, 6, false),
-        new THREE.MeshBasicMaterial({ color: 0x64dfff, transparent: true, opacity: style.glow,
-          blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-      halo.name = 'spell-bolt-halo';
-      group.add(core, halo);
-      group.userData.disposeGeometries = [core.geometry, halo.geometry];
-      onAge = function (k) { core.material.opacity = 1 - k * k; halo.material.opacity = style.glow * (1 - k); };
-    }
+    // WebGL line widths are often fixed to one pixel. Real tubes give the
+    // white-hot core and soft colored envelope visible volume on every GPU.
+    const style = POWER_VISUALS[powerLevel], path = new THREE.CatmullRomCurve3(points);
+    const core = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius, 6, false),
+      new THREE.MeshBasicMaterial({ color: 0xeaffff, transparent: true, depthWrite: false, toneMapped: false }));
+    core.name = 'spell-bolt-core';
+    const halo = new THREE.Mesh(new THREE.TubeGeometry(path, 36, style.boltRadius * 2.8, 6, false),
+      new THREE.MeshBasicMaterial({ color: 0x64dfff, transparent: true, opacity: style.glow,
+        blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    halo.name = 'spell-bolt-halo';
+    group.add(core, halo);
+    group.userData.disposeGeometries = [core.geometry, halo.geometry];
+    const onAge = function (k) { core.material.opacity = 1 - k * k; halo.material.opacity = style.glow * (1 - k); };
     sceneRef.add(group);
     spellFx.push({ object: group, ttl: 0.18, life: 0, onAge: onAge });
+  }
+  // The untrained horn strike keeps its melee rules, with a readable flying pulse.
+  function starterShot(from, target) {
+    if (!sceneRef || M.config.reducedMotion || spellFx.length >= MAX_SPELL_FX) return;
+    const start = new THREE.Vector3(from.x, from.y + 1.15, from.z);
+    const end = new THREE.Vector3(target.x, target.y + .8, target.z);
+    const group = new THREE.Group(); group.name = 'starter-projectile';
+    const core = new THREE.Mesh(fireballGeometry, fireballLayers[0].core);
+    const halo = new THREE.Mesh(fireballGeometry, fireballLayers[0].halo);
+    halo.scale.setScalar(1.8); group.add(core, halo);
+    group.position.copy(start); sceneRef.add(group);
+    group.userData.sharedMaterial = true;
+    spellFx.push({ object: group, ttl: .24, life: 0, onAge: function (k) {
+      group.position.lerpVectors(start, end, k);
+    } });
   }
   function sparkBurst(point, colors, count, speed, life, size) {
     if (M.config.reducedMotion) return;
@@ -611,26 +612,22 @@
   function spawnFireball(from, to, dmg, powerLevel) {
     const fireball = { from: from.clone(), to: to.clone(), k: 0, dmg: dmg, powerLevel: powerLevel, trailClock: 0, mesh: null };
     if (!M.config.reducedMotion) {
-      let mesh;
-      if (!powerLevel) mesh = new THREE.Mesh(fireballGeometry, fireballMaterial);
-      else {
-        mesh = new THREE.Group();
-        const mats = fireballLayers[powerLevel];
-        const core = new THREE.Mesh(fireballGeometry, mats.core);
-        core.name = 'spell-fireball-core'; core.scale.setScalar(0.72);
-        const shell = new THREE.Mesh(fireballGeometry, mats.shell);
-        const halo = new THREE.Mesh(fireballGeometry, mats.halo);
-        halo.name = 'spell-fireball-halo'; halo.scale.setScalar(1.65);
-        mesh.add(core, shell, halo);
-        if (powerLevel >= 2) {
-          for (let i = 0; i < powerLevel - 1; i++) {
-            const ring = new THREE.Mesh(fireballRingGeometry, mats.core);
-            ring.rotation.set(Math.PI * (0.3 + i * 0.4), 0, i * 1.2);
-            mesh.add(ring);
-          }
+      const mesh = new THREE.Group();
+      const mats = fireballLayers[powerLevel];
+      const core = new THREE.Mesh(fireballGeometry, mats.core);
+      core.name = 'spell-fireball-core'; core.scale.setScalar(0.72);
+      const shell = new THREE.Mesh(fireballGeometry, mats.shell);
+      const halo = new THREE.Mesh(fireballGeometry, mats.halo);
+      halo.name = 'spell-fireball-halo'; halo.scale.setScalar(1.65);
+      mesh.add(core, shell, halo);
+      if (powerLevel >= 2) {
+        for (let i = 0; i < powerLevel - 1; i++) {
+          const ring = new THREE.Mesh(fireballRingGeometry, mats.core);
+          ring.rotation.set(Math.PI * (0.3 + i * 0.4), 0, i * 1.2);
+          mesh.add(ring);
         }
-        mesh.scale.setScalar(POWER_VISUALS[powerLevel].fireballSize);
       }
+      mesh.scale.setScalar(POWER_VISUALS[powerLevel].fireballSize);
       mesh.name = 'spell-fireball';
       mesh.userData.powerLevel = powerLevel;
       mesh.position.copy(from);
@@ -1498,6 +1495,7 @@
     get hornStyle() { return hornFx.level; },
     get neckStyle() { return neckFx.level; },
     get powerStyle() { return powerFx.level; },
+    starterShot: starterShot,
     castSpellAt: castSpellAt,
     advanceSpellFx: updateSpellFx,
     intersectsBlock: intersectsBlock,

@@ -729,6 +729,7 @@
       const zombie = targets[j], p = zombie.position;
       const i = zombies.indexOf(zombie);
       if (!canHit(zombie, origin, yaw, stomp, range)) continue;
+      if (!stomp && M.goat && M.goat.starterShot) M.goat.starterShot(origin, p);
       hit = true; hits++;
       zombie.bite = 0; zombie.blockBite = 0;
       damageEnemy(zombie, damage, { origin: origin, area: stomp });

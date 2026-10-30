@@ -148,7 +148,7 @@ test('automatic attacks never rotate the player; the facing stays mouse-controll
 });
 
 test('starter horns automatically hit just one enemy and need eight strikes to kill early mobs', () => {
-  const { M, controls } = training(); supplies(M);
+  const { M, controls, scene } = training(); supplies(M);
   controls.firstPerson = true;
   const p = M.goat.group.position; p.set(15, 14, 15); M.goat.state.yaw = 0; // facing +z
   const ahead = M.enemies.spawnAt({ x: 15, y: 14, z: 21 }); // 6 units ahead, inside tripled melee 8.4
@@ -157,6 +157,12 @@ test('starter horns automatically hit just one enemy and need eight strikes to k
   M.goat.state.stompCooldown = 100; // Isolate the horn from the separate hoof attack.
   advancePlayer(M, .2);
   assert.equal(ahead.hp, 7, 'the automatic headbutt lands on what the player faces');
+  const pulse = scene.getObjectByName('starter-projectile');
+  assert.ok(pulse, 'untrained horns launch a visible projectile');
+  assert.equal(pulse.children[0].material.toneMapped, false);
+  const start = pulse.position.clone();
+  M.goat.advanceSpellFx(.08, 0);
+  assert.ok(pulse.position.distanceTo(start) > 0, 'the starter pulse travels toward the hit');
   assert.equal(second.hp, 8); assert.equal(third.hp, 8);
   advancePlayer(M, .55);
   assert.equal(ahead.hp, 6, 'the second horn strike deals one more damage');
@@ -516,7 +522,7 @@ test('Heavy horns makes bolts and fireballs progressively thicker and shinier wh
     assert.equal(M.goat.castSpellAt(origin, 1, 1, undefined, tier), true);
     assert.equal(hp - enemy.hp, 1, 'visual strength never adds damage of its own');
     const bolt = scene.getObjectByName('spell-bolt');
-    if (tier) {
+    {
       const core = bolt.getObjectByName('spell-bolt-core'), halo = bolt.getObjectByName('spell-bolt-halo');
       assert.ok(core.geometry.parameters.radius > radius);
       assert.ok(halo.material.opacity > glow);
@@ -527,7 +533,7 @@ test('Heavy horns makes bolts and fireballs progressively thicker and shinier wh
     let owned = 0, disposed = 0;
     bolt.traverse(node => {
       if (node.geometry) { owned++; node.geometry.addEventListener('dispose', () => disposed++); }
-      if (tier && node.material) { owned++; node.material.addEventListener('dispose', () => disposed++); }
+      if (node.material) { owned++; node.material.addEventListener('dispose', () => disposed++); }
     });
     M.goat.advanceSpellFx(.4, 0);
     assert.equal(scene.getObjectByName('spell-bolt'), undefined);
@@ -537,7 +543,8 @@ test('Heavy horns makes bolts and fireballs progressively thicker and shinier wh
     const ball = scene.getObjectByName('spell-fireball');
     assert.ok(ball.scale.x > ballSize, 'fireballs become wider at every tier');
     ballSize = ball.scale.x;
-    if (tier) assert.equal(ball.getObjectByName('spell-fireball-halo').material.opacity, glow);
+    assert.equal(ball.getObjectByName('spell-fireball-halo').material.opacity, glow);
+    assert.equal(ball.getObjectByName('spell-fireball-core').material.toneMapped, false);
     M.goat.advanceSpellFx(.05, .05);
     assert.equal(ball.userData.powerLevel, tier, 'a flying projectile retains its cast-time style');
     M.goat.advanceSpellFx(1, 1);

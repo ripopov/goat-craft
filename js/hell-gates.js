@@ -149,7 +149,7 @@
     sites.forEach(gate => {
       gate.stage = gate.stage || 1; gate.isGate = true; gate.active = gate.stage === 1;
       gate.position = new THREE.Vector3(gate.x, gate.y, gate.z);
-      gate.body = { radius: 7, height: 14 }; gate.hp = gate.maxHp = bossHp * (gate.stage === 1 ? 100 : 200);
+      gate.body = { radius: 7, height: 14 }; gate.hp = gate.maxHp = bossHp * (gate.stage === 1 ? 50 : 100);
       gate.blocks = []; gate.foundation = []; gate.flash = 0;
       for (let u = -3; u <= 3; u++) for (let v = -1; v <= 1; v++) {
         for (let y = -1; y <= 7; y++) clearance.push({ bx: gate.bx + u * gate.tx + v * gate.tz,

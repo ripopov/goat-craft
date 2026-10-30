@@ -160,8 +160,8 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
   const { M, THREE, scene, load, context } = game({ seed: 17, renderRadius: 0 });
   const gates = M.hellGates, first = gates.gates[0], initial = gates.gates.slice();
   const bossHp = M.enemyRules.healthForWave('boss', M.enemyRules.types.boss.unlock);
-  assert.equal(first.hp, bossHp * 100);
-  assert.equal(first.successor.hp, bossHp * 200);
+  assert.equal(first.hp, bossHp * 50);
+  assert.equal(first.successor.hp, bossHp * 100);
   for (const gate of initial) {
     const next = gate.successor;
     assert.ok(Math.abs(Math.hypot(next.x, next.z) - Math.hypot(gate.x, gate.z) - 100) < 1.5, '50 two-unit blocks farther from the Hearth');
@@ -206,7 +206,7 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
   first.hp = 1; advance(3);
   assert.equal(first.active, false); assert.equal(first.hp, 0); assert.equal(gates.destroyed, 1);
   assert.equal(gates.gates.length, 4); assert.ok(gates.gates.includes(first.successor));
-  assert.equal(first.successor.active, true); assert.equal(first.successor.hp, bossHp * 200);
+  assert.equal(first.successor.active, true); assert.equal(first.successor.hp, bossHp * 100);
   for (const c of first.blocks) assert.equal(M.world.blockInfoAt(c.bx, c.by, c.bz), null, 'shattered frame loses collision');
   for (const c of first.successor.blocks) assert.equal(M.world.blockInfoAt(c.bx, c.by, c.bz)?.unbreakable, true);
   assert.equal(gates.damage(first, 1000000), false, 'stale projectiles cannot create a third gate');

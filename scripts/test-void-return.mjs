@@ -3,7 +3,7 @@ import test from 'node:test';
 import { game } from './helpers/animal-game.mjs';
 
 function fixture() {
-  const h = game({seed:19}), { M, controls } = h;
+  const h = game({seed:19,renderRadius:0}), { M, controls } = h;
   M.goat.group.position.set(15,14,15);
   M.goat.state.headbuttCooldown = M.goat.state.stompCooldown = 100;
   const cameraSnaps = [];

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { game } from './helpers/animal-game.mjs';
 
-function fixture() {
-  const h = game(), { M, load, scene } = h;
+function fixture(renderRadius = 0) {
+  const h = game({ renderRadius }), { M, load, scene } = h;
   load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js'); load('js/highlights.js'); M.highlights.init(scene);
   M.goat.group.position.set(15, 14, 15); M.goat.state.manualHold = 1000;
   const camera = M.goat.aimCamera; camera.position.set(15, 15.75, 15);
@@ -125,7 +125,7 @@ test('Q outline selects exactly the animal that opens for upgrades; combat targe
 });
 
 test('voxel aiming skips cells only grazed at a corner and handles negative coordinates', () => {
-  const { M, THREE } = fixture();
+  const { M, THREE } = fixture(1);
   M.world.placeBlock('stone',8,7,7); M.world.placeBlock('stone',8,7,8);
   const diagonal=M.targeting.trace(new THREE.Vector3(15,15,15),new THREE.Vector3(1,0,1).normalize(),6);
   assert.deepEqual([diagonal.bx,diagonal.by,diagonal.bz],[8,7,8]);

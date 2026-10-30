@@ -34,7 +34,7 @@ test('hunters chase and headbutt zombies while builders stay on their tasks', ()
 });
 
 test('builders complete ten-block walls outside the tree exclusion and repair missing blocks', () => {
-  const { M } = game();
+  const { M } = game({ seed: 1 });
   const builder = M.animals.list.find(animal => animal.name === 'Mallow');
   M.animals.list.forEach((animal, i) => {
     if (animal === builder) return;
@@ -192,7 +192,15 @@ test('both builders start and complete outer-meadow walls in a fresh herd', () =
     const builders = M.animals.list.filter(a => a.role === 'builder');
     advanceAnimals(M, 12);
     assert.ok(builders.every(a => a.state.project), 'both builders find a site and quarry promptly');
-    for (let i = 0; i < 1400 && builders.some(a => !a.state.walls.length); i++) M.animals.update(.05, 12 + i * .05);
+    let lowerQuarry = false;
+    for (let i = 0; i < 1400 && builders.some(a => !a.state.walls.length); i++) {
+      M.animals.update(.05, 12 + i * .05);
+      lowerQuarry ||= builders.some(a => a.state.project && a.state.carryCount > 0 &&
+        a.group.position.y < a.state.project.site.groundY - 2.45);
+    }
+    // Seed 42 sends Mallow down several ledges while gathering. The wall's
+    // approach is still reachable through ordinary navigation on the return.
+    if (seed === 42) assert.ok(lowerQuarry, 'exercises a quarry more than one step below the wall');
     for (const animal of builders) {
       assert.ok(animal.state.walls.length, animal.name + ' completes a wall without intervention');
       assert.equal(animal.state.lastAbandon, null, 'viable quarry prevents project abandonment');

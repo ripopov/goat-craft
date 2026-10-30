@@ -5,7 +5,7 @@ import test from 'node:test';
 
 const root = new URL('../', import.meta.url);
 const scripts = new Map();
-function harness(realWorld = false) {
+function harness(realWorld = false, renderRadius = 0) {
   const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
   const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
     document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
@@ -15,7 +15,7 @@ function harness(realWorld = false) {
   };
   ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js'].forEach(load);
   const M = context.window.Meadow, THREE = context.THREE;
-  M.config.renderRadius = 1;
+  M.config.renderRadius = renderRadius;
   const drops = [], coinDrops = [];
   M.items = { dropBlock: (...args) => drops.push(args), dropCoins: (position, count) => coinDrops.push({ position: position.clone(), count }) };
   M.ui = { showBubble() {}, setDefense() {} };
@@ -407,7 +407,7 @@ test('a sealed wall takes ten seconds per chewed block and leaves pickable mater
 });
 
 test('real terrain, roots and tree health support navigation and recoverable block edits', () => {
-  const { M, THREE, scene, drops } = harness(true);
+  const { M, THREE, scene, drops } = harness(true, 1);
   const start = performance.now();
   M.enemies.init({ scene, world: M.world, tree: M.hearthTree });
   assert.ok(performance.now() - start < 10000, 'bounded initial navigation build');

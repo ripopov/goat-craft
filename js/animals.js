@@ -724,7 +724,11 @@
         const z = tz + Math.cos(angle) * distance;
         if (worldRef.isWaterColumn(Math.floor(x / BLOCK), Math.floor(z / BLOCK))) continue;
         const y = nearestGround(x, z);
-        if (Math.abs(y - p.y) > maxRise) continue;
+        // A construction approach belongs to the site's standing level.
+        // The quarry can be several steps lower and far away; the shared
+        // navigator handles that journey one ledge at a time. Comparing the
+        // final level with the current feet rejects otherwise reachable jobs.
+        if (opts.levelY === undefined && Math.abs(y - p.y) > maxRise) continue;
         if (opts.levelY !== undefined && Math.abs(y - opts.levelY) > 0.45) continue;
         const yaw = Math.atan2(tx - x, tz - z);
         if (!canStandAt(animal, x, z, y, yaw)) continue;

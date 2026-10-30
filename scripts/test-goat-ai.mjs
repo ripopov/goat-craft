@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { game, classicModules } from './helpers/animal-game.mjs';
 
-function fixture() {
-  const h = game({ seed: 72 }), { M, load, scene } = h;
+function fixture(renderRadius = 0) {
+  const h = game({ seed: 72, renderRadius }), { M, load, scene } = h;
   load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene);
   M.strategy = { active: true };
   M.goat.group.position.set(15, 14, 15);
@@ -265,7 +265,7 @@ test('a coin on a lower floor is not considered collected from the ledge above',
 });
 
 test('escapes a one-block shaft from the world bottom at 20, 60 and 144 Hz', () => {
-  const { M,advance }=fixture(),p=M.goat.group.position;
+  const { M,advance }=fixture(1),p=M.goat.group.position;
   for(const [bx,bz,hz] of [[7,7,20],[-8,-8,60],[-10,5,144]]) {
     M.strategy.active=false;advance(.05);
     for(let by=1;by<=6;by++) assert.ok(M.world.breakBlockAt(bx,by,bz,{drop:false}), `shaft cell ${bx},${by},${bz}`);

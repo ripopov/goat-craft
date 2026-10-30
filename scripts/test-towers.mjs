@@ -411,8 +411,8 @@ test('reduced motion preserves visible projectiles, impact timing, damage and ch
 });
 
 test('physical arrows, darts and siege shots lead a steadily walking enemy', () => {
+  const { M, THREE } = defense();
   for (const id of ['ballista', 'sniper', 'mortar', 'earth']) {
-    const { M, THREE } = defense();
     const tower = M.towers.place(id, 8, 7, 8);
     const enemy = M.enemies.spawnAt(new THREE.Vector3(15, 14, 29), 'brute');
     for (let i = 0; i < 180 && enemy.hp === 28; i++) {
@@ -420,6 +420,8 @@ test('physical arrows, darts and siege shots lead a steadily walking enemy', () 
       if (tower.shots) tower.cooldown = 1000;
     }
     assert.equal(enemy.hp, 28 - tower.def.damage, id + ' intercepts walking target');
+    M.enemies.damageEnemy(enemy, enemy.hp);
+    assert.ok(M.towers.dismantle(tower));
   }
 });
 

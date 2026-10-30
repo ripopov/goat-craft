@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { game, isolatedAnimal, classicModules } from './helpers/animal-game.mjs';
 
-function training(fixture = game()) {
+// Training checks edit and fight inside the initial chunk; neighboring forest
+// meshes add no coverage and make the default regression suite unnecessarily slow.
+function training(fixture = game({ renderRadius: 0 })) {
   const { M, load, scene } = fixture;
   load('js/coin-model.js'); load('js/inventory.js'); load('js/items.js'); M.items.init(scene); load('js/upgrades.js');
   return fixture;
@@ -256,7 +258,7 @@ test('spell targeting respects range and walls, and the blast burns around impac
 });
 
 test('hunter reach, damage and cadence training changes real NPC strikes', () => {
-  const { M } = training(isolatedAnimal('Bramble')); supplies(M);
+  const { M } = training(isolatedAnimal('Bramble', { renderRadius: 0 })); supplies(M);
   const hunter = M.animals.list.find(a => a.name === 'Bramble');
   hunter.group.position.set(15, 14, 15); hunter.state.yaw = 0;
   const zombie = M.enemies.spawnAt({ x: 15, y: 14, z: 18.4 });
@@ -270,7 +272,7 @@ test('hunter reach, damage and cadence training changes real NPC strikes', () =>
 });
 
 test('trained hunters cast the same auto-aimed elemental strikes as the player', () => {
-  const { M } = training(isolatedAnimal('Bramble')); supplies(M);
+  const { M } = training(isolatedAnimal('Bramble', { renderRadius: 0 })); supplies(M);
   const hunter = M.animals.list.find(a => a.name === 'Bramble');
   hunter.group.position.set(15, 14, 15); hunter.state.yaw = 0; // facing +z
   const behind = M.enemies.spawnAt({ x: 15, y: 14, z: 9 });  // 6 behind the hunter
@@ -287,7 +289,7 @@ test('trained hunters cast the same auto-aimed elemental strikes as the player',
 });
 
 test('trained animals wear the same visible upgrades as the player goat', () => {
-  const { M } = training(isolatedAnimal('Bramble')); supplies(M);
+  const { M } = training(isolatedAnimal('Bramble', { renderRadius: 0 })); supplies(M);
   const hunter = M.animals.list.find(a => a.name === 'Bramble');
   hunter.group.position.set(15, 14, 15);
   M.goat.group.position.set(15, 14, 2); // keep the goat away from the fight
@@ -414,7 +416,7 @@ test('player headbutts, stomps and both hunter species drive their upgraded neck
 });
 
 test('builder work training accelerates the actual action and its block edit', () => {
-  const { M, animal } = training(isolatedAnimal()); supplies(M); train(M, animal, 'craft');
+  const { M, animal } = training(isolatedAnimal('Mallow', { renderRadius: 0 })); supplies(M); train(M, animal, 'craft');
   animal.group.position.set(15, 14, 15);
   animal.state.mode = 'break';
   animal.state.action = { kind: 'break', target: { bx: 8, by: 6, bz: 7, x: 17, z: 15 }, time: 0, duration: .8, hit: false };
@@ -426,7 +428,7 @@ test('builder work training accelerates the actual action and its block edit', (
 
 test('Fleet hooves speeds up gathering and building at every tier without granting free blocks', () => {
   for (const name of ['Mallow', 'Clover']) {
-    const { M, animal } = training(isolatedAnimal(name)); supplies(M);
+    const { M, animal } = training(isolatedAnimal(name, { renderRadius: 0 })); supplies(M);
     animal.group.position.set(15, 14, 15);
     const dt = 1 / 600, timings = [];
     function action(kind, bx, by, bz, duration) {
@@ -473,7 +475,7 @@ test('Fleet hooves speeds up gathering and building at every tier without granti
 });
 
 test('builder Fleet hooves accelerates work waits, stacks with Practiced builder and stays individual', () => {
-  const { M, animal } = training(isolatedAnimal()); supplies(M);
+  const { M, animal } = training(isolatedAnimal('Mallow', { renderRadius: 0 })); supplies(M);
   const hunter = M.animals.list.find(a => a.role === 'hunter');
   train(M, animal, 'move'); train(M, hunter, 'move'); train(M, M.upgrades.player, 'move');
   assert.equal(M.upgrades.stats(animal).craft, 2);
@@ -569,7 +571,7 @@ test('Heavy horns makes bolts and fireballs progressively thicker and shinier wh
 });
 
 test('automatic player and hunter spells use their individual Heavy horns visual tiers', () => {
-  const { M, scene, controls } = training(isolatedAnimal('Bramble')); supplies(M);
+  const { M, scene, controls } = training(isolatedAnimal('Bramble', { renderRadius: 0 })); supplies(M);
   const hunter = M.animals.list.find(a => a.name === 'Bramble');
   train(M, M.upgrades.player, 'power'); train(M, M.upgrades.player, 'reach', 1);
   train(M, hunter, 'power', 1); train(M, hunter, 'reach', 1);

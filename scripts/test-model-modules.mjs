@@ -4,8 +4,8 @@ import { classicModules } from './helpers/animal-game.mjs';
 
 test('every configured enemy has a finite articulated model with valid parent joints and bounded render capacity', () => {
   const { M, load } = classicModules(); load('js/enemy-rules.js'); load('js/enemy-models.js');
-  const { models, maxParts, maxJoints } = M.enemyModels.create(M.enemyRules.types);
-  for (const type of [...Object.keys(M.enemyRules.types), 'parachute']) {
+  const { models, maxParts, hordeParts, maxJoints } = M.enemyModels.create(M.enemyRules.types);
+  for (const type of [...Object.keys(M.enemyRules.types), 'parachute', 'cthulhu']) {
     const model = models[type]; assert.ok(model.parts.length > 0, type);
     assert.ok(model.parts.length + models.parachute.parts.length <= maxParts);
     assert.ok(model.joints.length <= maxJoints);
@@ -16,6 +16,8 @@ test('every configured enemy has a finite articulated model with valid parent jo
       assert.ok(part.sx > 0 && part.sy > 0 && part.sz > 0);
     }
   }
+  for (const type of Object.keys(M.enemyRules.types)) assert.ok(models[type].parts.length + models.parachute.parts.length <= hordeParts);
+  assert.ok(hordeParts < maxParts, 'a single giant does not inflate every horde slot');
   const another = M.enemyModels.create(M.enemyRules.types);
   assert.notEqual(another.models.worm.joints[0], models.worm.joints[0], 'posing one renderer cannot mutate another');
   const geometry = M.enemyModels.geometry();

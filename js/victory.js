@@ -1,8 +1,8 @@
 (function (M) {
   'use strict';
   let scene, camera, tree, overlay, replay, active = false, time = 0;
-  let motes, rings, beacon, fill, replayShown = false;
-  const start = new THREE.Vector3(), look = new THREE.Vector3(), destination = new THREE.Vector3();
+  let motes, rings, beacon, fill, burst, elderLight, replayShown = false;
+  const start = new THREE.Vector3(), look = new THREE.Vector3(), destination = new THREE.Vector3(), elder = new THREE.Vector3(), deathCamera = new THREE.Vector3();
   const dummy = new THREE.Object3D(), seeds = [];
   const smooth = t => { t = M.utils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 
@@ -18,11 +18,19 @@
       ring.rotation.x = -Math.PI / 2; ring.position.y = .3 + i * .08; group.add(ring); rings.push(ring);
     }
     beacon = new THREE.PointLight(0xffcf77, 0, 65, 2); beacon.position.set(0, 11, 0); group.add(beacon);
+    const remains = M.enemies.finalBoss;
+    elder.copy(remains.position); elder.y += 6;
+    const outward = new THREE.Vector3().subVectors(remains.position, tree.group.position); outward.y = 0; outward.normalize();
+    deathCamera.copy(remains.position).addScaledVector(outward, 31);
+    deathCamera.x += outward.z * 15; deathCamera.z -= outward.x * 15; deathCamera.y += 20;
+    burst = new THREE.InstancedMesh(motes.geometry, new THREE.MeshBasicMaterial({ color: 0xa8ffe1, transparent: true, opacity: 1, toneMapped: false }), 64);
+    burst.name = 'Cthulhu farewell embers'; burst.frustumCulled = false; burst.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(burst);
+    elderLight = new THREE.PointLight(0x8affcf, 0, 45, 2); elderLight.position.copy(elder); scene.add(elderLight);
     fill = new THREE.HemisphereLight(0xffe5b2, 0x567b50, .65); scene.add(fill);
   }
 
   function check() {
-    if (active || !M.hellGates.won || tree.health <= 0 || M.oceanHorror?.active) return false;
+    if (active || !M.enemies.finalBossDefeated || tree.health <= 0 || M.oceanHorror?.active) return false;
     if (M.strategy?.active) M.strategy.setActive(false);
     if (M.upgradeMenu?.isOpen) M.upgradeMenu.close(true);
     if (M.inventoryMenu && M.inventoryMenu.isOpen) M.inventoryMenu.close(true);
@@ -39,15 +47,31 @@
   function update(dt) {
     if (!active) return;
     time += dt;
-    const reduced = M.config.reducedMotion, k = reduced ? 1 : smooth(time / 5);
+    const reduced = M.config.reducedMotion, k = reduced ? 1 : smooth((time - 4) / 5);
     const angle = reduced ? .45 : .45 + Math.sin(Math.min(time, 14) * .065) * .3;
     const distance = camera.aspect < 1 ? 57 : 39;
     destination.set(tree.group.position.x + Math.sin(angle) * distance, tree.group.position.y + 24,
       tree.group.position.z + Math.cos(angle) * distance);
-    camera.position.lerpVectors(start, destination, k);
-    const target = new THREE.Vector3().copy(tree.group.position).add(new THREE.Vector3(0, 9, 0)); target.lerp(look, 1 - k);
+    if (reduced) camera.position.copy(destination);
+    else {
+      const arrival = smooth(time / 2.5);
+      camera.position.lerpVectors(start, deathCamera, arrival).lerp(destination, k);
+    }
+    const target = new THREE.Vector3().copy(tree.group.position).add(new THREE.Vector3(0, 9, 0));
+    if (!reduced) target.lerpVectors(look, elder, smooth(time / 2)).lerp(new THREE.Vector3().copy(tree.group.position).add(new THREE.Vector3(0, 9, 0)), k);
     camera.lookAt(target); camera.fov = 46; camera.updateProjectionMatrix();
-    const strength = smooth(time / 2);
+    const strength = smooth((time - 3) / 3);
+    const farewell = 1 - smooth((time - 3) / 3);
+    elderLight.intensity = farewell * 3;
+    burst.material.opacity = farewell;
+    for (let i = 0; i < burst.count; i++) {
+      const angle = i * 2.399963, flight = reduced ? .4 : Math.min(time / 6, 1);
+      const radius = 1 + flight * (4 + i % 11);
+      dummy.position.set(elder.x + Math.sin(angle) * radius, elder.y + flight * (8 + i % 13), elder.z + Math.cos(angle) * radius);
+      dummy.rotation.set(reduced ? 0 : time + angle, angle, 0); dummy.scale.setScalar(.11 + i % 3 * .045);
+      dummy.updateMatrix(); burst.setMatrixAt(i, dummy.matrix);
+    }
+    burst.instanceMatrix.needsUpdate = true;
     beacon.intensity = strength * (reduced ? 3 : 3.6 + Math.sin(time * 2) * .5);
     for (let i = 0; i < motes.count; i++) {
       const seed = seeds[i], phase = (seed.phase + (reduced ? .2 : time * .08)) % 1;
@@ -61,8 +85,8 @@
       const phase = reduced ? .5 : (time * .14 + i / 3) % 1;
       ring.scale.setScalar(4 + phase * 32); ring.material.opacity = strength * Math.sin(phase * Math.PI) * .42;
     });
-    if (overlay) overlay.style.setProperty('--victory-reveal', smooth((time - 2) / 2));
-    if (time >= 5 && !replayShown) {
+    if (overlay) overlay.style.setProperty('--victory-reveal', smooth((time - 6) / 2));
+    if (time >= 10 && !replayShown) {
       replayShown = true;
       if (replay) { replay.hidden = false; replay.focus(); }
     }

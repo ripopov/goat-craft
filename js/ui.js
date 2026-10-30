@@ -41,7 +41,7 @@
   function init() {
     bubbleEl = document.getElementById('bubble');
     defenseEls = {};
-    ['tree-hp', 'tree-health', 'tree-health-fill', 'defense-coins', 'defense-enemies', 'defense-gates', 'defense-wave', 'defense-status', 'defeat'].forEach(function (id) {
+    ['tree-hp', 'tree-health', 'tree-health-fill', 'defense-coins', 'defense-enemies', 'defense-gates', 'gate-detail', 'defense-wave-card', 'defense-wave', 'defense-status', 'defeat', 'final-boss-hud', 'final-boss-hp', 'final-boss-health', 'final-boss-fill'].forEach(function (id) {
       defenseEls[id] = document.getElementById(id);
     });
     const retry = document.getElementById('defense-retry');
@@ -108,12 +108,23 @@
     text('defense-coins', state.coins);
     text('defense-enemies', state.count + ' / ' + state.maxEnemies);
     text('defense-gates', (state.gatesDestroyed || 0) + ' / 8');
+    text('gate-detail', state.finalBoss ? 'Gates sealed. Defeat the last dreamer.' : 'Four gates. Two lives each. Towers can shatter them.');
     const approaches = state.approaches ? ' · ' + state.approaches : '';
-    text('defense-wave', state.wave ? 'Wave ' + state.wave + (state.phase === 'combat' || state.phase === 'endless' ? approaches : '') : 'Prepare your defenses');
-    text('defense-status', state.victorious ? 'All eight gates sealed · Victory!' : state.defeated ? 'The Hearth has fallen' :
+    text('defense-wave', state.finalBoss ? 'FINAL BOSS · CTHULHU' : state.wave ? 'Wave ' + state.wave + (state.phase === 'combat' || state.phase === 'endless' ? approaches : '') : 'Prepare your defenses');
+    text('defense-status', state.victorious ? 'Cthulhu defeated · Victory!' : state.defeated ? 'The Hearth has fallen' :
+      state.finalBoss ? (state.finalBoss.emerging ? 'The elder awakens…' : 'Defeat Cthulhu · Protect the Hearth') :
       state.phase === 'endless' ? 'Endless assault · Seal all eight gates' :
       state.phase === 'combat' ? (state.pending ? state.pending + ' incoming' + (state.nextSquad ? ' · squad in ' + state.nextSquad + 's' : '') : 'Clear the remaining enemies') :
       state.wave ? 'Next wave in ' + state.nextWave + 's' + approaches + ' · Q to train' : 'First wave in ' + state.nextWave + 's' + approaches);
+    const elder = state.finalBoss, bossHud = defenseEls['final-boss-hud'];
+    if (defenseEls['defense-wave-card']) defenseEls['defense-wave-card'].hidden = !!elder;
+    if (bossHud) bossHud.hidden = !elder || state.defeated || state.victorious;
+    if (elder) {
+      text('final-boss-hp', Math.ceil(elder.hp) + ' / ' + elder.maxHp + ' HP');
+      const bossBar = defenseEls['final-boss-health'];
+      if (bossBar) { bossBar.setAttribute('aria-valuemax', elder.maxHp); bossBar.setAttribute('aria-valuenow', Math.max(0, elder.hp)); }
+      if (defenseEls['final-boss-fill']) defenseEls['final-boss-fill'].style.width = Math.max(0, elder.hp / elder.maxHp * 100) + '%';
+    }
     const bar = defenseEls['tree-health'];
     if (bar) {
       bar.setAttribute('aria-valuenow', state.health);

@@ -154,7 +154,7 @@
       M.world.update(M.hearthTree.position, dt, elapsed);
       M.hellGates.update(elapsed); M.hearthTree.update(dt, elapsed); M.towers.update(dt);
       M.environment.update(camera, M.goat.group, 0, elapsed);
-      M.victory.update(dt); caveLight.intensity = 0;
+      M.enemies.updateVictory(dt); M.victory.update(dt); caveLight.intensity = 0;
       M.audio.setListener(camera); M.music.update(dt, { paused: true });
       renderer.render(scene, camera); return;
     }
@@ -202,7 +202,7 @@
     const horde = M.enemies.getState();
     const besieged = M.enemies.zombies.some(function (enemy) { return enemy.mode === 'tree'; });
     M.music.update(dt, {
-      combat: horde.phase === 'combat' ? Math.min(1, 0.22 + horde.count / 24 + (besieged ? 0.3 : 0)) : 0,
+      combat: horde.phase === 'combat' || horde.phase === 'final-boss' ? Math.min(1, 0.22 + horde.count / 24 + (besieged ? 0.3 : 0)) : 0,
       danger: Math.max(0, 1 - horde.health / 45),
       speed: M.goat.state.speed,
       underground: underground,

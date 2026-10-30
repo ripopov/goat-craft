@@ -28,16 +28,21 @@
       <div id="tree-health" role="progressbar" aria-label="Hearth Tree health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div id="tree-health-fill"></div></div>
     </div>
     <div class="defense-stats"><span><i class="coin-symbol" aria-hidden="true"></i><b id="defense-coins">0</b> coins</span><span>Enemies <b id="defense-enemies">0 / 200</b></span></div>
-    <div class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First wave in 10s</span>
-      <div class="gate-objective">Seal the Oblivion gates <b id="defense-gates">0 / 8</b><small>Four gates. Two lives each. Towers can shatter them.</small></div>
+    <div id="defense-wave-card" class="defense-wave"><strong id="defense-wave">Prepare your defenses</strong><span id="defense-status">First wave in 10s</span>
+      <div class="gate-objective">Seal the Oblivion gates <b id="defense-gates">0 / 8</b><small id="gate-detail">Four gates. Two lives each. Towers can shatter them.</small></div>
     </div>
   </aside>
+  <section id="final-boss-hud" aria-label="Final boss health" hidden>
+    <div><span>THE LAST DREAMER</span><strong>CTHULHU</strong><b id="final-boss-hp"></b></div>
+    <div id="final-boss-health" role="progressbar" aria-label="Cthulhu health" aria-valuemin="0" aria-valuemax="1" aria-valuenow="1"><div id="final-boss-fill"></div></div>
+  </section>
   <section id="victory" aria-labelledby="victory-title" hidden>
+    <p class="victory-prologue" aria-hidden="true">THE LAST DREAM ENDS</p>
     <div class="victory-card" role="status" aria-live="polite">
       <span class="victory-sigil" aria-hidden="true">✦</span>
-      <p class="victory-eyebrow">VICTORY · ALL EIGHT GATES SEALED</p>
+      <p class="victory-eyebrow">VICTORY · CTHULHU DEFEATED</p>
       <h2 id="victory-title">The Hearth endures</h2>
-      <p>The last rift is silent. Your forest is free.</p>
+      <p>Eight gates sealed. The elder has fallen. Your forest is free.</p>
       <button id="victory-replay" type="button" hidden>Defend again</button>
     </div>
   </section>

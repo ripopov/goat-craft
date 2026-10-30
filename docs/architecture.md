@@ -13,12 +13,13 @@ must run from `file://` and from GitHub Pages.
 | `enemy-rules.js` | Species stats, wave composition, special-wave overrides, difficulty, timers and clear rewards | None |
 | `enemy-models.js` | Beveled voxel geometry and articulated enemy model construction | Three.js |
 | `enemy-boats.js` | Lazy bounded water-route discovery, four-passenger transport, disembarking and instanced hull rendering | World water queries, actor physics, enemy models, walker navigation |
-| `enemies.js` | Live enemies, delivery, movement, abilities, combat, watchdog and render synchronization | Rules, models, actor physics, enemy navigation, hell gates, enemy boats |
+| `enemies.js` | Live enemies, delivery, movement, abilities, combat, final Cthulhu encounter, watchdog and render synchronization | Rules, models, actor physics, enemy navigation, hell gates, enemy boats |
 | `animal-models.js` | Shared species definitions, animal rigs, materials and fitting scales | Three.js, core utilities, animal style |
 | `animal-navigation.js` | Cached body-sized Hearth routes and terrain-edit invalidation | Actor physics, core utilities |
 | `animal-recovery.js` | Progress monitoring and physical escape target selection | World query interface |
 | `animals.js` | Individual NPC jobs, movement, hunting, building and recovery | Models, navigation, recovery, actor physics |
 | `coin-model.js` | Shared minted gold geometry, emissive material and glint clock | Three.js, core materials |
+| `victory.js` | Final-boss defeat camera, farewell embers, Hearth celebration, input capture and replay | Enemy completion state, controls, audio |
 | `inventory.js` | Hotbar and bag stacks, transfers, validation and atomic material spending | None |
 | `items.js` | Hotbar presentation, held items, physical drops, attraction and collection | Inventory, coin model, world; tower item definitions when initialized |
 | `inventory-menu.js` | Paused inventory and resource exchange | Items, enemy coin wallet, controls |
@@ -48,14 +49,27 @@ loaded and tested directly without terrain initialization.
 1. Add its stats and collision dimensions to `enemy-rules.js` and choose its
    unlock/slots in `typeForWave`.
 2. Add its articulated parts and joints to `enemy-models.js`. Parents must be
-   created before their children. The factory derives render capacities from
-   the largest model plus its parachute; do not add a separate capacity limit.
+   created before their children. The factory derives ordinary render capacity from
+   the largest wave model plus its parachute. The final-boss rig replaces the
+   horde, so its capacity is reserved once; do not add a fixed part limit.
 3. Flying species use `types[type].flying`; the controller owns gate delivery and a fixed three-sample look-ahead flight path, using shared solid-column and body-clearance queries to clear walls. Two-block cruising clearance is four world units. Shared transport runs before flight.
 4. Add any new joint pose, ability or movement behavior to `enemies.js`. Reuse
    actor physics, shared navigation, targetability, damage and removal paths so
    water, cover, rewards and the 30-second watchdog remain consistent.
 5. Add silhouettes to the minimap and sounds to `audio.js` if needed. Exercise
    ground delivery, parachute landing and boat disembarking.
+
+## Final encounter and victory
+
+`hellGates.won` means all eight gates are sealed. It stops further wave delivery;
+it does not award victory. `enemies.js` summons one final actor, using Boss combat
+rules with `finalBoss: true`, a dedicated `cthulhu` rig and twice the current
+wave's Boss health (minimum wave 7). The actor uses shared collision and terrain
+queries, warns before damaging the Hearth and is exempt from the travel watchdog.
+`finalBossDefeated` becomes true only through the normal lethal-damage path.
+`victory.js` gates its camera and overlay on that flag. `main.js` advances the
+six-second corpse animation through `updateVictory` while normal combat pauses.
+Effects remain bounded and reduced motion keeps the camera stationary.
 
 ## Change NPC navigation or appearance
 
@@ -82,7 +96,7 @@ checks in `test-model-modules.mjs` use `classicModules()` from
 `scripts/helpers/animal-game.mjs`; gameplay checks use `game()` or
 `isolatedAnimal()` with fresh state. Avoid generating a forest for pure model
 or rule checks. Longer complete-defense runs remain separately runnable with
-`node --test scripts/check-enemy-balance-tests.mjs`.
+`node --test scripts/check-enemy-balance-tests.mjs`. Multi-wave progression and tower-effect stress checks run with `node --test scripts/check-enemy-progression-tests.mjs scripts/check-tower-effects-tests.mjs`; both remain in CI.
 
 Run `node scripts/build-site.mjs` and
 `node scripts/check-site.mjs _site` after changing scripts or local assets.

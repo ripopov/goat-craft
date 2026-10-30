@@ -745,3 +745,16 @@ body.rts-active #bag-open { display: none; }
 .upgrade-card[data-branch="craft"] { --branch: #38eaa7; }
 .upgrade-card[data-branch] { border-top: 3px solid var(--branch); }
 .upgrade-region { color: var(--branch); font-size: 11px; line-height: 1.5; margin: 8px 0; }
+
+  #final-boss-hud { position: fixed; z-index: 32; top: 20px; left: 50%; transform: translateX(-50%); width: min(440px, calc(100% - 32px)); padding: 12px 18px; box-sizing: border-box; background: #092c32ee; border: 1px solid #72cbb180; border-radius: 5px; box-shadow: 0 8px 30px #07192155; color: #d5ffdf; pointer-events: none; }
+  #final-boss-hud[hidden] { display: none; }
+  #final-boss-hud > div:first-child { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
+  #final-boss-hud span { font-size: 8px; letter-spacing: .15em; max-width: 70px; color: #88bfaf; }
+  #final-boss-hud strong { font: 18px Georgia, serif; letter-spacing: .15em; }
+  #final-boss-hp { margin-left: auto; font-size: 11px; white-space: nowrap; }
+  #final-boss-health { height: 7px; background: #03171e; border-radius: 2px; overflow: hidden; }
+  #final-boss-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #387e80, #96f2bc); }
+  .victory-prologue { position: absolute; bottom: 13%; width: 100%; font: 16px Georgia, serif; letter-spacing: .35em; color: #bcf4dc; opacity: calc(1 - var(--victory-reveal)); }
+  @media (max-width: 760px) { #final-boss-hud { top: 134px; padding: 9px 12px; } #final-boss-hud span { display: none; } .victory-prologue { font-size: 12px; letter-spacing: .2em; } }
+
+  #defense-wave-card[hidden] { display: none; }

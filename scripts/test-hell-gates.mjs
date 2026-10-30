@@ -156,7 +156,7 @@ test('ground arrivals use gates while boats and parachutes retain separate deliv
   assert.ok(usedGates.size === 4); assert.ok(air); assert.ok(worm); assert.ok(sea);
 });
 
-test('all tower weapons damage gates on contact, each lane retreats once, and eight kills end the siege', () => {
+test('tower siege seals eight gates, Cthulhu must be defeated, then the victory cutscene plays', () => {
   const { M, THREE, scene, load, context } = game({ seed: 17, renderRadius: 0 });
   const gates = M.hellGates, first = gates.gates[0], initial = gates.gates.slice();
   const bossHp = M.enemyRules.healthForWave('boss', M.enemyRules.types.boss.unlock);
@@ -225,7 +225,7 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
   const siege = M.towers.place('ballista', forward.bx, forward.top, forward.bz); assert.ok(siege);
   const nextHp = next.hp; advance(3); assert.ok(next.hp < nextHp, 'replacement gates take real projectile damage');
   M.towers.dismantle(siege);
-  M.enemies.startWave(4);
+  M.enemies.startWave(100);
   assert.ok(M.enemies.spawnAt({ x: 17, y: 14, z: 17 }));
   for (const gate of initial.slice(1)) gates.damage(gate, gate.hp);
   for (const gate of gates.gates.slice(0, 3)) gates.damage(gate, gate.hp);
@@ -244,6 +244,44 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
   load('js/victory.js');
   const camera = new THREE.PerspectiveCamera(42, .46, .1, 400); camera.position.set(last.x, last.y + 5, last.z);
   M.victory.init({ scene, camera, tree: M.hearthTree });
+  assert.equal(M.victory.check(), false, 'sealing gates cannot trigger victory');
+  assert.equal(M.enemies.finishVictory(), false);
+  M.enemies.update(.05);
+  const elder = M.enemies.finalBoss;
+  assert.ok(elder && elder.finalBoss); assert.equal(M.enemies.zombies.length, 1);
+  assert.equal(elder.maxHp, M.enemyRules.healthForWave('boss', 100) * 2);
+  assert.ok(elder.body.height >= 14); assert.equal(M.enemies.getState().phase, 'final-boss');
+  assert.equal(M.enemies.getState().pending, 0); assert.equal(M.enemies.beginFinalBoss(), false, 'summoned once');
+  assert.equal(M.enemies.isTargetable(elder), false, 'brief emergence gives the player a warning');
+  assert.equal(M.enemies.startWave(100), false);
+  const initialTreeHealth = M.hearthTree.health;
+  M.enemies.beginFrame();
+  let warned = false;
+  for (let i = 0; i < 240; i++) {
+    M.enemies.update(.1);
+    warned ||= elder.finalWarning && M.hearthTree.health === initialTreeHealth &&
+      M.enemies.signals.some(fx => fx.kind === 'elder');
+  }
+  assert.ok(warned, 'a visible warning precedes the first Hearth strike');
+  M.enemies.update(31); // A stationary elder must survive a full watchdog interval.
+
+  M.enemies.syncRender();
+  assert.equal(M.enemies.zombies.length, 1, 'no reinforcements or watchdog kill after thirty seconds');
+  assert.ok(M.hearthTree.health < initialTreeHealth, 'the elder reaches and attacks the Hearth: ' + JSON.stringify({p: elder.position, timer: elder.finalAttack, health: M.hearthTree.health, start: initialTreeHealth}));
+  assert.ok(M.enemies.signals.length <= 48);
+  assert.equal(M.enemies.isTargetable(elder), true);
+  const rig = scene.getObjectByName('Enemy horde');
+  assert.ok(rig.count > 70); assert.ok(Array.from(rig.instanceMatrix.array).every(Number.isFinite));
+  assert.equal(M.victory.check(), false, 'the live boss still prevents victory');
+  const position = elder.position.clone(); elder.position.set(23, 14.15, 17);
+  const cannon = M.towers.place('ballista', 8, 7, 8); assert.ok(cannon);
+  const elderHealth = elder.hp; advance(3);
+  assert.ok(elder.hp < elderHealth, 'ordinary tower projectiles hit the giant body');
+  M.towers.dismantle(cannon); elder.position.copy(position);
+  M.enemies.damageEnemy(elder, elder.hp - 1);
+  assert.equal(M.victory.check(), false, 'even one HP must be defeated');
+  M.enemies.attack(elder.position.clone(), 0, true, { damage: 1, range: 4 });
+  assert.equal(M.enemies.finalBossDefeated, true);
   assert.equal(M.victory.check(), true); assert.equal(M.victory.check(), false);
   assert.equal(M.enemies.getState().victorious, true); assert.equal(M.enemies.getState().pending, 0);
   assert.equal(M.enemies.zombies.length, 0); assert.equal(M.enemies.startNextWave(), false);
@@ -252,13 +290,29 @@ test('all tower weapons damage gates on contact, each lane retreats once, and ei
   let blocked = 0;
   listeners.keydown({ key: 'q', target: { id: 'victory-replay' }, preventDefault() { blocked++; }, stopImmediatePropagation() { blocked++; } });
   assert.equal(blocked, 2);
-  M.victory.update(3); assert.equal(elements.get('victory-replay').hidden, true);
-  M.victory.update(3); assert.equal(elements.get('victory-replay').hidden, false);
+  M.enemies.updateVictory(3); M.victory.update(3); assert.ok(rig.count > 0, 'collapse remains visible'); assert.equal(elements.get('victory-replay').hidden, true);
+  M.enemies.updateVictory(3); M.victory.update(3); assert.equal(rig.count, 0, 'defeated giant dissolves after six seconds'); assert.equal(elements.get('victory-replay').hidden, true);
+  M.enemies.updateVictory(5); M.victory.update(5); assert.equal(elements.get('victory-replay').hidden, false);
   assert.equal(elements.get('victory-replay').focused, true);
   assert.ok(classes.has('victorious')); assert.equal(elements.get('victory').hidden, false);
   assert.ok(camera.position.toArray().every(Number.isFinite));
   assert.ok(scene.getObjectByName('Hearth victory celebration'));
   M.config.reducedMotion = true; M.victory.update(.1);
   assert.ok(camera.position.toArray().every(Number.isFinite));
+  const still = camera.position.clone(); M.victory.update(1); assert.deepEqual(camera.position, still, 'reduced motion keeps a stationary camera');
   elements.get('victory-replay').click(); assert.equal(reloads, 1);
+});
+
+
+test('losing the Hearth during the final encounter cannot award victory', () => {
+  const { M, scene, load } = game({ seed: 13, renderRadius: 0 });
+  while (M.hellGates.gates.length) { const gate = M.hellGates.gates[0]; M.hellGates.damage(gate, gate.hp); }
+  M.enemies.update(.05); const elder = M.enemies.finalBoss;
+  for (let i = 0; i < 31; i++) M.enemies.update(.1);
+  M.hearthTree.damage(M.hearthTree.health);
+  assert.equal(M.enemies.damageEnemy(elder, elder.hp), false);
+  assert.equal(M.enemies.finalBossDefeated, false);
+  assert.equal(M.enemies.finishVictory(), false);
+  load('js/victory.js'); M.victory.init({ scene, camera: M.goat.aimCamera, tree: M.hearthTree });
+  assert.equal(M.victory.check(), false);
 });

@@ -47,13 +47,13 @@ jobs:
         run: node --test scripts/test-hearth-tree.mjs
 
       - name: Test zombie defense gameplay
-        run: node --test scripts/test-enemies.mjs scripts/test-special-enemies.mjs scripts/test-hell-gates.mjs scripts/check-enemy-balance-tests.mjs
+        run: node --test scripts/test-enemies.mjs scripts/test-special-enemies.mjs scripts/test-hell-gates.mjs scripts/check-enemy-balance-tests.mjs scripts/check-enemy-progression-tests.mjs
 
       - name: Test training, purchases and collectible coins
         run: node --test scripts/test-upgrades.mjs
 
       - name: Test strategic towers, purchases, relocation and combat
-        run: node --test scripts/test-towers.mjs scripts/test-strategy.mjs
+        run: node --test scripts/test-towers.mjs scripts/test-strategy.mjs scripts/check-tower-effects-tests.mjs
 
       - name: Test cave geology, traversal and camera targeting
         run: node --test scripts/test-caves.mjs scripts/test-targeting.mjs

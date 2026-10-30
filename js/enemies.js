@@ -12,14 +12,14 @@
   let elapsed = 0, wave = 0, nextWave = rules.firstWaveDelay, pending = 0, spawnTimer = 0, coins = 0, waveSpawned = 0;
   let plan = wavePlan(1), spawnLanes = [], seaLanes = [];
   let rebuildTimer = 0, plannerTimer = 0, nextId = 0, hudKey = '';
-  let gateRevision = 0, victorious = false;
+  let gateRevision = 0, victorious = false, finalBoss = null, finalBossDefeated = false;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const matrix = new THREE.Matrix4(), rootMatrix = new THREE.Matrix4();
   const position = new THREE.Vector3(), scale = new THREE.Vector3();
   const quaternion = new THREE.Quaternion(), rotation = new THREE.Euler();
   const color = new THREE.Color(), hitColor = new THREE.Color(0xffd2a1), blastColor = new THREE.Color(0xffc56e);
 
-  const { models, maxParts, maxJoints } = M.enemyModels.create(TYPES);
+  const { models, hordeParts, maxJoints } = M.enemyModels.create(TYPES);
   const jointMatrices = [rootMatrix];
   for (let i = 1; i <= maxJoints; i++) jointMatrices.push(new THREE.Matrix4());
   let renderDeferred = false;
@@ -30,7 +30,22 @@
     const bruteWalk = enemy.type === 'brute' ? 0.65 : 1;
     model.joints.forEach(function (j) {
       j.rx = j.ry = j.rz = 0;
-      if (j.kind === 'flightWing') {
+      if (j.kind === 'elderBody') {
+        j.rx = Math.sin(time * 1.3 + enemy.id) * .025 * motion;
+      } else if (j.kind === 'elderHead') {
+        j.rx = -.08 - (enemy.finalCharge || 0) * .12 + Math.sin(time * .9) * .025 * motion;
+      } else if (j.kind === 'elderWing') {
+        j.ry = j.side * (.25 + Math.sin(time * 1.8) * .14 * motion);
+        j.rz = j.side * (.1 + Math.sin(time * 1.8 - .4) * .08 * motion);
+      } else if (j.kind === 'elderTentacle') {
+        const segment = j.index % 5, limb = Math.floor(j.index / 5);
+        j.rx = -.12 - (enemy.finalCharge || 0) * .18 + Math.sin(time * 2.3 - segment * .65 + limb) * .16 * motion;
+        j.rz = j.side * .05 + Math.cos(time * 1.7 - segment * .55 + limb) * .1 * motion;
+      } else if (j.kind === 'elderArm') {
+        j.rx = -.15 - (enemy.finalCharge || 0) * .65 + Math.sin(enemy.phase + j.side) * enemy.stride * .12 * motion;
+      } else if (j.kind === 'elderLeg') {
+        j.rx = Math.sin(enemy.phase + j.side) * enemy.stride * .12 * motion;
+      } else if (j.kind === 'flightWing') {
         j.rz = j.side * (.12 + Math.sin(time * 7 + enemy.id * 1.7) * .48 * motion);
         j.rx = Math.cos(time * 7 + enemy.id * 1.7) * .09 * motion;
       } else if (j.kind === 'flightTip') {
@@ -110,20 +125,21 @@
     for (let list = 0; list < 2; list++) {
       const actors = list ? fallen : zombies;
       for (let n = 0; n < actors.length; n++) {
-        const enemy = actors[n], p = enemy.position, model = models[enemy.type];
-        const dying = enemy.death !== undefined, death = dying ? clamp(enemy.death / 0.65, 0, 1) : 0;
+        const enemy = actors[n], p = enemy.position, model = models[enemy.finalBoss ? 'cthulhu' : enemy.type];
+        const dying = enemy.death !== undefined, death = dying ? clamp(enemy.death / (enemy.finalBoss ? 6 : .65), 0, 1) : 0;
         const motion = reducedMotion || M.config.reducedMotion ? 0 : 1;
         const recoil = Math.sin(clamp(enemy.flash / 0.2, 0, 1) * Math.PI) * 0.22 * motion;
         const bob = enemy.flying ? Math.sin(time * 3.5 + enemy.id) * .1 * motion : Math.abs(Math.sin(enemy.phase)) * (enemy.type === 'brute' ? 0.075 : enemy.type === 'spider' ? 0.025 : 0.045) * enemy.stride * motion;
-        const collapse = enemy.exploded ? 0 : death;
+        const collapse = enemy.exploded || enemy.finalBoss && !motion ? 0 : death;
         const roll = Math.sin(enemy.phase) * (enemy.type === 'brute' ? 0.075 : 0.04) * enemy.stride * motion;
         const swim = enemy.swimBlend * motion;
         rotation.set(-.18 * swim - recoil - (enemy.type === 'spider' ? 0 : collapse * 1.45), enemy.yaw,
           roll + Math.sin(enemy.swimPhase) * .045 * swim + collapse * (enemy.type === 'spider' ? 2.7 : 0.22));
         quaternion.setFromEuler(rotation);
-        position.set(p.x, p.y + bob - collapse * (enemy.type === 'spider' ? -0.18 : 0.35), p.z);
+        const rise = enemy.finalBoss ? Math.pow(1 - clamp(enemy.finalAge / 3, 0, 1), 2) * 12 : 0;
+        position.set(p.x, p.y + bob - rise - collapse * (enemy.finalBoss ? 5 : enemy.type === 'spider' ? -0.18 : .35), p.z);
         const shrink = dying ? 1 - Math.pow(clamp((death - 0.65) / 0.35, 0, 1), 2) : 1;
-        scale.setScalar(Math.max(0.001, shrink) * (enemy.type === 'boss' ? 1.3 : 1)); rootMatrix.compose(position, quaternion, scale);
+        scale.setScalar(Math.max(0.001, shrink) * (enemy.type === 'boss' && !enemy.finalBoss ? 1.3 : 1)); rootMatrix.compose(position, quaternion, scale);
         poseJoints(enemy, model, time, motion, recoil);
         for (let partIndex = 0, count = model.parts.length + (enemy.airborne ? models.parachute.parts.length : 0); partIndex < count; partIndex++) {
           const part = partIndex < model.parts.length ? model.parts[partIndex] : models.parachute.parts[partIndex - model.parts.length];
@@ -169,7 +185,7 @@
   }
   function signal(kind, point, radius, ttl, owner) {
     if (!scene || signals.length >= 64) return null;
-    const group = new THREE.Group(), tint = kind === 'mud' ? 0xdcb276 : kind === 'air' ? 0xe1b8ff : kind === 'root' ? 0xb0d66c : kind === 'shield' ? 0xa6e9ff : 0xffc67c;
+    const group = new THREE.Group(), tint = kind === 'mud' ? 0xdcb276 : kind === 'elder' ? 0x89f4ce : kind === 'air' ? 0xe1b8ff : kind === 'root' ? 0xb0d66c : kind === 'shield' ? 0xa6e9ff : 0xffc67c;
     group.name = 'Enemy ' + kind + ' signal'; group.position.copy(point); group.position.y += .05;
     const rimMaterial = signalMaterial(tint, .9), bits = signalMaterial(tint, 1);
     // Blasts fade independently; never fade the cached materials used by
@@ -320,6 +336,7 @@
   }
   function specialMovement(enemy, dt) {
     const p = enemy.position;
+    if (enemy.finalBoss) { moveFinalBoss(enemy, dt); return true; }
     if (enemy.boat) { enemy.mode = 'sail'; enemy.moving = false; return true; }
     if (enemy.boatExit) {
       const exit = enemy.boatExit;
@@ -438,6 +455,62 @@
     enemy.phase += dt * 5;
   }
 
+  function beginFinalBoss() {
+    if (finalBoss || finalBossDefeated || !mesh || !M.hellGates.won || tree.health <= 0) return false;
+    // Sealing the invasion releases its survivors without paying kill rewards.
+    // The elder is the only remaining combatant and can never queue a new wave.
+    pending = 0; nextWave = Infinity; spawnLanes = []; seaLanes = [];
+    zombies.forEach(enemy => {
+      if (enemy.burrowed) settleShaft(enemy);
+      if (M.towers) M.towers.list.forEach(tower => { if (tower.snareOwner === enemy) { tower.snareOwner = null; tower.snareTime = 0; } });
+    });
+    zombies.length = 0; fallen.length = 0; fleet.boats.length = 0;
+    signals.forEach(fx => { fx.ttl = 0; }); advanceSignals(0); mudPools.length = 0;
+    const last = M.hellGates.sites.at(-1), angle = last ? Math.atan2(last.x - tree.position.x, last.z - tree.position.z) : .75;
+    const x = tree.position.x + Math.sin(angle) * 28, z = tree.position.z + Math.cos(angle) * 28;
+    const y = flightFloor(x, z, surfaceAt(x, z, 14)) + .15;
+    const enemy = spawnAt({ x, y, z }, 'boss', { finalBoss: true });
+    if (!enemy) return false;
+    finalBoss = enemy; enemy.finalBoss = true; enemy.finalAge = 0; enemy.finalCharge = 0; enemy.finalAttack = 5;
+    enemy.body = { radius: 2.1, height: 16, skin: .002 };
+    enemy.hp = enemy.maxHp = rules.healthForWave('boss', Math.max(TYPES.boss.unlock, wave)) * 2;
+    enemy.yaw = Math.atan2(tree.position.x - x, tree.position.z - z); enemy.mode = 'rise';
+    signal('elder', enemy.position, 11, 3);
+    if (M.audio && M.audio.oceanHorror) M.audio.oceanHorror('rise');
+    if (M.ui) M.ui.showBubble('CTHULHU awakens!');
+    updateHud(); render(elapsed); return true;
+  }
+  function moveFinalBoss(enemy, dt) {
+    const previousAge = enemy.finalAge;
+    enemy.finalAge += dt;
+    if (previousAge < 3 && enemy.finalAge >= 3 && M.audio && M.audio.oceanHorror) M.audio.oceanHorror('roar');
+    enemy.grounded = false; enemy.swimming = false; enemy.moving = false;
+    enemy.mode = enemy.finalAge < 3 ? 'rise' : 'elder';
+    if (enemy.finalAge < 3) return;
+    const p = enemy.position, dx = tree.position.x - p.x, dz = tree.position.z - p.z, distance = Math.hypot(dx, dz);
+    enemy.yaw = turnToward(enemy.yaw, Math.atan2(dx, dz), dt * 1.5);
+    const nx = distance > .01 ? dx / distance : 0, nz = distance > .01 ? dz / distance : 0;
+    let floor = flightFloor(p.x, p.z, p.y);
+    for (let i = 1; i <= 3; i++) floor = Math.max(floor, flightFloor(p.x + nx * i * 2, p.z + nz * i * 2, p.y));
+    enemy.position.y += clamp(damp(p.y, floor + .15, 3, dt) - p.y, -3 * dt, 4 * dt);
+    if (distance > 13) {
+      const step = Math.min(distance - 13, 1.5 * (enemy.towerSlowTime > 0 ? enemy.towerSlow : 1) * dt);
+      enemy.moving = physics.moveHorizontal(world, p, enemy.body, nx * step, nz * step);
+      enemy.phase += dt * 2;
+      return;
+    }
+    enemy.finalAttack -= dt;
+    if (enemy.finalAttack <= 1.8 && !enemy.finalWarning) {
+      enemy.finalWarning = true; signal('elder', new THREE.Vector3(tree.position.x, tree.group ? tree.group.position.y : surfaceAt(tree.position.x, tree.position.z, 14), tree.position.z), 9, 1.8);
+      sound('boss', 'warn', p);
+    }
+    enemy.finalCharge = clamp(1 - enemy.finalAttack / 1.8, 0, 1);
+    if (enemy.finalAttack <= 0) {
+      tree.damage(4); signal('elder', new THREE.Vector3(tree.position.x, tree.group ? tree.group.position.y : surfaceAt(tree.position.x, tree.position.z, 14), tree.position.z), 9, .6); sound('boss', 'bite', p);
+      enemy.finalAttack = 7; enemy.finalCharge = 0; enemy.finalWarning = false;
+    }
+  }
+
   function tacticalAbility(enemy, dt) {
     const p = enemy.position;
     enemy.abilityTimer -= dt;
@@ -490,12 +563,12 @@
   function isTargetable(enemy, origin) {
     // Soil occlusion, range and actual projectile collision protect a buried
     // Worm. Once a player opens a tunnel it is an ordinary, damageable model.
-    return enemy.hp > 0;
+    return enemy.hp > 0 && (!enemy.finalBoss || enemy.finalAge >= 3);
   }
 
   function updateHud() {
     const state = getState();
-    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated, state.approaches, state.nextSquad, state.gatesDestroyed, state.victorious].join('/');
+    const key = [state.health, state.coins, state.count, state.wave, state.nextWave, state.pending, state.phase, state.defeated, state.approaches, state.nextSquad, state.gatesDestroyed, state.victorious, state.finalBoss && state.finalBoss.hp, state.finalBoss && state.finalBoss.emerging].join('/');
     if (key === hudKey) return;
     hudKey = key;
     if (M.ui && M.ui.setDefense) M.ui.setDefense(state);
@@ -504,8 +577,9 @@
     const laneLevel = Number.isFinite(nextWave) ? wave + 1 : wave;
     const lanes = rules.specialWaves[laneLevel]?.delivery === 'boat' ? seaLanes : spawnLanes.concat(seaLanes);
     return { health: tree ? tree.health : 100, maxHealth: 100, coins: coins, count: zombies.length,
-      wave: wave, pending: pending, victorious: victorious, gatesDestroyed: M.hellGates.destroyed,
-      phase: victorious ? 'victory' : wave === 100 ? 'endless' : nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
+      finalBoss: finalBoss && !finalBossDefeated ? { name: 'Cthulhu', hp: finalBoss.hp, maxHp: finalBoss.maxHp, emerging: finalBoss.finalAge < 3 } : null,
+      finalBossDefeated: finalBossDefeated, wave: wave, pending: pending, victorious: victorious, gatesDestroyed: M.hellGates.destroyed,
+      phase: victorious ? 'victory' : finalBoss && !finalBossDefeated ? 'final-boss' : wave === 100 ? 'endless' : nextWave === Infinity ? 'combat' : wave ? 'intermission' : 'prepare',
       maxEnemies: MAX_ENEMIES, approaches: lanes.map(function (lane) { return lane.label; }).join(' / '),
       spawnLanes: lanes.map(function (lane) { return { x: lane.x, z: lane.z, label: lane.label }; }),
       nextSquad: pending > 0 && waveSpawned % plan.squadSize === 0 ? Math.ceil(Math.max(0, spawnTimer)) : 0,
@@ -563,7 +637,7 @@
     return true;
   }
   function spawnAt(node, type, options) {
-    if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || victorious || M.hellGates.won || !node) return null;
+    if (!mesh || zombies.length >= MAX_ENEMIES || tree.health <= 0 || victorious || M.hellGates.won && !(options && options.finalBoss) || !node) return null;
     type = TYPES[type] ? type : 'zombie';
     const def = TYPES[type];
     // Difficulty is locked in at spawn so each enemy keeps its wave's stats.
@@ -767,7 +841,7 @@
     if (!outlineMesh) return;
     let source = 0, count = 0;
     zombies.forEach(function (enemy) {
-      const length = models[enemy.type].parts.length + (enemy.airborne ? models.parachute.parts.length : 0);
+      const length = models[enemy.finalBoss ? 'cthulhu' : enemy.type].parts.length + (enemy.airborne ? models.parachute.parts.length : 0);
       if (predicate(enemy)) for (let i = 0; i < length; i++) {
         mesh.getMatrixAt(source + i, outlineMatrix); outlineMatrix.scale(outlineScale);
         outlineMesh.setMatrixAt(count++, outlineMatrix);
@@ -799,8 +873,9 @@
   }
   function removeEnemy(enemy, index, exploded) {
     enemy.hp = 0; enemy.exploded = exploded;
+    if (enemy.finalBoss) { finalBossDefeated = true; enemy.finalCharge = 0; }
     releaseSpoil(enemy, enemy.position);
-    if (!reducedMotion) {
+    if (!reducedMotion || enemy.finalBoss) {
       enemy.death = 0; fallen.push(enemy);
       if (fallen.length > 12) fallen.shift();
     }
@@ -928,7 +1003,7 @@
     if (!mesh || victorious) return;
     elapsed += dt;
     M.hellGates.update(elapsed);
-    if (M.hellGates.won) { finishVictory(); return; }
+    if (M.hellGates.won && !finalBoss) beginFinalBoss();
     if (gateRevision !== M.hellGates.destroyed) {
       gateRevision = M.hellGates.destroyed;
       prepareSpawns(Number.isFinite(nextWave) ? wave + 1 : wave);
@@ -936,7 +1011,7 @@
     digBudget = 32; advanceSignals(dt);
     for (let i = fallen.length - 1; i >= 0; i--) {
       fallen[i].death += dt;
-      if (fallen[i].death >= 0.65) fallen.splice(i, 1);
+      if (fallen[i].death >= (fallen[i].finalBoss ? 6 : .65)) fallen.splice(i, 1);
     }
     plannerTimer -= dt; rebuildTimer -= dt;
     if (tree.health <= 0) { updateHud(); render(elapsed); return; }
@@ -952,8 +1027,8 @@
         }
       });
     }
-    if (elapsed >= nextWave) beginWave();
-    if (wave === 100) pending = MAX_ENEMIES - zombies.length;
+    if (!finalBoss && elapsed >= nextWave) beginWave();
+    if (!finalBoss && wave === 100) pending = MAX_ENEMIES - zombies.length;
     spawnTimer -= dt;
     if (pending > 0 && spawnTimer <= 0 && zombies.length < MAX_ENEMIES) {
       const spawned = spawn();
@@ -991,7 +1066,7 @@
       walk(zombie, target, dt);
     });
     for (let i = zombies.length - 1; i >= 0; i--) {
-      if (watchdog(zombies[i])) removeEnemy(zombies[i], i, true);
+      if (!zombies[i].finalBoss && watchdog(zombies[i])) removeEnemy(zombies[i], i, true);
     }
     zombies.forEach(function (zombie) {
       zombie.swimBlend = damp(zombie.swimBlend, zombie.swimming ? 1 : 0, 7, dt);
@@ -1017,7 +1092,7 @@
         zombie.chewTimer = 1.05 + Math.sin(zombie.id) * 0.25;
       }
     });
-    if (wave > 0 && wave < 100 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
+    if (!finalBoss && wave > 0 && wave < 100 && pending === 0 && zombies.length === 0 && nextWave === Infinity) {
       const bonus = rules.clearBonus(wave);
       const rest = rules.restAfter(wave);
       coins += bonus; nextWave = elapsed + rest;
@@ -1036,7 +1111,9 @@
     navigation.rebuild();
     fleet = M.enemyBoats.create(scene, world, tree, navigation, spawnAt);
     prepareSpawns(1);
-    mesh = new THREE.InstancedMesh(M.enemyModels.geometry(), M.std(0xffffff, 0.94), (MAX_ENEMIES + 12) * maxParts);
+    // The final actor replaces the horde. Derive both capacities from their
+    // rigs rather than reserving giant-sized slots for 200 ordinary enemies.
+    mesh = new THREE.InstancedMesh(M.enemyModels.geometry(), M.std(0xffffff, 0.94), Math.max((MAX_ENEMIES + 12) * hordeParts, models.cthulhu.parts.length));
     mesh.name = 'Enemy horde'; mesh.count = 0; mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.castShadow = true; mesh.receiveShadow = true;
     // Allocate instance colors before the first empty draw compiles its shader.
@@ -1044,7 +1121,7 @@
     mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     scene.add(mesh);
     outlineMesh = new THREE.InstancedMesh(mesh.geometry, new THREE.MeshBasicMaterial({ color: 0xf5b17c, side: THREE.BackSide,
-      transparent: true, opacity: .65, depthWrite: false }), MAX_ENEMIES * maxParts);
+      transparent: true, opacity: .65, depthWrite: false }), Math.max(MAX_ENEMIES * hordeParts, models.cthulhu.parts.length));
     outlineMesh.name = 'Enemies in attack range'; outlineMesh.count = 0; outlineMesh.frustumCulled = false;
     outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(outlineMesh);
     updateHud();
@@ -1068,14 +1145,25 @@
     return killed;
   }
   function finishVictory() {
-    if (victorious || !M.hellGates.won || tree.health <= 0) return false;
+    if (victorious || !M.hellGates.won || !finalBossDefeated || tree.health <= 0) return false;
     victorious = true; pending = 0; nextWave = Infinity; spawnLanes = []; seaLanes = [];
-    zombies.length = 0; fallen.length = 0; mesh.count = outlineMesh.count = 0;
+    zombies.length = 0; outlineMesh.count = 0;
+    for (let i = fallen.length - 1; i >= 0; i--) if (!fallen[i].finalBoss) fallen.splice(i, 1);
+    renderDeferred = false; render(elapsed);
     signals.forEach(fx => { fx.ttl = 0; }); advanceSignals(0); mudPools.length = 0;
     fleet.boats.length = 0; fleet.render();
     updateHud(); return true;
   }
-  M.enemies = { init: init, update: update, finishVictory: finishVictory,
+  M.enemies = { init: init, update: update, finishVictory: finishVictory, beginFinalBoss: beginFinalBoss,
+    get finalBoss() { return finalBoss; }, get finalBossDefeated() { return finalBossDefeated; },
+    updateVictory: function (dt) {
+      elapsed += dt;
+      for (let i = fallen.length - 1; i >= 0; i--) {
+        fallen[i].death += dt; fallen[i].flash = Math.max(0, fallen[i].flash - dt);
+        if (fallen[i].death >= 6) fallen.splice(i, 1);
+      }
+      render(elapsed);
+    },
     beginFrame: function () { renderDeferred = true; },
     syncRender: function () { renderDeferred = false; render(elapsed); },
     attack: attack, damageEnemy: damageEnemy, canHit: canHit, highlight: highlight, getState: getState, maxEnemies: MAX_ENEMIES,

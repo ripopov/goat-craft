@@ -554,7 +554,7 @@
   }
   function alive(enemy) { return enemy.hp > 0 && (!enemy.isGate || enemy.active) && liveEnemies.has(enemy); }
   function aimAt(enemy) {
-    return enemy.position.clone().add(new THREE.Vector3(0, enemy.isGate ? 4 : Math.min(1.25, enemy.body.height * .6), 0));
+    return enemy.position.clone().add(new THREE.Vector3(0, enemy.isGate ? 4 : enemy.finalBoss ? enemy.body.height * .45 : Math.min(1.25, enemy.body.height * .6), 0));
   }
   function hit(tower, enemy, amount, area) {
     if (!alive(enemy) || M.enemies.isTargetable && !M.enemies.isTargetable(enemy, tower.position)) return;
@@ -1138,7 +1138,7 @@
     // Flights already in the air resolve before new shots. Chain jumps created
     // by an impact start moving on the next tick, never all in one frame.
     for (const p of projectiles.slice()) {
-      if (M.hearthTree.health <= 0 || M.hellGates?.won || advanceProjectile(p, dt)) {
+      if (M.hearthTree.health <= 0 || M.enemies.finalBossDefeated || advanceProjectile(p, dt)) {
         for (const slot of projectileLightPool) if (slot.projectile === p) {
           slot.projectile = null; slot.light.intensity = 0;
         }
@@ -1148,7 +1148,7 @@
     for (const tower of list.slice()) {
       if (!M.world.blockInfoAt(tower.bx, tower.by - 1, tower.bz)) { dismantle(tower); continue; }
       animateTower(tower, dt);
-      if (M.hearthTree.health <= 0 || M.hellGates?.won) continue;
+      if (M.hearthTree.health <= 0 || M.enemies.finalBossDefeated) continue;
       if (tower.snareTime > 0) {
         tower.snareTime = Math.max(0, tower.snareTime - dt);
         if (!tower.snareOwner || tower.snareOwner.hp <= 0) tower.snareTime = 0;

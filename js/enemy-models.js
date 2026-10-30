@@ -49,7 +49,7 @@
     const position = new THREE.Vector3(), scale = new THREE.Vector3();
     const rotation = new THREE.Euler(), quaternion = new THREE.Quaternion();
     const models = {};
-    Object.keys(TYPES).concat('parachute').forEach(function (type) { models[type] = { parts: [], joints: [] }; });
+    Object.keys(TYPES).concat('parachute', 'cthulhu').forEach(function (type) { models[type] = { parts: [], joints: [] }; });
     function joint(type, kind, parent, x, y, z, side, index) {
       const model = models[type], id = model.joints.length + 1;
       model.joints.push({ id: id, kind: kind, parent: parent || 0, x: x, y: y, z: z, side: side || 0, index: index || 0, rx: 0, ry: 0, rz: 0 });
@@ -368,6 +368,48 @@
       part('cinderwing', side * .2, -.44, .32, .09, .33, .12, 0xcca17e, kiln).rx = -.4;
     }
 
+    // The last gate's giant: a jade, crowned cephalopod with ribbed wings.
+    // Native world-unit proportions keep combat bounds and the silhouette aligned.
+    const elder = joint('cthulhu', 'elderBody', 0, 0, 6.5, 0);
+    part('cthulhu', 0, 0, 0, 4.6, 7, 3.3, 0x244e49, elder);
+    part('cthulhu', 0, .3, 1.65, 3.2, 4.8, .5, 0x397364, elder);
+    part('cthulhu', 0, 1, 1.95, .7, 2.2, .2, 0x8ce8c2, elder, true);
+    const crown = joint('cthulhu', 'elderHead', elder, 0, 5.5, .25);
+    part('cthulhu', 0, .4, 0, 4.8, 4.7, 4.1, 0x32645a, crown);
+    part('cthulhu', 0, 2.75, -.4, 3.4, .7, 3.2, 0x547d6a, crown);
+    for (const side of [-1, 1]) {
+      part('cthulhu', side * 1.25, .7, 2.1, 1.5, .85, .2, 0x112f35, crown);
+      part('cthulhu', side * 1.25, .75, 2.25, 1.05, .26, .12, 0xc1ffd6, crown, true);
+      part('cthulhu', side * 1.2, 1.4, 2.05, 1.8, .45, .45, 0x608b71, crown).rz = -side * .17;
+      part('cthulhu', side * 1.6, 3.1, -.3, .5, 2.2, .65, 0x87a18a, crown).rz = -side * .28;
+      const arm = joint('cthulhu', 'elderArm', elder, side * 2.4, 1.7, 0, side);
+      part('cthulhu', side * .65, -1.7, 0, 1.7, 4.1, 1.8, 0x2e5a51, arm).rz = side * .17;
+      part('cthulhu', side * 1.05, -4.1, .5, 1.8, 1.3, 2.1, 0x1a393c, arm);
+      for (let finger = 0; finger < 3; finger++) part('cthulhu', side * (.5 + finger * .55), -5, 1, .34, 1.4, .45, 0xa3b899, arm).rx = -.2;
+      const leg = joint('cthulhu', 'elderLeg', 0, side * 1.35, 3.5, 0, side);
+      part('cthulhu', 0, -1.5, 0, 1.65, 3.2, 1.8, 0x23443f, leg);
+      part('cthulhu', 0, -3.1, .6, 2, .65, 2.8, 0x172f34, leg);
+      const wing = joint('cthulhu', 'elderWing', elder, side * 2, 2.8, -1.4, side);
+      for (let rib = 0; rib < 5; rib++) {
+        const plate = part('cthulhu', side * (1.1 + rib * 1.35), 2.2 - rib * .7, -1.6 - rib * .15,
+          1.65, 4.7 - rib * .45, .35, rib % 2 ? 0x264b50 : 0x1b3944, wing);
+        plate.rz = -side * (.4 + rib * .06);
+        part('cthulhu', side * (1.1 + rib * 1.35), 4.1 - rib * .8, -1.35 - rib * .15,
+          1.8, .35, .45, 0x548975, wing).rz = -side * .45;
+      }
+    }
+    for (let tendril = 0; tendril < 8; tendril++) {
+      let parent = crown;
+      for (let segment = 0; segment < 5; segment++) {
+        const width = .65 - segment * .09;
+        const curl = joint('cthulhu', 'elderTentacle', parent, segment ? 0 : (tendril - 3.5) * .5,
+          segment ? -.95 : -1.25, segment ? .25 : 1.9, tendril % 2 ? 1 : -1, tendril * 5 + segment);
+        part('cthulhu', 0, -.5, .12, width, 1.15, width, segment % 2 ? 0x4b8b75 : 0x35705f, curl);
+        if (segment === 4) part('cthulhu', 0, -.85, .27, .22, .32, .22, 0xa4e4bd, curl, true);
+        parent = curl;
+      }
+    }
+
     // Voxel cloth panels and four suspension cords ride in the horde batch.
     for (let x = -2; x <= 2; x++) for (let z = -1; z <= 1; z++) {
       const panel = part('parachute', x * .53, 5.15 - x * x * .11 - z * z * .15, z * .65,
@@ -380,6 +422,7 @@
     }
 
     const maxParts = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].parts.length; })) + models.parachute.parts.length;
+    const hordeParts = Math.max.apply(null, Object.keys(TYPES).map(function (type) { return models[type].parts.length; })) + models.parachute.parts.length;
     const maxJoints = Math.max.apply(null, Object.keys(models).map(function (key) { return models[key].joints.length; }));
     // Voxel offsets and palette colors are immutable. Compose/convert them once,
     // rather than repeating Euler and sRGB work for every part of 200 actors.
@@ -391,7 +434,7 @@
         part.color = new THREE.Color(part.tint);
       });
     });
-    return { models: models, maxParts: maxParts, maxJoints: maxJoints };
+    return { models: models, maxParts: maxParts, hordeParts: hordeParts, maxJoints: maxJoints };
   }
   M.enemyModels = { create: create, geometry: beveledVoxelGeometry };
 })(window.Meadow = window.Meadow || {});

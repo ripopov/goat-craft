@@ -3,79 +3,8 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 
+import { harness, fixture, advance } from './helpers/enemy-game.mjs';
 const root = new URL('../', import.meta.url);
-const scripts = new Map();
-function harness(realWorld = false, renderRadius = 0) {
-  const drawing = new Proxy({}, { get: (_, key) => key.startsWith('create') ? () => ({ addColorStop() {} }) : () => {} });
-  const context = vm.createContext({ window: { matchMedia: () => ({ matches: false }) },
-    document: { createElement: () => ({ getContext: () => drawing }), getElementById: () => null }, console });
-  const load = file => {
-    if (!scripts.has(file)) scripts.set(file, new vm.Script(readFileSync(new URL(file, root), 'utf8'), { filename: file }));
-    return scripts.get(file).runInContext(context);
-  };
-  ['vendor/three.min.js', 'js/core.js', 'js/actor-physics.js'].forEach(load);
-  const M = context.window.Meadow, THREE = context.THREE;
-  M.config.renderRadius = renderRadius;
-  const drops = [], coinDrops = [];
-  M.items = { dropBlock: (...args) => drops.push(args), dropCoins: (position, count) => coinDrops.push({ position: position.clone(), count }) };
-  M.ui = { showBubble() {}, setDefense() {} };
-  const scene = new THREE.Scene();
-  if (realWorld) {
-    ['js/voxel-water.js', 'js/caves.js', 'js/world.js', 'js/hearth-tree.js'].forEach(load);
-    M.world.init(scene, { capabilities: { getMaxAnisotropy: () => 1 } });
-    M.hearthTree.init(scene);
-  }
-  ['js/zombie-navigation.js', 'js/hell-gates.js', 'js/enemy-rules.js', 'js/enemy-models.js', 'js/enemy-boats.js', 'js/enemies.js'].forEach(load);
-  return { M, THREE, scene, drops, coinDrops, load, context };
-}
-function fixture() {
-  const { M, THREE, scene, coinDrops, context } = harness();
-  const blocks = new Map(), drops = [];
-  let revision = 0, hp = 100;
-  const key = (x, y, z) => [x, y, z].join(',');
-  const world = {
-    blockSize: 2, get revision() { return revision; },
-    waterDepthAt: () => 0, isProtectedArea: () => false,
-    blockInfoAt(bx, by, bz) {
-      const kind = by < 0 ? 'dirt' : blocks.get(key(bx, by, bz));
-      return kind ? { bx, by, bz, kind, type: by < 0 ? 'terrain' : 'placed' } : null;
-    },
-    navigationSurfaces(bx, bz) {
-      const ys = [];
-      for (let by = -1; by < 10; by++) if (this.blockInfoAt(bx, by, bz) && !this.blockInfoAt(bx, by + 1, bz)) ys.push((by + 1) * 2);
-      return ys;
-    },
-    navigationBlockedAt(x, z, min, max, includeTree = true) {
-      for (let by = Math.floor((min + .001) / 2); by <= Math.floor((max - .001) / 2); by++) {
-        if (this.blockInfoAt(Math.floor(x / 2), by, Math.floor(z / 2))) return true;
-      }
-      return includeTree && tree.blockedAt(x, z, min, max);
-    },
-    landingHeight(x, z, max) {
-      for (let by = Math.floor((max + .001) / 2) - 1; by >= -1; by--) {
-        if (this.blockInfoAt(Math.floor(x / 2), by, Math.floor(z / 2))) return (by + 1) * 2;
-      }
-      return 0;
-    },
-    breakBlockAt(bx, by, bz) {
-      const value = blocks.get(key(bx, by, bz));
-      if (!value) return null;
-      blocks.delete(key(bx, by, bz)); drops.push(value); revision++; return value;
-    },
-    place(bx, by, bz) { blocks.set(key(bx, by, bz), 'stone'); revision++; }
-  };
-  const tree = { position: { x: 1, z: 1 }, get health() { return hp; },
-    damage(n) { hp = Math.max(0, hp - n); },
-    blockedAt(x, z, min, max) { return x >= 0 && x < 2 && z >= 0 && z < 2 && min < 8 && max > 0; } };
-  return { M, THREE, scene, world, tree, drops, coinDrops, context };
-}
-// Simulation scenarios need only their final pose; dedicated render tests below
-// exercise per-frame uploads and animation independently.
-const advance = (M, seconds, dt = .05) => {
-  M.enemies.beginFrame();
-  for (let i = 0; i < Math.round(seconds / dt); i++) M.enemies.update(dt);
-  M.enemies.syncRender();
-};
 
 // Deliberately assert resulting routes and behavior rather than the particular
 // search implementation: edits, height limits, unreachable goals and timing.
@@ -470,34 +399,6 @@ test('later waves send larger groups, still staggered rather than all at once', 
   advance(M, 20); assert.equal(M.enemies.zombies.length, 10);
 });
 
-test('every tenth cleared wave gives a full minute of rest, while ordinary breaks stay ten seconds', () => {
-  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree; tree.damage = () => {};
-  const e = M.enemies; e.init({ scene, world, tree }); e.beginFrame();
-  for (const level of [9, 10, 20, 30]) {
-    for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.maxHp);
-    const wallet = e.getState().coins;
-    e.startWave(level);
-    let ticks = 0;
-    while ((e.getState().pending || e.getState().count) && ticks++ < 5000) {
-      e.update(.1);
-      for (const enemy of e.zombies.slice()) e.damageEnemy(enemy, enemy.maxHp);
-    }
-    assert.ok(ticks < 5000, 'the complete roster was delivered');
-    e.update(.1);
-    const rest = level % 10 === 0 ? 60 : 10;
-    assert.equal(e.getState().phase, 'intermission');
-    assert.equal(e.getState().nextWave, rest);
-    assert.equal(e.getState().coins, wallet + Math.min(24, 4 + level * 2));
-    e.update(rest - .1);
-    assert.equal(e.getState().wave, level, 'no wave arrives during the promised break');
-    assert.equal(e.getState().count, 0); assert.equal(e.getState().pending, 0);
-    assert.equal(e.getState().coins, wallet + Math.min(24, 4 + level * 2), 'bonus is paid once');
-    e.update(.2);
-    assert.equal(e.getState().wave, level + 1);
-    assert.ok(e.getState().pending > 0);
-  }
-  e.syncRender();
-});
 
 test('local navigation edits match a fresh field, including new walls and mined tunnels', () => {
   const { M } = harness(true), w = M.world, t = M.hearthTree;
@@ -588,31 +489,6 @@ test('a mixed horde shares the living cap, finite render pool and physical rewar
   advance(M, 1); assert.equal(mesh.count, 0);
 });
 
-test('clearing actual waves introduces each species, pays one bonus, and gives a training break', () => {
-  const { M, scene } = harness(true), world = M.world, tree = M.hearthTree; tree.damage = () => {};
-  M.enemies.init({ scene, world, tree });
-  const rosters = new Map();
-  let lastId = -1, bonus = 0;
-  for (let i = 0; i < 12000 && M.enemies.getState().wave < 9; i++) {
-    M.enemies.update(.05);
-    const state = M.enemies.getState();
-    for (const enemy of M.enemies.zombies.slice()) {
-      if (enemy.id > lastId) {
-        if (!rosters.has(state.wave)) rosters.set(state.wave, []);
-        rosters.get(state.wave).push(enemy.type); lastId = enemy.id;
-      }
-      M.enemies.attack(enemy.position, 0, true, { damage: enemy.maxHp, range: 1 });
-    }
-    if (state.phase === 'intermission') {
-      assert.ok(state.nextWave <= 10); assert.ok(!state.count && !state.pending);
-      if (state.coins > bonus) bonus = state.coins;
-    }
-  }
-  assert.equal(M.enemies.getState().wave, 9);
-  assert.equal(rosters.get(1).length, 6); assert.equal(rosters.get(2).length, 10);
-  assert.ok(rosters.get(3).includes('spider')); assert.ok(rosters.get(5).includes('skeleton')); assert.ok(rosters.get(8).includes('brute'));
-  assert.equal(M.enemies.getState().coins, Array.from({ length: 8 }, (_, i) => Math.min(24, 6 + i * 2)).reduce((a, b) => a + b), 'bonuses pay once per completed wave');
-});
 
 test('automatic waves skip isolated canopy surfaces that would stall wave completion', () => {
   const { M, scene, context } = harness(true);
